@@ -22,15 +22,19 @@
       "b-Office/package",
       "b-Code",
       "b-Code-SE2SW",
+      "b-Code-SE2SW-Tests",
       "z-SE2SW"
     ],
     "sourceRoots": [
       "b-Code",
-      "b-Code-SE2SW"
+      "b-Code-SE2SW",
+      "b-Code-SE2SW-Tests"
     ],
     "generatedRoots": [
       "b-Code-SE2SW/**/bin",
-      "b-Code-SE2SW/**/obj"
+      "b-Code-SE2SW/**/obj",
+      "b-Code-SE2SW-Tests/**/bin",
+      "b-Code-SE2SW-Tests/**/obj"
     ],
     "archiveRoots": [
       "b-Office/history"
@@ -44,6 +48,8 @@
   "documents": {
     "center": "b-Office/文档中心.md",
     "package": "b-Office/package/复用说明.md",
+    "nugetPublishing": "b-Office/package/NuGet发布说明.md",
+    "ohsPublishing": "b-Office/package/OHS模块发布说明.md",
     "structure": "b-Office/文档中心.md",
     "overview": "b-Office/current/项目概览.md",
     "technicalContract": "b-Office/current/技术合同.md",
@@ -54,9 +60,9 @@
     "historyBoundary": "b-Office/history/历史资料说明.md"
   },
   "commands": {
-    "setup": "dotnet restore .\\b-Code-SE2SW\\src\\SE2SW\\SE2SW.csproj --configfile .\\b-Code-SE2SW\\nuget.config -p:NuGetAudit=false",
+    "setup": "dotnet restore .\\b-Code-SE2SW\\src\\SE2SW\\SE2SW.csproj --configfile .\\nuget.config -p:NuGetAudit=false",
     "build": "dotnet build .\\b-Code-SE2SW\\src\\SE2SW\\SE2SW.csproj -c Release -p:NuGetAudit=false",
-    "test": "dotnet run --project .\\b-Code-SE2SW\\tests\\SE2SW.Smoke\\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false",
+    "test": "dotnet run --project .\\b-Code-SE2SW-Tests\\tests\\SE2SW.Smoke\\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false",
     "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code\\Test-ProjectContract.ps1 -Instantiation",
     "run": null,
     "package": null

@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SE2SW\SE2SW.csproj" />
-    <ProjectReference Include="..\..\src\SE2SW.Worker\SE2SW.Worker.csproj" />
+    <ProjectReference Include="..\..\..\b-Code-SE2SW\src\SE2SW\SE2SW.csproj" />
+    <ProjectReference Include="..\..\..\b-Code-SE2SW\src\SE2SW.Worker\SE2SW.Worker.csproj" />
   </ItemGroup>
 </Project>

@@ -311,20 +311,20 @@ static void TestPartImportIsolationContracts(string root)
     Equal(forwarded.NativeError, forwardedRoundTrip?.NativeError, "转发事件不得丢失原生错误码");
 }
 
-/// <summary>从 build/SE2SW.Version.props 读出唯一版本源。</summary>
+/// <summary>从生产代码根目录读取唯一版本源。</summary>
 static string ReadVersionFromSingleSource()
 {
-    var path = LocateRepoFile(Path.Combine("build", "SE2SW.Version.props"));
+    var path = LocateRepoFile(Path.Combine("b-Code-SE2SW", "build", "SE2SW.Version.props"));
     var match = System.Text.RegularExpressions.Regex.Match(
         File.ReadAllText(path), @"<SE2SWVersion>([^<]+)</SE2SWVersion>");
     True(match.Success, $"版本真源里找不到 SE2SWVersion：{path}");
     return match.Groups[1].Value.Trim();
 }
 
-/// <summary>OHS 注册清单在仓库外的 z-SE2SW 目录，它是第二个必须跟上的地方。</summary>
+/// <summary>读取项目根目录下的 OHS 注册清单。</summary>
 static string ReadVersionFromManifest()
 {
-    var path = LocateRepoFile(Path.Combine("..", "z-SE2SW", "module.manifest.json"));
+    var path = LocateRepoFile(Path.Combine("z-SE2SW", "module.manifest.json"));
     using var document = JsonDocument.Parse(File.ReadAllText(path));
     return document.RootElement.GetProperty("version").GetString() ?? string.Empty;
 }

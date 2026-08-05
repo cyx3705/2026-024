@@ -5,7 +5,8 @@
 > 发布清单：`../z-SE2SW/module.manifest.json`
 
 SE2SW 使用 Solid Edge COM 导出 Parasolid，再由 SolidWorks COM 导入、识别并保存为 SolidWorks
-零件或装配体。模块保留单页来源自适应 UI、独立 x64 STA Worker、离线 Smoke 和真实 CAD 门禁。
+零件或装配体。本目录只保存生产模块源码、版本和工程脚本；测试与 CAD 门禁由独立的
+[`b-Code-SE2SW-Tests`](../b-Code-SE2SW-Tests/README.md) 维护。
 
 ## 工程布局
 
@@ -13,9 +14,6 @@ SE2SW 使用 Solid Edge COM 导出 Parasolid，再由 SolidWorks COM 导入、�
 src/SE2SW.Contracts   请求、进度、路径和装配协议
 src/SE2SW             WPF UI、扫描、预检和模块入口
 src/SE2SW.Worker      Solid Edge / SolidWorks COM 工作进程
-tests/SE2SW.Smoke     不启动 CAD 的自动化回归
-tests/SE2SW.UiSmoke   窗口渲染冒烟壳
-tools/                COM 探针和真实 CAD 生产门禁
 build/                唯一版本源
 eng/                  模块清单版本同步脚本
 ```
@@ -30,7 +28,8 @@ eng/                  模块清单版本同步脚本
 - MCP 暴露为 `hidden`，转换只能由本机 UI 明确触发。
 
 完整现行合同、决策、验证和下一版本计划位于 [`../b-Office/current`](../b-Office/current/项目概览.md)。
-版本研究与验收记录位于 [`../b-Office/history/SE2SW`](../b-Office/history/SE2SW/)。
+版本研究与验收记录直接位于 [`../b-Office/history`](../b-Office/history/历史资料说明.md)，
+当前 OHS 与 NuGet 发布合同位于 [`../b-Office/package`](../b-Office/package/复用说明.md)。
 
 ## 构建与离线验证
 
@@ -38,7 +37,7 @@ eng/                  模块清单版本同步脚本
 
 ```powershell
 dotnet build .\b-Code-SE2SW\src\SE2SW\SE2SW.csproj -c Release -p:NuGetAudit=false
-dotnet run --project .\b-Code-SE2SW\tests\SE2SW.Smoke\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false
+dotnet run --project .\b-Code-SE2SW-Tests\tests\SE2SW.Smoke\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false
 ```
 
 更新唯一版本源后，通过 `eng/Update-SE2SWManifest.ps1` 同步清单版本。正式入槽必须显式执行

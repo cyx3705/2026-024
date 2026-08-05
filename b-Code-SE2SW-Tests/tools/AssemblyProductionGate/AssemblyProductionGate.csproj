@@ -7,12 +7,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>MateApplyProbe</AssemblyName>
-    <RootNamespace>MateApplyProbe</RootNamespace>
     <SwApiRedist Condition="'$(SwApiRedist)' == ''">C:\Program Files\SOLIDWORKS\SOLIDWORKS Corp\SOLIDWORKS\api\redist</SwApiRedist>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SE2SW.Contracts\SE2SW.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\b-Code-SE2SW\src\SE2SW.Contracts\SE2SW.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\b-Code-SE2SW\src\SE2SW\SE2SW.csproj" />
     <Reference Include="SolidWorks.Interop.sldworks">
       <HintPath>$(SwApiRedist)\SolidWorks.Interop.sldworks.dll</HintPath>
       <EmbedInteropTypes>false</EmbedInteropTypes>

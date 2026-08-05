@@ -11,6 +11,6 @@
     <RootNamespace>FeatureWorksBatchSmoke</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SE2SW.Contracts\SE2SW.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\b-Code-SE2SW\src\SE2SW.Contracts\SE2SW.Contracts.csproj" />
   </ItemGroup>
 </Project>

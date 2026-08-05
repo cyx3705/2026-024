@@ -67,4 +67,4 @@ SolidWorksRecognizeProbe.exe --input "D:\out\part.x_t" --output "D:\out\part.SLD
    RunCommand 的排除证据仅用于诊断，不能迁入 Worker。
 
 最终证据和两个样件的特征树见
-[FeatureWorks 识别参数历史记录](../../../b-Office/history/SE2SW/38-V3.6.2-FeatureWorks识别参数错误.md)。
+[FeatureWorks 识别参数历史记录](../../../b-Office/history/38-V3.6.2-FeatureWorks识别参数错误.md)。

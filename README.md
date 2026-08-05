@@ -17,14 +17,16 @@ Solid Edge 与 SolidWorks COM 自动化。源 CAD 文件保持只读，转换产
 | 需求与架构 | [`b-Office/current/技术合同.md`](./b-Office/current/技术合同.md) |
 | 验证方式 | [`b-Office/current/验证合同.md`](./b-Office/current/验证合同.md) |
 | 模块源码 | [`b-Code-SE2SW/README.md`](./b-Code-SE2SW/README.md) |
+| 测试与 CAD 门禁 | [`b-Code-SE2SW-Tests/README.md`](./b-Code-SE2SW-Tests/README.md) |
 | OHS 模块清单 | [`z-SE2SW/module.manifest.json`](./z-SE2SW/module.manifest.json) |
+| 发布说明 | [`b-Office/package`](./b-Office/package/复用说明.md) |
 
 ## 快速验证
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\b-Code\Test-ProjectContract.ps1 -Instantiation
 dotnet build .\b-Code-SE2SW\src\SE2SW\SE2SW.csproj -c Release -p:NuGetAudit=false
-dotnet run --project .\b-Code-SE2SW\tests\SE2SW.Smoke\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false
+dotnet run --project .\b-Code-SE2SW-Tests\tests\SE2SW.Smoke\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false
 ```
 
 真实 CAD 门禁需要专用样件和受控 Solid Edge / SolidWorks 会话，不能用离线 Smoke 代替。
