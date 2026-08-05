@@ -1,6 +1,6 @@
 # SE2SW 模块工程
 
-> 当前版本：3.7.0
+> 当前版本：3.8.0
 > 宿主：OneHistoryStudio / AppShell  
 > 发布清单：`../z-SE2SW/module.manifest.json`
 
