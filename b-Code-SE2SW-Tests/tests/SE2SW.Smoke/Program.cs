@@ -11,6 +11,7 @@ Directory.CreateDirectory(root);
 try
 {
     TestSharedContractsAndVersion();
+    TestCommandBusSurface(root);
     TestPartImportIsolationContracts(root);
     TestCadProcessOwnershipResolution();
     TestOhsLayoutAndScan(root);
@@ -471,6 +472,37 @@ static void TestExternalLegacyAndDirectoryCreation(string root)
     File.WriteAllText(Path.Combine(conflict, "SW"), "occupied");
     Throws<IOException>(() => ExternalOutputLayout.EnsureDirectories(conflict));
     True(!Directory.Exists(Path.Combine(conflict, "XT")), "任一目录冲突时不得提前创建另一输出目录");
+}
+
+static void TestCommandBusSurface(string root)
+{
+    var commands = new SE2SWCommands();
+    var status = commands.status();
+    Equal("se2sw", status.Module, "命令总线状态必须声明稳定模块名");
+    Equal("se2sw", status.WindowId, "命令总线状态必须声明稳定窗口 ID");
+    Equal(ReadVersionFromSingleSource(), status.Version, "命令总线状态版本必须来自统一版本源");
+    True(status.SupportedSources.Contains(".par"), "命令总线状态必须声明 Solid Edge 零件输入");
+    True(status.SupportedSources.Contains(".asm"), "命令总线状态必须声明 Solid Edge 装配输入");
+
+    var sourceDirectory = Path.Combine(root, "command-surface");
+    Directory.CreateDirectory(sourceDirectory);
+    var source = Path.Combine(sourceDirectory, "Part.par");
+    File.WriteAllText(source, "source");
+    var paths = commands.paths(source);
+    Equal(Path.Combine(sourceDirectory, "XT", "Part.x_t"), paths.Xt, "paths 必须遵守 XT 输出目录规则");
+    Equal(Path.Combine(sourceDirectory, "SW", "Part.SLDPRT"), paths.SolidWorks, "paths 必须遵守 SW 输出目录规则");
+    True(!Directory.Exists(paths.XtDirectory) && !Directory.Exists(paths.SolidWorksDirectory),
+        "只读 paths 不得创建输出目录");
+
+    var second = Path.Combine(sourceDirectory, "Second.par");
+    File.WriteAllText(second, "source");
+    Directory.CreateDirectory(paths.XtDirectory);
+    File.WriteAllText(paths.Xt, "xt");
+    var scan = commands.scan(sourceDirectory);
+    Equal(2, scan.Count, "scan 必须返回目录顶层全部零件");
+    Equal(1, scan.ExistingOutputCount, "scan 必须统计已有产物");
+    True(scan.Items.Single(item => item.Source.EndsWith("Part.par", StringComparison.OrdinalIgnoreCase)).XtExists,
+        "scan 必须返回 XT 已存在状态");
 }
 
 static void TestCustomOutputDirectories(string root)
