@@ -15,6 +15,9 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File .\b-Code\Test-ProjectContract.ps1 -Instantiation
 dotnet build .\b-Code-SE2SW\src\SE2SW\SE2SW.csproj -c Release -p:NuGetAudit=false
 dotnet run --project .\b-Code-SE2SW-Tests\tests\SE2SW.Smoke\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false
+New-Item -ItemType Directory -Force .\artifacts | Out-Null
+dotnet run --project .\b-Code-SE2SW-Tests\tests\SE2SW.UiSmoke\SE2SW.UiSmoke.csproj -c Release -p:NuGetAudit=false -- --capture .\artifacts\se2sw-ui.png
+dotnet format .\b-Code-SE2SW\src\SE2SW\SE2SW.csproj --verify-no-changes --no-restore
 powershell -NoProfile -ExecutionPolicy Bypass -File .\b-Code-SE2SW\eng\Update-SE2SWManifest.ps1 -ManifestPath .\z-SE2SW\module.manifest.json
 ```
 

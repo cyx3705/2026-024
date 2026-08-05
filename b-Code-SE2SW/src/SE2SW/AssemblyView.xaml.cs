@@ -18,9 +18,13 @@ public partial class AssemblyView : UserControl, IDisposable
     }
 
     internal AssemblyViewModel ViewModel => _viewModel;
+    internal double OutputPathBarHeight => OutputPathBar.ActualHeight;
+    internal Visibility OutputActivityVisibility => OutputActivityBar.Visibility;
 
     private void OnChooseSourceClick(object sender, RoutedEventArgs e)
     {
+        if (!_viewModel.CanEdit)
+            return;
         SourcePickerOverlay.Visibility = Visibility.Visible;
         SourcePickerOverlay.Focus();
     }
@@ -79,11 +83,29 @@ public partial class AssemblyView : UserControl, IDisposable
     private async void OnConvertClick(object sender, RoutedEventArgs e)
         => await _viewModel.ConvertAsync();
 
+    private void OnChooseXtDirectoryClick(object sender, RoutedEventArgs e)
+        => ChooseOutputDirectory(
+            "选择 XT 输出目录",
+            _viewModel.XtDirectory,
+            _viewModel.SetXtOutputDirectory);
+
+    private void OnChooseSolidWorksDirectoryClick(object sender, RoutedEventArgs e)
+        => ChooseOutputDirectory(
+            "选择 SW 输出目录",
+            _viewModel.SolidWorksDirectory,
+            _viewModel.SetSolidWorksOutputDirectory);
+
     private void OnOpenXtDirectoryClick(object sender, RoutedEventArgs e)
         => OpenDirectory(_viewModel.XtDirectory, "XT 输出目录");
 
     private void OnOpenSolidWorksDirectoryClick(object sender, RoutedEventArgs e)
         => OpenDirectory(_viewModel.SolidWorksDirectory, "SW 输出目录");
+
+    private void OnRestoreXtDirectoryClick(object sender, RoutedEventArgs e)
+        => _viewModel.RestoreDefaultXtDirectory();
+
+    private void OnRestoreSolidWorksDirectoryClick(object sender, RoutedEventArgs e)
+        => _viewModel.RestoreDefaultSolidWorksDirectory();
 
     private void OnCancelClick(object sender, RoutedEventArgs e)
         => _viewModel.Cancel();
@@ -113,6 +135,43 @@ public partial class AssemblyView : UserControl, IDisposable
 
     private void HideSourcePicker()
         => SourcePickerOverlay.Visibility = Visibility.Collapsed;
+
+    private void ChooseOutputDirectory(string title, string currentDirectory, Action<string> apply)
+    {
+        if (!_viewModel.CanEdit || string.IsNullOrWhiteSpace(_viewModel.SourcePath))
+            return;
+        var dialog = new OpenFolderDialog
+        {
+            Title = title,
+            Multiselect = false,
+        };
+        if (Directory.Exists(currentDirectory))
+            dialog.InitialDirectory = currentDirectory;
+        else
+        {
+            var sourceDirectory = _viewModel.IsPartDirectoryMode
+                ? _viewModel.SourcePath
+                : Path.GetDirectoryName(_viewModel.SourcePath);
+            if (Directory.Exists(sourceDirectory))
+                dialog.InitialDirectory = sourceDirectory;
+        }
+        if (dialog.ShowDialog(Window.GetWindow(this)) != true)
+            return;
+
+        try
+        {
+            apply(dialog.FolderName);
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            MessageBox.Show(
+                Window.GetWindow(this),
+                exception.Message,
+                "SE2SW",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
 
     private void OpenDirectory(string directory, string label)
     {

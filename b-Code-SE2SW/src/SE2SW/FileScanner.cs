@@ -15,14 +15,17 @@ public static class FileScanner
     public static IReadOnlyList<ScanCandidate> Scan(
         ConversionMode mode,
         string selectedDirectory,
-        ProjectLayout? layout = null)
+        ProjectLayout? layout = null,
+        ExternalOutputDirectories? outputDirectories = null,
+        bool allowLegacyXt = true,
+        bool allowLegacySolidWorks = true)
     {
         var workingDirectory = NormalizeExistingDirectory(selectedDirectory);
         var sourceDirectory = mode == ConversionMode.Ohs
             ? layout?.SourceDirectory ?? throw new ArgumentNullException(nameof(layout))
             : workingDirectory;
         var externalDirectories = mode == ConversionMode.External
-            ? ConversionPathLayout.ResolveExternalDirectories(workingDirectory)
+            ? outputDirectories ?? ConversionPathLayout.ResolveExternalDirectories(workingDirectory)
             : null;
         var xtDirectory = mode == ConversionMode.Ohs ? layout!.XtDirectory : externalDirectories!.XtDirectory;
         var swDirectory = mode == ConversionMode.Ohs ? layout!.SolidWorksDirectory : externalDirectories!.SolidWorksDirectory;
@@ -34,8 +37,9 @@ public static class FileScanner
             {
                 var paths = ConversionPathLayout.ResolvePartPaths(path, xtDirectory, swDirectory, workingDirectory);
                 var exists = File.Exists(paths.XtPath) || File.Exists(paths.SolidWorksPath)
-                    || mode == ConversionMode.External
-                    && (File.Exists(paths.LegacyXtPath) || File.Exists(paths.LegacySolidWorksPath));
+                    || mode == ConversionMode.External &&
+                    ((allowLegacyXt && File.Exists(paths.LegacyXtPath))
+                        || (allowLegacySolidWorks && File.Exists(paths.LegacySolidWorksPath)));
                 return new ScanCandidate(path, paths.XtPath, paths.SolidWorksPath, exists);
             })
             .ToArray();

@@ -17,7 +17,7 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware
         _windows.Add(ShellUi.RegisterToolWindow(new ToolWindowDescriptor
         {
             Id = "se2sw",
-            Title = "SE2SW 转换",
+            Title = "SE2SW",
             ContentFactory = static () => new SE2SWWorkspaceView(),
         }, "SE2SW"));
     }

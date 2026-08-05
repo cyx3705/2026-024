@@ -1,7 +1,8 @@
 # SE2SW
 
 SE2SW 是独立维护的 OneHistoryStudio / AppShell CAD 转换模块，将 Solid Edge `.par/.asm`
-通过 Parasolid `.x_t` 转换为 SolidWorks `.SLDPRT/.SLDASM`。当前发布线为 `3.6.7`。
+通过 Parasolid `.x_t` 转换为 SolidWorks `.SLDPRT/.SLDASM`。当前源码版本为 `3.7.0`，正式槽升级
+仍须执行真实 CAD 与 OHS 发布门禁。
 
 模块面向本机受控 CAD 环境：UI 负责来源选择、计划和状态呈现，独立 x64 STA Worker 负责
 Solid Edge 与 SolidWorks COM 自动化。源 CAD 文件保持只读，转换产物写入源目录下的 `XT/`

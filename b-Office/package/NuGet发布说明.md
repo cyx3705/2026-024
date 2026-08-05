@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-SE2SW 3.6.7 尚未声明 NuGet 包元数据，`project.manifest.json.commands.package` 因此保持 `null`。
+SE2SW 3.7.0 尚未声明 NuGet 包元数据，`project.manifest.json.commands.package` 因此保持 `null`。
 当前 OHS 模块发布不等同于 NuGet 发布，不能直接把模块槽目录打成包。
 
 ## 可发布边界

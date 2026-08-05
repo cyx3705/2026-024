@@ -18,6 +18,9 @@ try
     TestMissingUnusedPreflight(root);
     TestExternalMapping(root);
     TestExternalLegacyAndDirectoryCreation(root);
+    TestCustomOutputDirectories(root);
+    TestAssemblyOutputReplanning(root);
+    TestSingleShotCancellation(root);
     TestDuplicateOutputRejection(root);
     TestAssemblyPlanningAndJson(root);
     TestAssemblyLegacyReuse(root);
@@ -468,6 +471,132 @@ static void TestExternalLegacyAndDirectoryCreation(string root)
     File.WriteAllText(Path.Combine(conflict, "SW"), "occupied");
     Throws<IOException>(() => ExternalOutputLayout.EnsureDirectories(conflict));
     True(!Directory.Exists(Path.Combine(conflict, "XT")), "任一目录冲突时不得提前创建另一输出目录");
+}
+
+static void TestCustomOutputDirectories(string root)
+{
+    var source = Path.Combine(root, "custom-output-source");
+    var customXt = Path.Combine(root, "custom-output-xt");
+    var customSw = Path.Combine(root, "custom-output-sw");
+    Directory.CreateDirectory(source);
+    File.WriteAllText(Path.Combine(source, "Part.par"), "part");
+    File.WriteAllText(Path.Combine(source, "Part.x_t"), "legacy");
+
+    var directories = ExternalOutputLayout.Resolve(source, customXt, customSw);
+    Equal(customXt, directories.XtDirectory, "自定义 XT 必须成为唯一 XT 目标");
+    Equal(customSw, directories.SolidWorksDirectory, "自定义 SW 必须成为唯一 SW 目标");
+    var scanned = FileScanner.Scan(
+        ConversionMode.External,
+        source,
+        outputDirectories: directories,
+        allowLegacyXt: false,
+        allowLegacySolidWorks: false).Single();
+    True(!scanned.HasExistingOutput, "设置自定义目录后不得再被源目录旧平铺产物跳过");
+    Equal(Path.Combine(customXt, "Part.x_t"), scanned.XtPath, "扫描必须使用最终 XT 目录");
+    Equal(Path.Combine(customSw, "Part.SLDPRT"), scanned.SolidWorksPath, "扫描必须使用最终 SW 目录");
+    True(!Directory.Exists(customXt) && !Directory.Exists(customSw), "扫描不得创建自定义目录");
+
+    ExternalOutputLayout.EnsureDirectories(customXt, customSw);
+    True(Directory.Exists(customXt) && Directory.Exists(customSw), "转换前才创建自定义目录");
+    var shared = Path.Combine(root, "custom-output-shared");
+    ExternalOutputLayout.EnsureDirectories(shared, shared);
+    True(Directory.Exists(shared), "XT 与 SW 选择同一目录必须受支持");
+}
+
+static void TestAssemblyOutputReplanning(string root)
+{
+    var source = Path.Combine(root, "assembly-output-replan");
+    var customXt = Path.Combine(root, "assembly-output-replan-xt");
+    var customSw = Path.Combine(root, "assembly-output-replan-sw");
+    Directory.CreateDirectory(source);
+    var top = Path.Combine(source, "Top.asm");
+    var sub = Path.Combine(source, "Sub.asm");
+    var part = Path.Combine(source, "Part.par");
+    File.WriteAllText(top, "top");
+    File.WriteAllText(sub, "sub");
+    File.WriteAllText(part, "part");
+    File.WriteAllText(Path.Combine(source, "Part.x_t"), "legacy");
+    var probe = new AssemblyProbeResult(
+        top,
+        [
+            new AssemblyOccurrence("Sub:1", null, sub, true, false, false, Translation(0, 0, 0), null),
+            new AssemblyOccurrence("Sub:1/Part:1", "Sub:1", part, false, false, false, Translation(0, 0, 0), null),
+        ],
+        [part], 0, 0, 1, 0, [],
+        [
+            new AssemblyDocumentReading(top, [Sub("Sub:1", sub, 0, 0, 0)], []),
+            new AssemblyDocumentReading(sub, [Part("Part:1", part, 0, 0, 0)], []),
+        ]);
+    var probeCount = 0;
+    using var viewModel = new AssemblyViewModel(
+        (_, _, _) =>
+        {
+            probeCount++;
+            return Task.FromResult(probe);
+        },
+        static (_, _, _) => Task.FromResult(0),
+        static () => { },
+        Dispatcher.CurrentDispatcher);
+
+    viewModel.SetAssemblySource(top);
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    Equal(1, probeCount, "首次选择装配体只执行一次探查");
+    viewModel.SetXtOutputDirectory(customXt);
+    Equal(customXt, viewModel.XtDirectory, "仅自定义 XT 时必须采用自定义 XT 目录");
+    Equal(Path.Combine(source, "SW"), viewModel.SolidWorksDirectory,
+        "仅自定义 XT 时 SW 必须继续使用默认目录");
+    viewModel.SetSolidWorksOutputDirectory(customSw);
+    Equal(1, probeCount, "修改输出目录只能纯内存重规划，不得重新执行 Solid Edge 探查");
+    Equal(customXt, viewModel.XtDirectory, "装配计划必须采用自定义 XT 目录");
+    Equal(customSw, viewModel.SolidWorksDirectory, "装配计划必须采用自定义 SW 目录");
+    Equal(Path.Combine(customXt, "Part.x_t"), viewModel.Parts.Single().XtPath,
+        "唯一零件必须重新映射到自定义 XT 目录");
+    Equal(Path.Combine(customSw, "Part.SLDPRT"), viewModel.Parts.Single().SolidWorksPath,
+        "唯一零件必须重新映射到自定义 SW 目录");
+    Equal(Path.Combine(customSw, "Top.SLDASM"), viewModel.AssemblyOutputPath,
+        "顶层装配必须重新映射到自定义 SW 目录");
+    True(!viewModel.Parts.Single().HasExistingOutput,
+        "自定义 XT 后不得复用源目录中的旧平铺 XT");
+    True(!Directory.Exists(customXt) && !Directory.Exists(customSw), "装配重规划不得创建目录");
+
+    viewModel.RestoreDefaultXtDirectory();
+    Equal(Path.Combine(source, "XT"), viewModel.XtDirectory, "恢复 XT 后必须回到默认目录");
+    Equal(customSw, viewModel.SolidWorksDirectory, "仅自定义 SW 时必须保留自定义 SW 目录");
+    viewModel.RestoreDefaultSolidWorksDirectory();
+    Equal(Path.Combine(source, "XT"), viewModel.XtDirectory, "恢复后必须回到默认 XT 目录");
+    Equal(Path.Combine(source, "SW"), viewModel.SolidWorksDirectory, "恢复后必须回到默认 SW 目录");
+    viewModel.SetXtOutputDirectory(customXt);
+    viewModel.SetPartDirectory(source);
+    True(!viewModel.HasCustomXtDirectory && !viewModel.HasCustomSolidWorksDirectory,
+        "切换来源必须清除两侧自定义目录");
+}
+
+static void TestSingleShotCancellation(string root)
+{
+    var source = Path.Combine(root, "single-shot-cancel");
+    Directory.CreateDirectory(source);
+    var assembly = Path.Combine(source, "Top.asm");
+    File.WriteAllText(assembly, "asm");
+    var started = new ManualResetEventSlim();
+    using var viewModel = new AssemblyViewModel(
+        async (_, _, cancellationToken) =>
+        {
+            started.Set();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("不可达");
+        },
+        static (_, _, _) => Task.FromResult(0),
+        static () => { },
+        Dispatcher.CurrentDispatcher);
+    viewModel.SetAssemblySource(assembly);
+    var run = viewModel.ProbeAsync();
+    True(started.Wait(TimeSpan.FromSeconds(3)), "取消 Smoke 的探查任务必须启动");
+    True(viewModel.CanCancel && viewModel.Cancel(), "运行期间第一次取消必须生效");
+    True(!viewModel.CanCancel && !viewModel.Cancel(), "重复取消不得创建第二个取消流程");
+    run.GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(!viewModel.IsBusy && !viewModel.CanCancel, "取消完成后必须隐藏运行态并恢复编辑");
 }
 
 /// <summary>
@@ -1526,7 +1655,7 @@ static void TestUiModuleRegistration()
     Equal(1, registrar.Descriptors.Count, "模块应只注册一个单页工具窗口");
     var descriptor = registrar.Descriptors.Single();
     Equal("se2sw", descriptor.Id, "必须保留稳定窗口 ID se2sw");
-    Equal("SE2SW 转换", descriptor.Title, "窗口标题应覆盖零件与装配两种转换");
+    Equal("SE2SW", descriptor.Title, "窗口标题必须收敛为通用名称 SE2SW");
     True(descriptor.ContentFactory != null, "单页工具窗口必须提供内容工厂");
     Equal(DockSide.Right, descriptor.DefaultSide, "窗口应保持 AppShell 普通右侧工具窗口语义");
     module.DestroyUi();

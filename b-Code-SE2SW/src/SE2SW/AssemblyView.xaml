@@ -139,11 +139,11 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Margin="22,16,22,10" Height="34" Background="White"
-                BorderBrush="#BBC5C1" BorderThickness="1" CornerRadius="4">
+        <Border x:Name="OutputPathBar" Grid.Row="0" Margin="22,16,22,10" Height="34"
+                Background="White" BorderBrush="#BBC5C1" BorderThickness="1"
+                CornerRadius="4" ClipToBounds="True">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="1.55*" />
@@ -152,7 +152,12 @@
                 </Grid.ColumnDefinitions>
                 <Button x:Name="SourceSelectorButton" Padding="12,0" Background="Transparent" BorderThickness="0"
                         HorizontalContentAlignment="Stretch" Click="OnChooseSourceClick"
-                        IsEnabled="{Binding CanEdit}" ToolTip="点击选择装配体或零件文件夹">
+                        ToolTip="点击选择装配体或零件文件夹">
+                    <Button.ContextMenu>
+                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                            <MenuItem Header="取消当前操作" Click="OnCancelClick" IsEnabled="{Binding CanCancel}" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="88" />
@@ -164,9 +169,16 @@
                     </Grid>
                 </Button>
                 <Border Grid.Column="1" BorderBrush="#D7DDDA" BorderThickness="1,0,0,0">
-                    <Button Padding="12,0" Background="Transparent" BorderThickness="0"
-                            HorizontalContentAlignment="Stretch" Click="OnOpenXtDirectoryClick"
-                            ToolTip="点击打开 XT 输出目录">
+                    <Button x:Name="XtDirectoryButton" Padding="12,0" Background="Transparent" BorderThickness="0"
+                            HorizontalContentAlignment="Stretch" Click="OnChooseXtDirectoryClick"
+                            ToolTip="点击设置 XT 输出目录">
+                        <Button.ContextMenu>
+                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="打开目录" Click="OnOpenXtDirectoryClick" />
+                                <MenuItem Header="恢复默认目录" Click="OnRestoreXtDirectoryClick"
+                                          IsEnabled="{Binding CanRestoreXtDirectory}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="48" />
@@ -179,9 +191,16 @@
                     </Button>
                 </Border>
                 <Border Grid.Column="2" BorderBrush="#D7DDDA" BorderThickness="1,0,0,0">
-                    <Button Padding="12,0" Background="Transparent" BorderThickness="0"
-                            HorizontalContentAlignment="Stretch" Click="OnOpenSolidWorksDirectoryClick"
-                            ToolTip="点击打开 SW 输出目录">
+                    <Button x:Name="SolidWorksDirectoryButton" Padding="12,0" Background="Transparent" BorderThickness="0"
+                            HorizontalContentAlignment="Stretch" Click="OnChooseSolidWorksDirectoryClick"
+                            ToolTip="点击设置 SW 输出目录">
+                        <Button.ContextMenu>
+                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="打开目录" Click="OnOpenSolidWorksDirectoryClick" />
+                                <MenuItem Header="恢复默认目录" Click="OnRestoreSolidWorksDirectoryClick"
+                                          IsEnabled="{Binding CanRestoreSolidWorksDirectory}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="48" />
@@ -193,6 +212,20 @@
                         </Grid>
                     </Button>
                 </Border>
+                <ProgressBar x:Name="OutputActivityBar" Grid.ColumnSpan="3" Height="3"
+                             Margin="1,0,1,0" VerticalAlignment="Bottom" IsIndeterminate="True"
+                             Background="#D9E0DD" Foreground="#14665C" IsHitTestVisible="False">
+                    <ProgressBar.Style>
+                        <Style TargetType="ProgressBar">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ProgressBar.Style>
+                </ProgressBar>
             </Grid>
         </Border>
 
@@ -297,43 +330,7 @@
                     IsEnabled="{Binding CanConvert}" />
         </Grid>
 
-        <Grid Grid.Row="3" Margin="22,0,22,9">
-            <Grid.Style>
-                <Style TargetType="Grid">
-                    <Setter Property="Visibility" Value="Collapsed" />
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsBusy}" Value="True">
-                            <Setter Property="Visibility" Value="Visible" />
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Grid.Style>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel VerticalAlignment="Center">
-                <TextBlock Text="{Binding StatusText}" Foreground="#45534F" TextTrimming="CharacterEllipsis"
-                           ToolTip="{Binding StatusText}" />
-                <ProgressBar Height="3" Margin="0,7,24,0" IsIndeterminate="True"
-                             Background="#D9E0DD" Foreground="#14665C">
-                    <ProgressBar.Style>
-                        <Style TargetType="ProgressBar">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsBusy}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </ProgressBar.Style>
-                </ProgressBar>
-            </StackPanel>
-            <Button Grid.Column="1" Content="取消" MinWidth="82"
-                    Click="OnCancelClick" IsEnabled="{Binding IsBusy}" />
-        </Grid>
-
-        <Grid x:Name="SourcePickerOverlay" Grid.RowSpan="4" Panel.ZIndex="10"
+        <Grid x:Name="SourcePickerOverlay" Grid.RowSpan="3" Panel.ZIndex="10"
               Background="#5C13211D" Visibility="Collapsed" Focusable="True"
               MouseLeftButtonDown="OnSourcePickerBackdropMouseLeftButtonDown">
             <Border Width="440" MaxWidth="440" Background="White" BorderBrush="#AEBDB7"

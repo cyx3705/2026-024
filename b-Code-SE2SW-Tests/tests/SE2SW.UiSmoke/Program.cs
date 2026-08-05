@@ -26,6 +26,7 @@ internal static class Program
             ? Path.GetFullPath(args[folderIndex + 1])
             : null;
         var compact = args.Contains("--compact", StringComparer.OrdinalIgnoreCase);
+        var busy = args.Contains("--busy", StringComparer.OrdinalIgnoreCase);
         var expandOptions = args.Contains("--expand-options", StringComparer.OrdinalIgnoreCase);
         var openSourcePicker = args.Contains("--open-source-picker", StringComparer.OrdinalIgnoreCase);
         var workspace = new SE2SWWorkspaceView();
@@ -33,6 +34,8 @@ internal static class Program
             workspace.UnifiedPage.ViewModel.SetPartDirectory(folder);
         else if (assemblyPath is not null)
             workspace.UnifiedPage.ViewModel.SetAssemblySource(assemblyPath);
+        if (busy)
+            workspace.UnifiedPage.DataContext = new BusyPreviewState();
         if (openSourcePicker)
             workspace.UnifiedPage.ShowSourcePickerForSmoke();
         var window = new Window
@@ -50,6 +53,47 @@ internal static class Program
         {
             window.Show();
             workspace.UpdateLayout();
+            if (Math.Abs(workspace.UnifiedPage.OutputPathBarHeight - 34) > 0.01)
+                throw new InvalidOperationException("顶部路径条高度必须稳定为 34 px。");
+            if (busy && workspace.UnifiedPage.OutputActivityVisibility != Visibility.Visible)
+                throw new InvalidOperationException("运行期间顶部路径条必须显示不定进度条。");
+            if (!busy && workspace.UnifiedPage.OutputActivityVisibility != Visibility.Collapsed)
+                throw new InvalidOperationException("空闲期间顶部路径条运行条必须隐藏。");
+            var sourceButton = FindVisualChildren<Button>(workspace).Single(button =>
+                string.Equals(button.Name, "SourceSelectorButton", StringComparison.Ordinal));
+            if (!sourceButton.IsEnabled)
+                throw new InvalidOperationException("来源段运行期间也必须保持右键菜单可打开。");
+            var cancelItem = sourceButton.ContextMenu?.Items.OfType<MenuItem>().SingleOrDefault(item =>
+                string.Equals(item.Header as string, "取消当前操作", StringComparison.Ordinal))
+                ?? throw new InvalidOperationException("来源段缺少“取消当前操作”右键入口。");
+            sourceButton.ContextMenu!.PlacementTarget = sourceButton;
+            sourceButton.ContextMenu.IsOpen = true;
+            workspace.UpdateLayout();
+            if (cancelItem.IsEnabled != busy)
+                throw new InvalidOperationException("来源段取消入口的启用状态与运行状态不一致。");
+            sourceButton.ContextMenu.IsOpen = false;
+            foreach (var buttonName in new[] { "XtDirectoryButton", "SolidWorksDirectoryButton" })
+            {
+                var outputButton = FindVisualChildren<Button>(workspace).Single(button =>
+                    string.Equals(button.Name, buttonName, StringComparison.Ordinal));
+                var headers = outputButton.ContextMenu?.Items.OfType<MenuItem>()
+                    .Select(item => item.Header as string).ToArray() ?? [];
+                if (!headers.Contains("打开目录", StringComparer.Ordinal)
+                    || !headers.Contains("恢复默认目录", StringComparer.Ordinal))
+                {
+                    throw new InvalidOperationException($"{buttonName} 缺少打开或恢复默认右键入口。");
+                }
+            }
+            if (FindVisualChildren<TextBlock>(workspace).Any(textBlock =>
+                    string.Equals(textBlock.Text, "Solid Edge 转 SolidWorks", StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException("V3.7 页面内部不应保留重复标题栏。");
+            }
+            if (FindVisualChildren<Button>(workspace).Any(button =>
+                    string.Equals(button.Content as string, "取消", StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException("V3.7 页面底部不应保留独立取消按钮。");
+            }
             if (FindVisualChildren<TabControl>(workspace).Any())
                 throw new InvalidOperationException("V3.6 单页不应再包含模式页签。");
             if (openSourcePicker && !FindVisualChildren<TextBlock>(workspace).Any(textBlock =>
@@ -85,6 +129,28 @@ internal static class Program
             return;
         }
         application.Run(window);
+    }
+
+    private sealed class BusyPreviewState
+    {
+        public bool IsBusy => true;
+        public bool CanEdit => false;
+        public bool CanCancel => true;
+        public bool CanConvert => false;
+        public bool CanFullyDefineSketches => false;
+        public bool CanContinueWhenPartFails => false;
+        public bool CanRebuildMates => false;
+        public bool CanRestoreXtDirectory => false;
+        public bool CanRestoreSolidWorksDirectory => false;
+        public bool IsPartDirectoryMode => false;
+        public string SourceLabel => "装配体";
+        public string SourcePath => @"C:\very-long-source-path\assembly\Top.asm";
+        public string XtDirectory => @"C:\very-long-output-path\parasolid\XT";
+        public string SolidWorksDirectory => @"C:\very-long-output-path\solidworks\SW";
+        public string PartsPanelTitle => "唯一零件";
+        public string PrimaryActionText => "转换装配体";
+        public IReadOnlyList<object> AssemblyTree => [];
+        public IReadOnlyList<object> Parts => [];
     }
 
     private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent)

@@ -36,7 +36,10 @@ public sealed record AssemblyConversionPlan(
 
 public static class AssemblyPlanner
 {
-    public static AssemblyConversionPlan Create(AssemblyProbeResult probe)
+    public static AssemblyConversionPlan Create(
+        AssemblyProbeResult probe,
+        string? customXtDirectory = null,
+        string? customSolidWorksDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(probe);
         if (!Path.IsPathFullyQualified(probe.SourceAssemblyPath)
@@ -48,7 +51,12 @@ public static class AssemblyPlanner
         var sourceAssemblyPath = Path.GetFullPath(probe.SourceAssemblyPath);
         var sourceDirectory = Path.GetDirectoryName(sourceAssemblyPath)
             ?? throw new InvalidDataException("无法解析装配体所在目录。");
-        var directories = ExternalOutputLayout.Resolve(sourceDirectory);
+        var directories = ExternalOutputLayout.Resolve(
+            sourceDirectory,
+            customXtDirectory,
+            customSolidWorksDirectory);
+        var hasCustomXtDirectory = !string.IsNullOrWhiteSpace(customXtDirectory);
+        var hasCustomSolidWorksDirectory = !string.IsNullOrWhiteSpace(customSolidWorksDirectory);
         var xtDirectory = directories.XtDirectory;
         var swDirectory = directories.SolidWorksDirectory;
         var assemblyOutputPath = ConversionPathLayout.ResolveAssemblyOutputPath(sourceAssemblyPath, swDirectory);
@@ -98,13 +106,16 @@ public static class AssemblyPlanner
         {
             var paths = ConversionPathLayout.ResolvePartPaths(path, xtDirectory, swDirectory, sourceDirectory);
             var exists = File.Exists(paths.XtPath) || File.Exists(paths.SolidWorksPath)
-                || File.Exists(paths.LegacyXtPath) || File.Exists(paths.LegacySolidWorksPath);
+                || !hasCustomXtDirectory && File.Exists(paths.LegacyXtPath)
+                || !hasCustomSolidWorksDirectory && File.Exists(paths.LegacySolidWorksPath);
             var reusableXt = File.Exists(paths.XtPath)
                 ? paths.XtPath
-                : File.Exists(paths.LegacyXtPath) ? paths.LegacyXtPath : paths.XtPath;
+                : !hasCustomXtDirectory && File.Exists(paths.LegacyXtPath) ? paths.LegacyXtPath : paths.XtPath;
             var reusableSw = File.Exists(paths.SolidWorksPath)
                 ? paths.SolidWorksPath
-                : File.Exists(paths.LegacySolidWorksPath) ? paths.LegacySolidWorksPath : paths.SolidWorksPath;
+                : !hasCustomSolidWorksDirectory && File.Exists(paths.LegacySolidWorksPath)
+                    ? paths.LegacySolidWorksPath
+                    : paths.SolidWorksPath;
             return new ScanCandidate(path, reusableXt, reusableSw, exists);
         }).ToArray();
 
