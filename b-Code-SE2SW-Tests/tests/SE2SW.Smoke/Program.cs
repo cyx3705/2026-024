@@ -503,6 +503,18 @@ static void TestCommandBusSurface(string root)
     Equal(1, scan.ExistingOutputCount, "scan 必须统计已有产物");
     True(scan.Items.Single(item => item.Source.EndsWith("Part.par", StringComparison.OrdinalIgnoreCase)).XtExists,
         "scan 必须返回 XT 已存在状态");
+
+    var assemblySource = Path.Combine(sourceDirectory, "Top.asm");
+    var assemblyPaths = commands.assemblyPaths(assemblySource);
+    Equal(Path.Combine(sourceDirectory, "SW", "Top.SLDASM"), assemblyPaths.AssemblyOutput,
+        "assemblyPaths 必须遵守 SLDASM 输出目录规则");
+    True(!Directory.Exists(assemblyPaths.SolidWorksDirectory), "只读 assemblyPaths 不得创建输出目录");
+    var probeMethod = typeof(SE2SWCommands).GetMethod(nameof(SE2SWCommands.assemblyProbe));
+    True(probeMethod is not null, "装配探查必须注册为模块公共方法");
+    True(probeMethod!.GetCustomAttributes(typeof(ModuleCommandAttribute), inherit: false)
+            .Cast<ModuleCommandAttribute>().Single().Readonly,
+        "装配探查必须声明为只读 MCP 指令");
+    Throws<FileNotFoundException>(() => commands.assemblyProbe(assemblySource).GetAwaiter().GetResult());
 }
 
 static void TestCustomOutputDirectories(string root)

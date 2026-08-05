@@ -41,6 +41,38 @@ public sealed record SE2SWScanResponse(
     int Count,
     int ExistingOutputCount);
 
+public sealed record SE2SWAssemblyPathResponse(
+    string SourceAssembly,
+    string AssemblyOutput,
+    string XtDirectory,
+    string SolidWorksDirectory);
+
+public sealed record SE2SWAssemblyNodeResponse(
+    string SourceAssembly,
+    string Output,
+    bool IsRoot,
+    int Depth,
+    int ChildCount);
+
+public sealed record SE2SWAssemblyProbeResponse(
+    string SourceAssembly,
+    string AssemblyOutput,
+    string XtDirectory,
+    string SolidWorksDirectory,
+    bool CanConvert,
+    int OccurrenceCount,
+    int PartCount,
+    int ExistingOutputCount,
+    int SuppressedCount,
+    int UnresolvedCount,
+    int SubAssemblyCount,
+    int MaxDepth,
+    int RelationCount,
+    IReadOnlyList<SE2SWScanItem> Parts,
+    IReadOnlyList<SE2SWAssemblyNodeResponse> Nodes,
+    IReadOnlyList<AssemblyPlanIssue> BlockingIssues,
+    IReadOnlyList<string> Warnings);
+
 public sealed class SE2SWCommands
 {
     /// <summary>说明如何显示 SE2SW 内嵌工具窗口。</summary>
@@ -118,7 +150,111 @@ public sealed class SE2SWCommands
             items.Count(item => item.HasExistingOutput));
     }
 
+    /// <summary>解析 Solid Edge 装配体对应的 SolidWorks 装配输出路径，不启动 CAD 或创建目录。</summary>
+    /// <param name="source">Solid Edge .asm 文件路径。</param>
+    /// <param name="xt">可选的 XT 输出目录；空值使用源目录下的 XT。</param>
+    /// <param name="sw">可选的 SolidWorks 输出目录；空值使用源目录下的 SW。</param>
+    [ModuleCommand(Readonly = true)]
+    public SE2SWAssemblyPathResponse assemblyPaths(string source, string xt = "", string sw = "")
+    {
+        var sourcePath = NormalizeAssemblyPath(source, requireExisting: false);
+        var sourceDirectory = Path.GetDirectoryName(sourcePath)!;
+        var directories = ExternalOutputLayout.Resolve(sourceDirectory, xt, sw);
+        return new SE2SWAssemblyPathResponse(
+            sourcePath,
+            ConversionPathLayout.ResolveAssemblyOutputPath(sourcePath, directories.SolidWorksDirectory),
+            directories.XtDirectory,
+            directories.SolidWorksDirectory);
+    }
+
+    /// <summary>只读探查 Solid Edge 装配体并返回层级、零件、关系、阻塞问题和计划输出，不执行转换。</summary>
+    /// <param name="source">存在的 Solid Edge .asm 文件路径。</param>
+    /// <param name="xt">可选的 XT 输出目录；空值使用源目录下的 XT。</param>
+    /// <param name="sw">可选的 SolidWorks 输出目录；空值使用源目录下的 SW。</param>
+    [ModuleCommand(Readonly = true)]
+    public async Task<SE2SWAssemblyProbeResponse> assemblyProbe(string source, string xt = "", string sw = "")
+    {
+        var sourcePath = NormalizeAssemblyPath(source, requireExisting: true);
+        PreflightValidator.ValidateEnvironment(WorkerClient.WorkerPath);
+        var batchId = Guid.NewGuid().ToString("N");
+        var resultDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            SE2SWIdentity.HostApplicationDataDirectoryName,
+            SE2SWIdentity.ModuleApplicationDataDirectoryName,
+            SE2SWIdentity.ProbesDirectoryName);
+        Directory.CreateDirectory(resultDirectory);
+        var resultPath = Path.Combine(resultDirectory, batchId + ".result.json");
+        try
+        {
+            var probe = await new WorkerClient().ProbeAssemblyAsync(
+                new AssemblyProbeRequest(batchId, sourcePath, resultPath),
+                static _ => { },
+                CancellationToken.None).ConfigureAwait(false);
+            var plan = AssemblyPlanner.Create(probe, xt, sw);
+            var parts = plan.Parts.Select(candidate => new SE2SWScanItem(
+                candidate.SourcePath,
+                candidate.XtPath,
+                candidate.SolidWorksPath,
+                File.Exists(candidate.XtPath),
+                File.Exists(candidate.SolidWorksPath),
+                candidate.HasExistingOutput)).ToArray();
+            var nodes = (plan.Nodes ?? []).Select(node => new SE2SWAssemblyNodeResponse(
+                node.SourceAssemblyPath,
+                node.OutputPath,
+                node.IsRoot,
+                node.Depth,
+                node.Children.Count)).ToArray();
+            return new SE2SWAssemblyProbeResponse(
+                plan.SourceAssemblyPath,
+                plan.AssemblyOutputPath,
+                plan.XtDirectory,
+                plan.SolidWorksDirectory,
+                plan.CanConvert,
+                plan.Occurrences.Count,
+                plan.Parts.Count,
+                plan.Parts.Count(part => part.HasExistingOutput),
+                probe.SuppressedCount,
+                probe.UnresolvedCount,
+                plan.SubAssemblyCount,
+                plan.MaxDepth,
+                plan.RelationCount,
+                parts,
+                nodes,
+                plan.BlockingIssues,
+                plan.Warnings);
+        }
+        finally
+        {
+            TryDelete(resultPath);
+            TryDelete(resultPath + ".tmp");
+        }
+    }
+
     private string Version => typeof(ModuleInfo).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+
+    private static string NormalizeAssemblyPath(string source, bool requireExisting)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+            throw new ArgumentException("source 不能为空。", nameof(source));
+        var sourcePath = Path.GetFullPath(source.Trim());
+        if (!ConversionPathLayout.HasExtension(sourcePath, ConversionPathLayout.SolidEdgeAssemblyExtension))
+            throw new ArgumentException("source 必须是 Solid Edge .asm 文件。", nameof(source));
+        if (requireExisting && !File.Exists(sourcePath))
+            throw new FileNotFoundException("Solid Edge 装配体不存在。", sourcePath);
+        return sourcePath;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+    }
 
     private static bool IsComRegistered(string progId)
     {
