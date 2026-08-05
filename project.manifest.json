@@ -1,30 +1,37 @@
 {
   "schemaVersion": 1,
   "template": {
-    "isTemplate": true,
-    "source": "0000-000-Template",
+    "isTemplate": false,
+    "source": "0000-001-AIReady",
     "strictValidationArgument": "-Instantiation"
   },
   "project": {
-    "id": "0000-001",
-    "name": "AIReady",
-    "title": "OneHistory AI-Ready 项目模板",
+    "id": "2026-024",
+    "name": "SE2SW",
+    "title": "SE2SW Solid Edge 到 SolidWorks 转换工具",
     "kind": [
-      "template",
-      "multidisciplinary"
+      "software",
+      "cad-automation",
+      "ohs-module"
     ],
-    "status": "template"
+    "status": "active"
   },
   "paths": {
     "activeRoots": [
       "b-Office/current",
       "b-Office/package",
-      "b-Code"
+      "b-Code",
+      "b-Code-SE2SW",
+      "z-SE2SW"
     ],
     "sourceRoots": [
-      "b-Code"
+      "b-Code",
+      "b-Code-SE2SW"
     ],
-    "generatedRoots": [],
+    "generatedRoots": [
+      "b-Code-SE2SW/**/bin",
+      "b-Code-SE2SW/**/obj"
+    ],
     "archiveRoots": [
       "b-Office/history"
     ],
@@ -42,17 +49,25 @@
     "technicalContract": "b-Office/current/技术合同.md",
     "decisions": "b-Office/current/有效决策.md",
     "verification": "b-Office/current/验证合同.md",
+    "roadmap": "b-Office/current/V3.7.0计划.md",
+    "architectureDiagram": "b-Office/current/SE2SW转换架构.drawio",
     "historyBoundary": "b-Office/history/历史资料说明.md"
   },
   "commands": {
-    "setup": null,
-    "build": null,
-    "test": null,
-    "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code\\Test-ProjectContract.ps1",
+    "setup": "dotnet restore .\\b-Code-SE2SW\\src\\SE2SW\\SE2SW.csproj --configfile .\\b-Code-SE2SW\\nuget.config -p:NuGetAudit=false",
+    "build": "dotnet build .\\b-Code-SE2SW\\src\\SE2SW\\SE2SW.csproj -c Release -p:NuGetAudit=false",
+    "test": "dotnet run --project .\\b-Code-SE2SW\\tests\\SE2SW.Smoke\\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false",
+    "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code\\Test-ProjectContract.ps1 -Instantiation",
     "run": null,
     "package": null
   },
-  "externalDependencies": [],
+  "externalDependencies": [
+    ".NET 8 SDK and Windows Desktop Runtime",
+    "OneHistory.AppShell.Core 3.0.3",
+    "Solid Edge 2020 COM automation",
+    "SolidWorks 2025 SP5 COM automation",
+    "SolidWorks FeatureWorks"
+  ],
   "contextExclusions": [
     "b-Office/history/**",
     "b-Publish/**",

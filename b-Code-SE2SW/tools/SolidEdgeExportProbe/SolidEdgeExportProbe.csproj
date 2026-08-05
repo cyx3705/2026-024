@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>SolidEdgeExportProbe</AssemblyName>
+    <RootNamespace>SolidEdgeExportProbe</RootNamespace>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!--
+    COM 引用按 TypeLib GUID 从注册表解析，不硬编码 Solid Edge 安装路径。
+    GUID 来源：Solid Edge 官方样例工程
+      Custom\Batch\Batch.vbproj            -> SolidEdgeFramework / SolidEdgeConstants
+      Custom\DynAttrib\DynAttrib.vbproj    -> SolidEdgePart
+    EmbedInteropTypes=true：只把实际用到的类型嵌入本程序集，不分发 Siemens PIA。
+  -->
+  <ItemGroup>
+    <COMReference Include="SolidEdgeFramework">
+      <Guid>{8A7EFA3A-F000-11D1-BDFC-080036B4D502}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="SolidEdgeConstants">
+      <Guid>{C467A6F5-27ED-11D2-BE30-080036B4D502}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+    <!-- 进程内 ActiveX DLL：读取安装版本与 Parasolid 版本，不会启动 Solid Edge。 -->
+    <COMReference Include="SEInstallDataLib">
+      <Guid>{42E04299-18A0-11D5-BBB2-00C04F79BEA5}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="SolidEdgePart">
+      <Guid>{8A7EFA42-F000-11D1-BDFC-080036B4D502}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+  </ItemGroup>
+
+</Project>

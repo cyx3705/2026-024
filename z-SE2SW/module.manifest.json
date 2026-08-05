@@ -1,0 +1,16 @@
+{
+    "name":  "SE2SW",
+    "version":  "3.6.7",
+    "description":  "Solid Edge 零件文件夹与装配体单页自适应转换；FeatureWorks 标准零件自动识别与语义、几何安全守卫",
+    "artifact":  "b-Code-SE2SW/src/SE2SW/bin/Release/net8.0-windows/SE2SW.dll",
+    "docs":  "b-Code-SE2SW/src/SE2SW/bin/Release/net8.0-windows/SE2SW.xml",
+    "deps":  [
+                 "b-Code-SE2SW/src/SE2SW/bin/Release/net8.0-windows/SE2SW.Contracts.dll",
+                 "b-Code-SE2SW/src/SE2SW/bin/Release/net8.0-windows/SE2SW.Worker.exe",
+                 "b-Code-SE2SW/src/SE2SW/bin/Release/net8.0-windows/SE2SW.Worker.dll",
+                 "b-Code-SE2SW/src/SE2SW/bin/Release/net8.0-windows/SE2SW.Worker.deps.json",
+                 "b-Code-SE2SW/src/SE2SW/bin/Release/net8.0-windows/SE2SW.Worker.runtimeconfig.json"
+             ],
+    "mcpExposure":  "hidden",
+    "ui":  true
+}
