@@ -113,6 +113,15 @@ $snapshotJson = $snapshot | ConvertTo-Json -Depth 4
     $snapshotJson + [Environment]::NewLine,
     [System.Text.UTF8Encoding]::new($false))
 
+# Git stores package JSON/XML with LF. Normalize before hashing so a clean checkout
+# preserves exactly the bytes declared by SHA256SUMS.
+foreach ($textFile in Get-ChildItem -LiteralPath $OutputRoot -File |
+             Where-Object { $_.Extension -in @('.json', '.xml') }) {
+    $text = [System.IO.File]::ReadAllText($textFile.FullName, [System.Text.UTF8Encoding]::new($false))
+    $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    [System.IO.File]::WriteAllText($textFile.FullName, $text, [System.Text.UTF8Encoding]::new($false))
+}
+
 $privateHostDlls = @(Get-ChildItem -LiteralPath $OutputRoot -Filter 'AppShell*.dll' -File)
 if ($privateHostDlls.Count -ne 0) {
     throw "Mapping package must not carry AppShell DLLs: $($privateHostDlls.Name -join ', ')"
