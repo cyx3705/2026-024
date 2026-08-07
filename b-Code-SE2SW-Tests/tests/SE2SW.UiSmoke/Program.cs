@@ -28,7 +28,6 @@ internal static class Program
         var compact = args.Contains("--compact", StringComparer.OrdinalIgnoreCase);
         var busy = args.Contains("--busy", StringComparer.OrdinalIgnoreCase);
         var expandOptions = args.Contains("--expand-options", StringComparer.OrdinalIgnoreCase);
-        var openSourcePicker = args.Contains("--open-source-picker", StringComparer.OrdinalIgnoreCase);
         var workspace = new SE2SWWorkspaceView();
         if (folder is not null)
             workspace.UnifiedPage.ViewModel.SetPartDirectory(folder);
@@ -36,13 +35,11 @@ internal static class Program
             workspace.UnifiedPage.ViewModel.SetAssemblySource(assemblyPath);
         if (busy)
             workspace.UnifiedPage.DataContext = new BusyPreviewState();
-        if (openSourcePicker)
-            workspace.UnifiedPage.ShowSourcePickerForSmoke();
         var window = new Window
         {
             Title = folder is not null
-                ? "SE2SW UI Smoke · 零件文件夹"
-                : showAssembly ? "SE2SW UI Smoke · 装配体" : "SE2SW UI Smoke · 选择来源",
+                ? "Mapping UI Smoke · 零件文件夹"
+                : showAssembly ? "Mapping UI Smoke · 装配体" : "Mapping UI Smoke · 选择来源",
             Width = compact ? 820 : 1280,
             Height = compact ? 620 : 820,
             Content = workspace,
@@ -72,17 +69,14 @@ internal static class Program
             if (cancelItem.IsEnabled != busy)
                 throw new InvalidOperationException("来源段取消入口的启用状态与运行状态不一致。");
             sourceButton.ContextMenu.IsOpen = false;
-            foreach (var buttonName in new[] { "XtDirectoryButton", "SolidWorksDirectoryButton" })
+            var contentSelector = FindVisualChildren<ComboBox>(workspace).Single(comboBox =>
+                string.Equals(comboBox.Name, "MappingContentSelector", StringComparison.Ordinal));
+            if (contentSelector.Items.Count != 2)
+                throw new InvalidOperationException("顶栏必须只提供两种转换内容。");
+            if (FindVisualChildren<Button>(workspace).Any(button =>
+                    button.Name is "XtDirectoryButton" or "SolidWorksDirectoryButton"))
             {
-                var outputButton = FindVisualChildren<Button>(workspace).Single(button =>
-                    string.Equals(button.Name, buttonName, StringComparison.Ordinal));
-                var headers = outputButton.ContextMenu?.Items.OfType<MenuItem>()
-                    .Select(item => item.Header as string).ToArray() ?? [];
-                if (!headers.Contains("打开目录", StringComparer.Ordinal)
-                    || !headers.Contains("恢复默认目录", StringComparer.Ordinal))
-                {
-                    throw new InvalidOperationException($"{buttonName} 缺少打开或恢复默认右键入口。");
-                }
+                throw new InvalidOperationException("顶栏不得保留 XT 或 SW 输出目录栏。");
             }
             if (FindVisualChildren<TextBlock>(workspace).Any(textBlock =>
                     string.Equals(textBlock.Text, "Solid Edge 转 SolidWorks", StringComparison.Ordinal)))
@@ -96,11 +90,6 @@ internal static class Program
             }
             if (FindVisualChildren<TabControl>(workspace).Any())
                 throw new InvalidOperationException("V3.6 单页不应再包含模式页签。");
-            if (openSourcePicker && !FindVisualChildren<TextBlock>(workspace).Any(textBlock =>
-                    string.Equals(textBlock.Text, "选择转换来源", StringComparison.Ordinal)))
-            {
-                throw new InvalidOperationException("来源选择面板未显示。");
-            }
             if (FindVisualChildren<Button>(workspace).Any(button =>
                     string.Equals(button.Content as string, "解析装配体", StringComparison.Ordinal)))
             {

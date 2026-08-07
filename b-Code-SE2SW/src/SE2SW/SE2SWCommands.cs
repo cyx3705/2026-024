@@ -75,29 +75,29 @@ public sealed record SE2SWAssemblyProbeResponse(
 
 public sealed class SE2SWCommands
 {
-    /// <summary>说明如何显示 SE2SW 内嵌工具窗口。</summary>
+    /// <summary>说明如何显示 Mapping 内嵌工具窗口。</summary>
     [ModuleCommand(Readonly = true)]
     public string show()
     {
-        return "win.show name=se2sw；窗口内可选择“零件转换”“装配转换”或“OHS 兼容”模式";
+        return "win.show name=mapping；窗口内可选择 .par → .SLDPRT 或 .asm → .SLDASM";
     }
 
-    /// <summary>说明如何隐藏 SE2SW 内嵌工具窗口。</summary>
+    /// <summary>说明如何隐藏 Mapping 内嵌工具窗口。</summary>
     [ModuleCommand(Readonly = true)]
     public string hide()
     {
-        return "win.hide name=se2sw";
+        return "win.hide name=mapping";
     }
 
-    /// <summary>返回 SE2SW 当前版本、Worker 和 CAD COM 注册状态。</summary>
+    /// <summary>返回 Mapping 当前版本、Worker 和 CAD COM 注册状态。</summary>
     [ModuleCommand(Readonly = true)]
     public SE2SWStatus status()
     {
         var workerPath = WorkerLocator.Locate();
         return new SE2SWStatus(
-            Module: "se2sw",
+            Module: "mapping",
             Version: Version,
-            WindowId: "se2sw",
+            WindowId: "mapping",
             WorkerPresent: File.Exists(workerPath),
             WorkerPath: workerPath,
             SolidEdgeComRegistered: IsComRegistered("SolidEdge.Application"),

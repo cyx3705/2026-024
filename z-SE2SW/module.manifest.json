@@ -1,7 +1,7 @@
 {
-    "name":  "SE2SW",
-    "version":  "3.9.0",
-    "description":  "Solid Edge 零件文件夹与装配体单页自适应转换；FeatureWorks 标准零件自动识别与语义、几何安全守卫",
+    "name":  "Mapping",
+    "version":  "4.0.0",
+    "description":  "面向受控文件处理的 Mapping 模块；当前提供 Solid Edge 到 SolidWorks 的零件和装配体映射",
     "artifact":  "b-Code-SE2SW/src/SE2SW/bin/Release/net8.0-windows/SE2SW.dll",
     "docs":  "b-Code-SE2SW/src/SE2SW/bin/Release/net8.0-windows/SE2SW.xml",
     "deps":  [

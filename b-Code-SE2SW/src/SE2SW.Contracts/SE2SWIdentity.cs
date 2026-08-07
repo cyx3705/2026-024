@@ -5,7 +5,7 @@ namespace SE2SW.Contracts;
 /// </summary>
 public static class SE2SWIdentity
 {
-    public const string ModuleSlotName = "SE2SW";
+    public const string ModuleSlotName = "Mapping";
     public const string WorkerFileName = "SE2SW.Worker.exe";
     public const string HostApplicationDataDirectoryName = "OneHistoryStudio";
     public const string ModuleApplicationDataDirectoryName = "SE2SW";

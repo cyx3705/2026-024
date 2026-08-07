@@ -16,10 +16,10 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware
             return;
         _windows.Add(ShellUi.RegisterToolWindow(new ToolWindowDescriptor
         {
-            Id = "se2sw",
-            Title = "SE2SW",
+            Id = "mapping",
+            Title = "Mapping",
             ContentFactory = static () => new SE2SWWorkspaceView(),
-        }, "SE2SW"));
+        }, "Mapping"));
     }
 
     public void DestroyUi()

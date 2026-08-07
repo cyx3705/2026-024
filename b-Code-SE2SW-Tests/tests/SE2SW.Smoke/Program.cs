@@ -478,8 +478,9 @@ static void TestCommandBusSurface(string root)
 {
     var commands = new SE2SWCommands();
     var status = commands.status();
-    Equal("se2sw", status.Module, "命令总线状态必须声明稳定模块名");
-    Equal("se2sw", status.WindowId, "命令总线状态必须声明稳定窗口 ID");
+    Equal("mapping", new ModuleInfo().ModuleName, "模块元数据必须使用 Mapping 命令域");
+    Equal("mapping", status.Module, "命令总线状态必须声明 Mapping 模块名");
+    Equal("mapping", status.WindowId, "命令总线状态必须声明 Mapping 窗口 ID");
     Equal(ReadVersionFromSingleSource(), status.Version, "命令总线状态版本必须来自统一版本源");
     True(status.SupportedSources.Contains(".par"), "命令总线状态必须声明 Solid Edge 零件输入");
     True(status.SupportedSources.Contains(".asm"), "命令总线状态必须声明 Solid Edge 装配输入");
@@ -1698,8 +1699,8 @@ static void TestUiModuleRegistration()
     module.CreateUi();
     Equal(1, registrar.Descriptors.Count, "模块应只注册一个单页工具窗口");
     var descriptor = registrar.Descriptors.Single();
-    Equal("se2sw", descriptor.Id, "必须保留稳定窗口 ID se2sw");
-    Equal("SE2SW", descriptor.Title, "窗口标题必须收敛为通用名称 SE2SW");
+    Equal("mapping", descriptor.Id, "窗口 ID 必须升级为 mapping");
+    Equal("Mapping", descriptor.Title, "窗口标题必须使用通用名称 Mapping");
     True(descriptor.ContentFactory != null, "单页工具窗口必须提供内容工厂");
     Equal(DockSide.Right, descriptor.DefaultSide, "窗口应保持 AppShell 普通右侧工具窗口语义");
     module.DestroyUi();
@@ -1718,8 +1719,13 @@ static void TestUnifiedSourceWorkspace()
                 "单页工作区默认必须等待用户选择来源");
             True(workspace.UnifiedPage.ViewModel.SourcePath.Length == 0,
                 "未选择来源时不能残留旧路径");
-            Equal("转换装配体", workspace.UnifiedPage.ViewModel.PrimaryActionText,
-                "未选择来源时主按钮使用装配体占位文案");
+            Equal(2, workspace.UnifiedPage.ViewModel.MappingContents.Count,
+                "通用 Mapping 页面必须只提供当前支持的两种转换内容");
+            Equal(MappingContent.SolidEdgePartToSolidWorksPart,
+                workspace.UnifiedPage.ViewModel.SelectedMappingContent.Kind,
+                "默认转换内容必须是 .par → .SLDPRT");
+            Equal("转换全部零件", workspace.UnifiedPage.ViewModel.PrimaryActionText,
+                "未选择来源时主按钮必须遵循当前转换内容");
         }
         catch (Exception ex)
         {

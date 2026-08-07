@@ -1,9 +1,7 @@
 using Microsoft.Win32;
-using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 
 namespace SE2SW;
 
@@ -21,20 +19,21 @@ public partial class AssemblyView : UserControl, IDisposable
     internal double OutputPathBarHeight => OutputPathBar.ActualHeight;
     internal Visibility OutputActivityVisibility => OutputActivityBar.Visibility;
 
-    private void OnChooseSourceClick(object sender, RoutedEventArgs e)
+    private async void OnChooseSourceClick(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanEdit)
             return;
-        SourcePickerOverlay.Visibility = Visibility.Visible;
-        SourcePickerOverlay.Focus();
+        if (_viewModel.SelectedMappingContent.Kind == MappingContent.SolidEdgeAssemblyToSolidWorksAssembly)
+            await ChooseAssemblyAsync();
+        else
+            ChoosePartDirectory();
     }
 
-    private async void OnChooseAssemblyClick(object sender, RoutedEventArgs e)
+    private async Task ChooseAssemblyAsync()
     {
-        HideSourcePicker();
         var dialog = new OpenFileDialog
         {
-            Title = "选择 Solid Edge 装配体",
+            Title = "选择 Solid Edge 装配体来源",
             Filter = "Solid Edge 装配体 (*.asm)|*.asm|所有文件 (*.*)|*.*",
             CheckFileExists = true,
             Multiselect = false,
@@ -49,12 +48,11 @@ public partial class AssemblyView : UserControl, IDisposable
         }
     }
 
-    private void OnChoosePartDirectoryClick(object sender, RoutedEventArgs e)
+    private void ChoosePartDirectory()
     {
-        HideSourcePicker();
         var dialog = new OpenFolderDialog
         {
-            Title = "选择 Solid Edge 零件文件夹",
+            Title = "选择 Solid Edge 零件来源文件夹",
             Multiselect = false,
         };
         var currentDirectory = _viewModel.IsPartDirectoryMode
@@ -74,7 +72,7 @@ public partial class AssemblyView : UserControl, IDisposable
             MessageBox.Show(
                 Window.GetWindow(this),
                 exception.Message,
-                "SE2SW",
+                "Mapping",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
@@ -83,127 +81,8 @@ public partial class AssemblyView : UserControl, IDisposable
     private async void OnConvertClick(object sender, RoutedEventArgs e)
         => await _viewModel.ConvertAsync();
 
-    private void OnChooseXtDirectoryClick(object sender, RoutedEventArgs e)
-        => ChooseOutputDirectory(
-            "选择 XT 输出目录",
-            _viewModel.XtDirectory,
-            _viewModel.SetXtOutputDirectory);
-
-    private void OnChooseSolidWorksDirectoryClick(object sender, RoutedEventArgs e)
-        => ChooseOutputDirectory(
-            "选择 SW 输出目录",
-            _viewModel.SolidWorksDirectory,
-            _viewModel.SetSolidWorksOutputDirectory);
-
-    private void OnOpenXtDirectoryClick(object sender, RoutedEventArgs e)
-        => OpenDirectory(_viewModel.XtDirectory, "XT 输出目录");
-
-    private void OnOpenSolidWorksDirectoryClick(object sender, RoutedEventArgs e)
-        => OpenDirectory(_viewModel.SolidWorksDirectory, "SW 输出目录");
-
-    private void OnRestoreXtDirectoryClick(object sender, RoutedEventArgs e)
-        => _viewModel.RestoreDefaultXtDirectory();
-
-    private void OnRestoreSolidWorksDirectoryClick(object sender, RoutedEventArgs e)
-        => _viewModel.RestoreDefaultSolidWorksDirectory();
-
     private void OnCancelClick(object sender, RoutedEventArgs e)
         => _viewModel.Cancel();
-
-    private void OnCloseSourcePickerClick(object sender, RoutedEventArgs e)
-        => HideSourcePicker();
-
-    private void OnSourcePickerBackdropMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.OriginalSource == SourcePickerOverlay)
-            HideSourcePicker();
-    }
-
-    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Escape && SourcePickerOverlay.Visibility == Visibility.Visible)
-        {
-            HideSourcePicker();
-            e.Handled = true;
-        }
-    }
-
-    internal void ShowSourcePickerForSmoke()
-    {
-        SourcePickerOverlay.Visibility = Visibility.Visible;
-    }
-
-    private void HideSourcePicker()
-        => SourcePickerOverlay.Visibility = Visibility.Collapsed;
-
-    private void ChooseOutputDirectory(string title, string currentDirectory, Action<string> apply)
-    {
-        if (!_viewModel.CanEdit || string.IsNullOrWhiteSpace(_viewModel.SourcePath))
-            return;
-        var dialog = new OpenFolderDialog
-        {
-            Title = title,
-            Multiselect = false,
-        };
-        if (Directory.Exists(currentDirectory))
-            dialog.InitialDirectory = currentDirectory;
-        else
-        {
-            var sourceDirectory = _viewModel.IsPartDirectoryMode
-                ? _viewModel.SourcePath
-                : Path.GetDirectoryName(_viewModel.SourcePath);
-            if (Directory.Exists(sourceDirectory))
-                dialog.InitialDirectory = sourceDirectory;
-        }
-        if (dialog.ShowDialog(Window.GetWindow(this)) != true)
-            return;
-
-        try
-        {
-            apply(dialog.FolderName);
-        }
-        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
-        {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                exception.Message,
-                "SE2SW",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        }
-    }
-
-    private void OpenDirectory(string directory, string label)
-    {
-        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
-        {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                $"{label}尚未生成。完成一次转换后可从这里直接打开。\n{directory}",
-                "SE2SW",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = directory,
-                UseShellExecute = true,
-            });
-        }
-        catch (Exception exception)
-        {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                $"无法打开{label}：{exception.Message}",
-                "SE2SW",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        }
-    }
 
     public void Dispose()
         => _viewModel.Dispose();

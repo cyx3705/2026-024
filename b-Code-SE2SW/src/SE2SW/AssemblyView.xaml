@@ -6,7 +6,7 @@
         Background="#F3F5F4"
         FontFamily="Microsoft YaHei UI"
         FontSize="13"
-        PreviewKeyDown="OnPreviewKeyDown">
+        >
     <UserControl.Resources>
         <Style TargetType="Button">
             <Setter Property="Height" Value="34" />
@@ -62,40 +62,6 @@
             <Setter Property="BorderThickness" Value="0,0,1,1" />
             <Setter Property="Padding" Value="10,0" />
         </Style>
-        <Style x:Key="SourcePickerOption" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Height" Value="72" />
-            <Setter Property="Padding" Value="16,0" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="OptionBorder" Padding="{TemplateBinding Padding}"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="1,0,1,0">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="OptionBorder" Property="Background" Value="#EDF5F2" />
-                                <Setter TargetName="OptionBorder" Property="BorderBrush" Value="#9DBBB2" />
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="OptionBorder" Property="Background" Value="#EDF5F2" />
-                                <Setter TargetName="OptionBorder" Property="BorderBrush" Value="#14665C" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="OptionBorder" Property="Background" Value="#DCEDE7" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
         <Style x:Key="HorizontalOptionExpander" TargetType="Expander">
             <Setter Property="Template">
                 <Setter.Value>
@@ -146,9 +112,8 @@
                 CornerRadius="4" ClipToBounds="True">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.55*" />
-                    <ColumnDefinition Width="0.85*" />
-                    <ColumnDefinition Width="0.85*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Button x:Name="SourceSelectorButton" Padding="12,0" Background="Transparent" BorderThickness="0"
                         HorizontalContentAlignment="Stretch" Click="OnChooseSourceClick"
@@ -168,51 +133,22 @@
                                    Foreground="#283431" VerticalAlignment="Center" ToolTip="{Binding SourcePath}" />
                     </Grid>
                 </Button>
-                <Border Grid.Column="1" BorderBrush="#D7DDDA" BorderThickness="1,0,0,0">
-                    <Button x:Name="XtDirectoryButton" Padding="12,0" Background="Transparent" BorderThickness="0"
-                            HorizontalContentAlignment="Stretch" Click="OnChooseXtDirectoryClick"
-                            ToolTip="点击设置 XT 输出目录">
-                        <Button.ContextMenu>
-                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                <MenuItem Header="打开目录" Click="OnOpenXtDirectoryClick" />
-                                <MenuItem Header="恢复默认目录" Click="OnRestoreXtDirectoryClick"
-                                          IsEnabled="{Binding CanRestoreXtDirectory}" />
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="48" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="XT 目录" Foreground="#71807B" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Margin="6,0,0,0" Text="{Binding XtDirectory}" TextTrimming="CharacterEllipsis"
-                                       Foreground="#283431" VerticalAlignment="Center" ToolTip="{Binding XtDirectory}" />
-                        </Grid>
-                    </Button>
+                <Border Grid.Column="1" BorderBrush="#D7DDDA" BorderThickness="1,0,0,0" Padding="12,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="72" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="转换内容" Foreground="#596762" VerticalAlignment="Center" />
+                        <ComboBox x:Name="MappingContentSelector" Grid.Column="1" Margin="6,0,0,0"
+                                  ItemsSource="{Binding MappingContents}"
+                                  SelectedItem="{Binding SelectedMappingContent, Mode=TwoWay}"
+                                  DisplayMemberPath="DisplayName"
+                                  ToolTip="选择来源内容与目标文件类型"
+                                  IsEnabled="{Binding CanEdit}" />
+                    </Grid>
                 </Border>
-                <Border Grid.Column="2" BorderBrush="#D7DDDA" BorderThickness="1,0,0,0">
-                    <Button x:Name="SolidWorksDirectoryButton" Padding="12,0" Background="Transparent" BorderThickness="0"
-                            HorizontalContentAlignment="Stretch" Click="OnChooseSolidWorksDirectoryClick"
-                            ToolTip="点击设置 SW 输出目录">
-                        <Button.ContextMenu>
-                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                <MenuItem Header="打开目录" Click="OnOpenSolidWorksDirectoryClick" />
-                                <MenuItem Header="恢复默认目录" Click="OnRestoreSolidWorksDirectoryClick"
-                                          IsEnabled="{Binding CanRestoreSolidWorksDirectory}" />
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="48" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="SW 目录" Foreground="#71807B" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Margin="6,0,0,0" Text="{Binding SolidWorksDirectory}" TextTrimming="CharacterEllipsis"
-                                       Foreground="#283431" VerticalAlignment="Center" ToolTip="{Binding SolidWorksDirectory}" />
-                        </Grid>
-                    </Button>
-                </Border>
-                <ProgressBar x:Name="OutputActivityBar" Grid.ColumnSpan="3" Height="3"
+                <ProgressBar x:Name="OutputActivityBar" Grid.ColumnSpan="2" Height="3"
                              Margin="1,0,1,0" VerticalAlignment="Bottom" IsIndeterminate="True"
                              Background="#D9E0DD" Foreground="#14665C" IsHitTestVisible="False">
                     <ProgressBar.Style>
@@ -330,84 +266,5 @@
                     IsEnabled="{Binding CanConvert}" />
         </Grid>
 
-        <Grid x:Name="SourcePickerOverlay" Grid.RowSpan="3" Panel.ZIndex="10"
-              Background="#5C13211D" Visibility="Collapsed" Focusable="True"
-              MouseLeftButtonDown="OnSourcePickerBackdropMouseLeftButtonDown">
-            <Border Width="440" MaxWidth="440" Background="White" BorderBrush="#AEBDB7"
-                    BorderThickness="1" CornerRadius="6" Padding="0"
-                    HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="18" ShadowDepth="5" Opacity="0.22" Color="#263A34" />
-                </Border.Effect>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid Margin="20,17,12,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="32" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="选择转换来源" FontSize="17" FontWeight="SemiBold"
-                                       Foreground="#20312D" />
-                            <TextBlock Text="选择需要转换的 Solid Edge 内容" Margin="0,4,0,0"
-                                       Foreground="#66756F" />
-                        </StackPanel>
-                        <Button Grid.Column="1" Width="28" Height="28" Padding="0" Content="X"
-                                Background="Transparent" BorderBrush="Transparent"
-                                ToolTip="关闭" Click="OnCloseSourcePickerClick" />
-                    </Grid>
-                    <Button Grid.Row="1" Style="{StaticResource SourcePickerOption}"
-                            Click="OnChooseAssemblyClick">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="60" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Border Width="42" Height="30" Background="#E1F0EA" CornerRadius="3"
-                                    VerticalAlignment="Center">
-                                <TextBlock Text="ASM" Foreground="#14665C" FontWeight="SemiBold"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="装配体" FontWeight="SemiBold" Foreground="#263734" />
-                                <TextBlock Text="解析结构、位置与装配关系" Margin="0,3,0,0"
-                                           Foreground="#71807B" FontSize="12" />
-                            </StackPanel>
-                            <TextBlock Grid.Column="2" Text=">" FontSize="18" Foreground="#5C766D"
-                                       Margin="12,0,2,0" VerticalAlignment="Center" />
-                        </Grid>
-                    </Button>
-                    <Button Grid.Row="2" Style="{StaticResource SourcePickerOption}"
-                            Click="OnChoosePartDirectoryClick">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="60" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Border Width="42" Height="30" Background="#EEF1F0" CornerRadius="3"
-                                    VerticalAlignment="Center">
-                                <TextBlock Text="PAR" Foreground="#405B53" FontWeight="SemiBold"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="零件文件夹" FontWeight="SemiBold" Foreground="#263734" />
-                                <TextBlock Text="转换所选目录顶层的零件" Margin="0,3,0,0"
-                                           Foreground="#71807B" FontSize="12" />
-                            </StackPanel>
-                            <TextBlock Grid.Column="2" Text=">" FontSize="18" Foreground="#5C766D"
-                                       Margin="12,0,2,0" VerticalAlignment="Center" />
-                        </Grid>
-                    </Button>
-                    <Border Grid.Row="3" Height="1" Background="#DCE2DF" />
-                </Grid>
-            </Border>
-        </Grid>
     </Grid>
 </UserControl>

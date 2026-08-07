@@ -21,13 +21,14 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private readonly Queue<Action> _pendingUiUpdates = new();
     private string _sourceAssemblyPath = string.Empty;
     private string _partDirectory = string.Empty;
+    private MappingContentOption _selectedMappingContent = MappingContentOption.Available[0];
     private ConversionSourceKind _sourceKind;
     private string _xtDirectory = string.Empty;
     private string _solidWorksDirectory = string.Empty;
     private string? _customXtDirectory;
     private string? _customSolidWorksDirectory;
     private string _assemblyOutputPath = string.Empty;
-    private string _statusText = "请选择装配体或零件文件夹";
+    private string _statusText = "请选择转换来源";
     private string _warningSummary = string.Empty;
     private bool _isBusy;
     private bool _isProbing;
@@ -50,6 +51,37 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
 
     public ObservableCollection<AssemblyTreeNode> AssemblyTree { get; } = [];
     public ObservableCollection<ConversionFileRow> Parts { get; } = [];
+
+    public IReadOnlyList<MappingContentOption> MappingContents => MappingContentOption.Available;
+
+    public MappingContentOption SelectedMappingContent
+    {
+        get => _selectedMappingContent;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (IsBusy || EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, value))
+                return;
+
+            _selectedMappingContent = value;
+            ClearSourceResults();
+            ResetOutputDirectories();
+            _sourceAssemblyPath = string.Empty;
+            _partDirectory = string.Empty;
+            SetSourceKind(ConversionSourceKind.None);
+            RebuildMates = false;
+            StatusText = "请选择转换来源";
+            OnPropertyChanged(nameof(PrimaryActionText));
+            OnPropertyChanged(nameof(PartsPanelTitle));
+            OnPropertyChanged(nameof(OperationText));
+            OnPropertyChanged(nameof(IsAssemblyMode));
+            OnPropertyChanged(nameof(IsPartDirectoryMode));
+            OnPropertyChanged(nameof(CanProbe));
+            OnPropertyChanged(nameof(CanConvert));
+            OnPropertyChanged();
+            NotifySourceChanged();
+        }
+    }
 
     public string SourceAssemblyPath
     {
@@ -188,14 +220,13 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         ConversionSourceKind.PartDirectory => _partDirectory,
         _ => string.Empty,
     };
-    public string SourceLabel => SourceKind switch
-    {
-        ConversionSourceKind.Assembly => "装配体",
-        ConversionSourceKind.PartDirectory => "零件文件夹",
-        _ => "选择来源",
-    };
-    public bool IsAssemblyMode => SourceKind == ConversionSourceKind.Assembly;
-    public bool IsPartDirectoryMode => SourceKind == ConversionSourceKind.PartDirectory;
+    public string SourceLabel => "转换来源";
+    public bool IsAssemblyMode => SourceKind == ConversionSourceKind.Assembly
+        || SourceKind == ConversionSourceKind.None
+        && SelectedMappingContent.Kind == MappingContent.SolidEdgeAssemblyToSolidWorksAssembly;
+    public bool IsPartDirectoryMode => SourceKind == ConversionSourceKind.PartDirectory
+        || SourceKind == ConversionSourceKind.None
+        && SelectedMappingContent.Kind == MappingContent.SolidEdgePartToSolidWorksPart;
     public bool CanEdit => !IsBusy;
     public bool CanProbe => CanEdit && IsAssemblyMode && File.Exists(SourceAssemblyPath)
         && ConversionPathLayout.HasExtension(SourceAssemblyPath, ConversionPathLayout.SolidEdgeAssemblyExtension);
@@ -204,7 +235,11 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
     public bool CanFullyDefineSketches => CanEdit && RecognizeFeatures;
     public bool CanContinueWhenPartFails => CanEdit && IsAssemblyMode;
-    public string PrimaryActionText => IsPartDirectoryMode ? "转换全部零件" : "转换装配体";
+    public string PrimaryActionText => IsPartDirectoryMode
+        || SourceKind == ConversionSourceKind.None
+        && SelectedMappingContent.Kind == MappingContent.SolidEdgePartToSolidWorksPart
+        ? "转换全部零件"
+        : "转换装配体";
     public string PartsPanelTitle => IsPartDirectoryMode ? "零件" : "唯一零件";
     public string OperationText => IsProbing
         ? "正在解析装配体"
@@ -249,6 +284,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         if (IsBusy)
             return;
 
+        SelectMappingContentForSource(MappingContent.SolidEdgeAssemblyToSolidWorksAssembly);
         ClearSourceResults();
         ResetOutputDirectories();
         _sourceAssemblyPath = Path.GetFullPath(path.Trim());
@@ -269,6 +305,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         if (!Directory.Exists(fullPath))
             throw new DirectoryNotFoundException($"文件夹不存在：{fullPath}");
 
+        SelectMappingContentForSource(MappingContent.SolidEdgePartToSolidWorksPart);
         ClearSourceResults();
         ResetOutputDirectories();
         _sourceAssemblyPath = string.Empty;
@@ -814,6 +851,15 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(RebuildMatesHint));
         OnPropertyChanged(nameof(CanProbe));
         OnPropertyChanged(nameof(CanConvert));
+    }
+
+    private void SelectMappingContentForSource(MappingContent kind)
+    {
+        var selected = MappingContentOption.Available.Single(option => option.Kind == kind);
+        if (EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, selected))
+            return;
+        _selectedMappingContent = selected;
+        OnPropertyChanged(nameof(SelectedMappingContent));
     }
 
     private void NotifySourceChanged()

@@ -28,8 +28,8 @@ if ([string]::IsNullOrWhiteSpace($version) -or $version -notmatch '^\d+\.\d+\.\d
 $manifest = [System.IO.File]::ReadAllText(
     (Resolve-Path -LiteralPath $ManifestPath),
     [System.Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
-if ($manifest.name -ne 'SE2SW') {
-    throw "清单模块名不是 SE2SW：$ManifestPath"
+if ($manifest.name -ne 'Mapping') {
+    throw "清单模块名不是 Mapping：$ManifestPath"
 }
 
 $manifest.version = $version
