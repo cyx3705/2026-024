@@ -2,7 +2,10 @@ using SE2SW;
 using SE2SW.Contracts;
 using SE2SW.Worker;
 using AppShell.Core.Docking;
+using AppShell.Core.Commands;
+using AppShell.Core.Logging;
 using AppShell.Core.Modules;
+using AppShell.Core.Storage;
 using System.Text.Json;
 using System.Windows.Threading;
 
@@ -15,12 +18,10 @@ try
     TestPartImportIsolationContracts(root);
     TestCadProcessOwnershipResolution();
     TestOhsLayoutAndScan(root);
-    TestViewModelDirectorySelection(root);
     TestMissingUnusedPreflight(root);
     TestExternalMapping(root);
     TestExternalLegacyAndDirectoryCreation(root);
     TestCustomOutputDirectories(root);
-    TestAssemblyOutputReplanning(root);
     TestSingleShotCancellation(root);
     TestDuplicateOutputRejection(root);
     TestAssemblyPlanningAndJson(root);
@@ -53,7 +54,7 @@ try
     TestAssemblyActiveRunDisposal(root);
     TestUnifiedSourceWorkspace();
     TestUnifiedPartDirectoryFlow(root);
-    TestUiModuleRegistration();
+    TestUiModuleRegistration(root);
     TestTemporaryOutput(root);
     TestParasolidTextProbe(root);
     TestFeatureRecognitionRetries();
@@ -61,7 +62,6 @@ try
     TestRecognitionGeometryGuard();
     TestRecognitionSemanticGuard();
     TestImportIdentityAndSessionFaultGuards();
-    TestActiveRunDisposal(root);
     Console.WriteLine("SE2SW.Smoke: PASS");
 }
 finally
@@ -390,55 +390,6 @@ static void TestMissingUnusedPreflight(string root)
     True(!Directory.Exists(layout.XtDirectory), "双目录预检失败时项目根不得出现 GE");
 }
 
-static void TestViewModelDirectorySelection(string root)
-{
-    var project = Path.Combine(root, "2026-902-ViewModel");
-    var source = Path.Combine(project, "b-Module-SE");
-    Directory.CreateDirectory(source);
-    File.WriteAllText(Path.Combine(source, "OhsPart.par"), "ohs");
-
-    using var projectSelection = CreateViewModel();
-    projectSelection.SetDirectory(project);
-    True(projectSelection.IsOhsMode, "选择 OHS 项目根时必须保持 OHS 模式");
-    Equal(1, projectSelection.Files.Count, "选择 OHS 项目根后应立即显示零件");
-
-    using var sourceSelection = CreateViewModel();
-    sourceSelection.SetDirectory(source);
-    True(sourceSelection.IsOhsMode, "直接选择 b-Module-SE 时必须保持 OHS 模式");
-    Equal(project, sourceSelection.SelectedDirectory, "直接选择 b-Module-SE 时应回推项目根");
-    Equal(1, sourceSelection.Files.Count, "直接选择 b-Module-SE 后应立即显示零件");
-
-    var external = Path.Combine(root, "external-view-model");
-    Directory.CreateDirectory(external);
-    File.WriteAllText(Path.Combine(external, "ExternalPart.PAR"), "external");
-    using var externalSelection = CreateViewModel();
-    externalSelection.SetDirectory(external);
-    True(externalSelection.IsExternalMode, "默认 OHS 模式选择普通零件目录时应自动切换外界模式");
-    Equal(1, externalSelection.Files.Count, "自动切换外界模式后应立即显示零件");
-    True(externalSelection.StatusText.Contains("已切换到零件转换模式", StringComparison.Ordinal),
-        "自动切换后状态栏应明确说明当前模式");
-
-    using var manualScan = CreateViewModel();
-    manualScan.SelectedDirectory = external;
-    manualScan.Scan();
-    True(manualScan.IsExternalMode, "手动填写普通零件目录后重新扫描也应自动切换外界模式");
-    Equal(1, manualScan.Files.Count, "重新扫描应恢复普通目录中的零件列表");
-
-    var invalidOhs = Path.Combine(root, "invalid-ohs");
-    Directory.CreateDirectory(invalidOhs);
-    using var invalidSelection = CreateViewModel();
-    invalidSelection.SetDirectory(invalidOhs);
-    True(invalidSelection.IsOhsMode, "空的非 OHS 目录不能被误判为外界零件目录");
-    True(invalidSelection.StatusText.Contains("普通零件目录请切换到零件转换", StringComparison.Ordinal),
-        "OHS 扫描失败时应给出模式修正提示");
-}
-
-static SE2SWViewModel CreateViewModel()
-    => new(
-        static (_, _, _) => Task.FromResult(0),
-        static () => { },
-        Dispatcher.CurrentDispatcher);
-
 static void TestExternalMapping(string root)
 {
     var external = Path.Combine(root, "external");
@@ -546,75 +497,6 @@ static void TestCustomOutputDirectories(string root)
     var shared = Path.Combine(root, "custom-output-shared");
     ExternalOutputLayout.EnsureDirectories(shared, shared);
     True(Directory.Exists(shared), "XT 与 SW 选择同一目录必须受支持");
-}
-
-static void TestAssemblyOutputReplanning(string root)
-{
-    var source = Path.Combine(root, "assembly-output-replan");
-    var customXt = Path.Combine(root, "assembly-output-replan-xt");
-    var customSw = Path.Combine(root, "assembly-output-replan-sw");
-    Directory.CreateDirectory(source);
-    var top = Path.Combine(source, "Top.asm");
-    var sub = Path.Combine(source, "Sub.asm");
-    var part = Path.Combine(source, "Part.par");
-    File.WriteAllText(top, "top");
-    File.WriteAllText(sub, "sub");
-    File.WriteAllText(part, "part");
-    File.WriteAllText(Path.Combine(source, "Part.x_t"), "legacy");
-    var probe = new AssemblyProbeResult(
-        top,
-        [
-            new AssemblyOccurrence("Sub:1", null, sub, true, false, false, Translation(0, 0, 0), null),
-            new AssemblyOccurrence("Sub:1/Part:1", "Sub:1", part, false, false, false, Translation(0, 0, 0), null),
-        ],
-        [part], 0, 0, 1, 0, [],
-        [
-            new AssemblyDocumentReading(top, [Sub("Sub:1", sub, 0, 0, 0)], []),
-            new AssemblyDocumentReading(sub, [Part("Part:1", part, 0, 0, 0)], []),
-        ]);
-    var probeCount = 0;
-    using var viewModel = new AssemblyViewModel(
-        (_, _, _) =>
-        {
-            probeCount++;
-            return Task.FromResult(probe);
-        },
-        static (_, _, _) => Task.FromResult(0),
-        static () => { },
-        Dispatcher.CurrentDispatcher);
-
-    viewModel.SetAssemblySource(top);
-    viewModel.ProbeAsync().GetAwaiter().GetResult();
-    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    Equal(1, probeCount, "首次选择装配体只执行一次探查");
-    viewModel.SetXtOutputDirectory(customXt);
-    Equal(customXt, viewModel.XtDirectory, "仅自定义 XT 时必须采用自定义 XT 目录");
-    Equal(Path.Combine(source, "SW"), viewModel.SolidWorksDirectory,
-        "仅自定义 XT 时 SW 必须继续使用默认目录");
-    viewModel.SetSolidWorksOutputDirectory(customSw);
-    Equal(1, probeCount, "修改输出目录只能纯内存重规划，不得重新执行 Solid Edge 探查");
-    Equal(customXt, viewModel.XtDirectory, "装配计划必须采用自定义 XT 目录");
-    Equal(customSw, viewModel.SolidWorksDirectory, "装配计划必须采用自定义 SW 目录");
-    Equal(Path.Combine(customXt, "Part.x_t"), viewModel.Parts.Single().XtPath,
-        "唯一零件必须重新映射到自定义 XT 目录");
-    Equal(Path.Combine(customSw, "Part.SLDPRT"), viewModel.Parts.Single().SolidWorksPath,
-        "唯一零件必须重新映射到自定义 SW 目录");
-    Equal(Path.Combine(customSw, "Top.SLDASM"), viewModel.AssemblyOutputPath,
-        "顶层装配必须重新映射到自定义 SW 目录");
-    True(!viewModel.Parts.Single().HasExistingOutput,
-        "自定义 XT 后不得复用源目录中的旧平铺 XT");
-    True(!Directory.Exists(customXt) && !Directory.Exists(customSw), "装配重规划不得创建目录");
-
-    viewModel.RestoreDefaultXtDirectory();
-    Equal(Path.Combine(source, "XT"), viewModel.XtDirectory, "恢复 XT 后必须回到默认目录");
-    Equal(customSw, viewModel.SolidWorksDirectory, "仅自定义 SW 时必须保留自定义 SW 目录");
-    viewModel.RestoreDefaultSolidWorksDirectory();
-    Equal(Path.Combine(source, "XT"), viewModel.XtDirectory, "恢复后必须回到默认 XT 目录");
-    Equal(Path.Combine(source, "SW"), viewModel.SolidWorksDirectory, "恢复后必须回到默认 SW 目录");
-    viewModel.SetXtOutputDirectory(customXt);
-    viewModel.SetPartDirectory(source);
-    True(!viewModel.HasCustomXtDirectory && !viewModel.HasCustomSolidWorksDirectory,
-        "切换来源必须清除两侧自定义目录");
 }
 
 static void TestSingleShotCancellation(string root)
@@ -1692,19 +1574,86 @@ static void TestImportIdentityAndSessionFaultGuards()
         "普通降级默认两个标志都不置位");
 }
 
-static void TestUiModuleRegistration()
+static void TestUiModuleRegistration(string root)
 {
+    var dataRoot = Path.Combine(root, "appshell-data");
+    var moduleRoot = Path.Combine(root, "appshell-modules");
     var registrar = new RecordingShellUiRegistrar();
-    var module = new SE2SWUiModule { ShellUi = registrar };
-    module.CreateUi();
-    Equal(1, registrar.Descriptors.Count, "模块应只注册一个单页工具窗口");
-    var descriptor = registrar.Descriptors.Single();
-    Equal("mapping", descriptor.Id, "窗口 ID 必须升级为 mapping");
-    Equal("Mapping", descriptor.Title, "窗口标题必须使用通用名称 Mapping");
-    True(descriptor.ContentFactory != null, "单页工具窗口必须提供内容工厂");
-    Equal(DockSide.Right, descriptor.DefaultSide, "窗口应保持 AppShell 普通右侧工具窗口语义");
-    module.DestroyUi();
-    Equal(1, registrar.DisposeCount, "热卸载必须释放双页窗口句柄");
+    var context = new RecordingModuleContext(dataRoot, moduleRoot);
+    var module = new SE2SWUiModule();
+    ((IShellUiAware)module).ShellUi = registrar;
+    module.Attach(context);
+
+    True(context.Registry.TryGet("mapping.convert", out var convert),
+        "AppShell 前端必须注册 mapping.convert");
+    True(context.Registry.TryGet("mapping.cancel", out var cancel),
+        "AppShell 前端必须注册 mapping.cancel");
+    foreach (var registeredCommand in new[] { convert, cancel })
+    {
+        True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
+            $"{registeredCommand.Name} 必须是需要 UI 线程的写命令");
+        True(!registeredCommand.AllowMcpExecution,
+            $"{registeredCommand.Name} 不得允许 MCP 执行");
+        Equal(CommandExecutionSite.Frontend,
+            FrontendCommandCapability.From(registeredCommand, "module:Mapping").CreateProxy().ExecutionSite,
+            $"{registeredCommand.Name} 发布到服务目录后必须成为前端命令");
+    }
+
+    Exception? uiFailure = null;
+    var uiThread = new Thread(() =>
+    {
+        try
+        {
+            module.CreateUi();
+            Equal(1, registrar.Descriptors.Count, "模块应只注册一个单页工具窗口");
+            var descriptor = registrar.Descriptors.Single();
+            Equal("mapping", descriptor.Id, "窗口 ID 必须升级为 mapping");
+            Equal("Mapping", descriptor.Title, "窗口标题必须使用通用名称 Mapping");
+            True(descriptor.ContentFactory != null, "单页工具窗口必须提供内容工厂");
+            Equal(DockSide.Center, descriptor.DefaultSide, "Mapping 必须注册为中央业务页");
+            Equal(0.75, descriptor.DefaultRatio, "Mapping 中央页必须保留 0.75 描述比例");
+            True(descriptor.IsSingleton, "Mapping 中央页必须是单例");
+
+            var result = context.Bus.ExecuteAsync("mapping.convert", "Smoke").GetAwaiter().GetResult();
+            True(!result.Success && result.Message.Contains("请选择", StringComparison.Ordinal),
+                "未选择来源时 mapping.convert 必须通过总线返回可读失败原因");
+            True(context.Log.Entries.Any(entry =>
+                    entry.Category.Equals("cmd:result:mapping", StringComparison.OrdinalIgnoreCase)),
+                "Mapping 命令结果必须进入 AppShell 控制台日志");
+
+            module.DestroyUi();
+            Equal(1, registrar.DisposeCount, "热卸载必须释放 Mapping 窗口句柄");
+        }
+        catch (Exception ex)
+        {
+            uiFailure = ex;
+        }
+    });
+    uiThread.SetApartmentState(ApartmentState.STA);
+    uiThread.Start();
+    uiThread.Join();
+    if (uiFailure is not null)
+        throw new InvalidOperationException("Mapping UI 模块 Smoke 失败。", uiFailure);
+
+    var serviceContext = new RecordingModuleContext(dataRoot, moduleRoot);
+    var serviceModule = new SE2SWUiModule();
+    serviceModule.Attach(serviceContext);
+    serviceModule.CreateUi();
+    True(!serviceContext.Registry.TryGet("mapping.convert", out _)
+         && !serviceContext.Registry.TryGet("mapping.cancel", out _),
+        "无 ShellUi 的服务宿主不得重复注册页面状态命令");
+
+    var runtimePaths = new MappingRuntimePaths(dataRoot, moduleRoot);
+    Equal(Path.Combine(dataRoot, "Mapping", SE2SWIdentity.RequestsDirectoryName),
+        runtimePaths.RequestsDirectory,
+        "Worker 请求必须迁入 AppShell 数据根");
+    Equal(Path.Combine(dataRoot, "Mapping", SE2SWIdentity.ProbesDirectoryName),
+        runtimePaths.ProbesDirectory,
+        "探查结果必须迁入 AppShell 数据根");
+    True(runtimePaths.WorkerCandidates().Contains(
+            Path.Combine(moduleRoot, SE2SWIdentity.ModuleSlotName, SE2SWIdentity.WorkerFileName),
+            StringComparer.OrdinalIgnoreCase),
+        "Worker 定位必须包含 AppShell Mapping 部署槽");
 }
 
 static void TestUnifiedSourceWorkspace()
@@ -2215,60 +2164,6 @@ static void TestFeatureRecognitionSessionGuards()
         "首件识别成功时不得重新导入");
 }
 
-static void TestActiveRunDisposal(string root)
-{
-    var external = Path.Combine(root, "dispose-running");
-    Directory.CreateDirectory(external);
-    File.WriteAllText(Path.Combine(external, "Running.par"), "sample");
-
-    var workerStarted = new ManualResetEventSlim();
-    var workerExited = new ManualResetEventSlim();
-    var cancellationObserved = false;
-    var viewModel = new SE2SWViewModel(
-        async (_, progress, cancellationToken) =>
-        {
-            workerStarted.Set();
-            progress(new WorkerEvent(
-                "smoke",
-                null,
-                ConversionStage.SolidEdgeExport,
-                "queued progress"));
-            try
-            {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-                return 0;
-            }
-            catch (OperationCanceledException)
-            {
-                cancellationObserved = true;
-                throw;
-            }
-            finally
-            {
-                await Task.Delay(100).ConfigureAwait(false);
-                workerExited.Set();
-            }
-        },
-        static () => { },
-        Dispatcher.CurrentDispatcher);
-
-    viewModel.SetMode(ConversionMode.External);
-    viewModel.SetDirectory(external);
-    var run = viewModel.StartAsync();
-    True(workerStarted.Wait(TimeSpan.FromSeconds(3)), "假 Worker 必须启动");
-
-    var dispose = Task.Run(viewModel.Dispose);
-    Thread.Sleep(25);
-    True(!dispose.IsCompleted, "Dispose 必须等待 Worker 收束，不能只发送取消");
-    True(dispose.Wait(TimeSpan.FromSeconds(3)), "Dispose 必须在 Worker 收束后返回");
-    True(cancellationObserved, "Dispose 必须取消活动批次");
-    True(workerExited.IsSet, "Dispose 返回前 Worker 必须已经退出");
-    True(run.IsCompletedSuccessfully, "Dispose 返回前 StartAsync 必须完成");
-    Dispatcher.CurrentDispatcher.Invoke(static () => { });
-    True(viewModel.StatusText != "queued progress", "Dispose 必须撤销尚未执行的 UI 进度回调");
-    Throws<ObjectDisposedException>(() => viewModel.StartAsync().GetAwaiter().GetResult());
-}
-
 static void Equal<T>(T expected, T actual, string message)
 {
     if (!EqualityComparer<T>.Default.Equals(expected, actual))
@@ -2328,6 +2223,60 @@ sealed class RecordingShellUiRegistrar : IShellUiRegistrar
     public void UnregisterOwner(string owner)
     {
     }
+}
+
+sealed class RecordingModuleContext : IModuleContext
+{
+    public RecordingModuleContext(string dataDirectory, string moduleDirectory)
+    {
+        DataDirectory = Path.GetFullPath(dataDirectory);
+        Settings = new RecordingSettingsService(moduleDirectory);
+        Log = new RecordingShellLog();
+        Bus = new CommandBus(Registry, Log);
+    }
+
+    public CommandRegistry Registry { get; } = new();
+    public CommandBus Bus { get; }
+    public ISettingsService Settings { get; }
+    public RecordingShellLog Log { get; }
+    IShellLog IModuleContext.Log => Log;
+    public string DataDirectory { get; }
+
+    public void RegisterCommands(Action<CommandRegistry> configure)
+        => configure(Registry);
+}
+
+sealed class RecordingSettingsService(string moduleDirectory) : ISettingsService
+{
+    private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["module.dir"] = Path.GetFullPath(moduleDirectory),
+    };
+
+    public string? Get(string key) => _values.GetValueOrDefault(key);
+
+    public int GetInt(string key, int fallback)
+        => int.TryParse(Get(key), out var value) ? value : fallback;
+
+    public void Set(string key, string value) => _values[key] = value;
+
+    public IReadOnlyList<KeyValuePair<string, string>> All() => _values.ToArray();
+}
+
+sealed class RecordingShellLog : IShellLog
+{
+    public List<ShellLogEntry> Entries { get; } = [];
+
+    public event EventHandler<ShellLogEntry>? EntryAdded;
+
+    public void Log(ShellLogLevel level, string category, string message)
+    {
+        var entry = new ShellLogEntry(DateTime.Now, level, category, message);
+        Entries.Add(entry);
+        EntryAdded?.Invoke(this, entry);
+    }
+
+    public IReadOnlyList<ShellLogEntry> Snapshot() => Entries.ToArray();
 }
 
 sealed class CallbackDisposable(Action callback) : IDisposable

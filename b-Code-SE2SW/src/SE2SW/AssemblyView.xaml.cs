@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using AppShell.Core.Commands;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -7,10 +8,18 @@ namespace SE2SW;
 
 public partial class AssemblyView : UserControl, IDisposable
 {
-    private readonly AssemblyViewModel _viewModel = new();
+    private readonly AssemblyViewModel _viewModel;
+    private readonly CommandBus? _commandBus;
 
     public AssemblyView()
+        : this(MappingRuntimePaths.CreateAppShellFallback(), null)
     {
+    }
+
+    internal AssemblyView(MappingRuntimePaths runtimePaths, CommandBus? commandBus)
+    {
+        _viewModel = new AssemblyViewModel(runtimePaths);
+        _commandBus = commandBus;
         InitializeComponent();
         DataContext = _viewModel;
     }
@@ -18,6 +27,8 @@ public partial class AssemblyView : UserControl, IDisposable
     internal AssemblyViewModel ViewModel => _viewModel;
     internal double OutputPathBarHeight => OutputPathBar.ActualHeight;
     internal Visibility OutputActivityVisibility => OutputActivityBar.Visibility;
+    internal double SourceColumnWidth => SourceColumn.ActualWidth;
+    internal double ContentColumnWidth => ContentColumn.ActualWidth;
 
     private async void OnChooseSourceClick(object sender, RoutedEventArgs e)
     {
@@ -79,10 +90,20 @@ public partial class AssemblyView : UserControl, IDisposable
     }
 
     private async void OnConvertClick(object sender, RoutedEventArgs e)
-        => await _viewModel.ConvertAsync();
+    {
+        if (_commandBus is null)
+            await _viewModel.ConvertAsync();
+        else
+            await _commandBus.ExecuteAsync("mapping.convert", "Mapping:UI");
+    }
 
-    private void OnCancelClick(object sender, RoutedEventArgs e)
-        => _viewModel.Cancel();
+    private async void OnCancelClick(object sender, RoutedEventArgs e)
+    {
+        if (_commandBus is null)
+            _viewModel.Cancel();
+        else
+            await _commandBus.ExecuteAsync("mapping.cancel", "Mapping:UI");
+    }
 
     public void Dispose()
         => _viewModel.Dispose();

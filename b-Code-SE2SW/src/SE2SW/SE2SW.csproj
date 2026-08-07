@@ -14,8 +14,30 @@
     <InternalsVisibleTo Include="SE2SW.UiSmoke" />
     <ProjectReference Include="..\SE2SW.Contracts\SE2SW.Contracts.csproj" />
     <ProjectReference Include="..\SE2SW.Worker\SE2SW.Worker.csproj" ReferenceOutputAssembly="false" />
-    <PackageReference Include="OneHistory.AppShell.Core" Version="3.0.3" />
+    <Reference Include="AppShell.Core">
+      <HintPath>$(AppShellCorePath)</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
+  <Target Name="ValidateAppShellSnapshot" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(AppShellManifestPath)')" Text="AppShell manifest not found: $(AppShellManifestPath)" />
+    <Error Condition="!Exists('$(AppShellCorePath)')" Text="AppShell.Core not found: $(AppShellCorePath)" />
+    <GetFileHash Files="$(AppShellManifestPath)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_AppShellManifestHash" />
+    </GetFileHash>
+    <GetFileHash Files="$(AppShellCorePath)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_AppShellCoreHash" />
+    </GetFileHash>
+    <GetAssemblyIdentity AssemblyFiles="$(AppShellCorePath)">
+      <Output TaskParameter="Assemblies" ItemName="_AppShellCoreIdentity" />
+    </GetAssemblyIdentity>
+    <Error Condition="'%(_AppShellManifestHash.FileHash)' != '$(AppShellManifestSha256)'"
+           Text="AppShell manifest hash changed. Expected=$(AppShellManifestSha256) Actual=%(_AppShellManifestHash.FileHash)" />
+    <Error Condition="'%(_AppShellCoreHash.FileHash)' != '$(AppShellCoreSha256)'"
+           Text="AppShell.Core hash changed. Expected=$(AppShellCoreSha256) Actual=%(_AppShellCoreHash.FileHash)" />
+    <Error Condition="'%(_AppShellCoreIdentity.Version)' != '$(AppShellVersion).0'"
+           Text="AppShell.Core version mismatch. Expected=$(AppShellVersion).0 Actual=%(_AppShellCoreIdentity.Version)" />
+  </Target>
   <Target Name="CopyWorkerArtifacts" AfterTargets="Build">
     <ItemGroup>
       <WorkerArtifact Include="..\SE2SW.Worker\bin\$(Configuration)\net8.0-windows\win-x64\SE2SW.Worker.exe" />

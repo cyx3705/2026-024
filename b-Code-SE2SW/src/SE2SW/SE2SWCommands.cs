@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.IO;
 using SE2SW.Contracts;
+using AppShell.Core.Logging;
 using AppShell.Core.Modules;
 
 namespace SE2SW;
@@ -73,8 +74,24 @@ public sealed record SE2SWAssemblyProbeResponse(
     IReadOnlyList<AssemblyPlanIssue> BlockingIssues,
     IReadOnlyList<string> Warnings);
 
-public sealed class SE2SWCommands
+public sealed class SE2SWCommands : IModuleContextAware
 {
+    private MappingRuntimePaths _runtimePaths = MappingRuntimePaths.CreateAppShellFallback();
+    private bool _contextAttached;
+
+    public void Attach(IModuleContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (_contextAttached)
+            throw new InvalidOperationException("Mapping 命令宿主上下文已注入。");
+
+        _runtimePaths = new MappingRuntimePaths(
+            context.DataDirectory,
+            context.Settings.Get("module.dir"));
+        _contextAttached = true;
+        context.Log.Info("mapping", $"命令运行目录已接入 AppShell：{_runtimePaths.ModuleDataDirectory}");
+    }
+
     /// <summary>说明如何显示 Mapping 内嵌工具窗口。</summary>
     [ModuleCommand(Readonly = true)]
     public string show()
@@ -93,7 +110,7 @@ public sealed class SE2SWCommands
     [ModuleCommand(Readonly = true)]
     public SE2SWStatus status()
     {
-        var workerPath = WorkerLocator.Locate();
+        var workerPath = WorkerLocator.Locate(_runtimePaths);
         return new SE2SWStatus(
             Module: "mapping",
             Version: Version,
@@ -175,18 +192,15 @@ public sealed class SE2SWCommands
     public async Task<SE2SWAssemblyProbeResponse> assemblyProbe(string source, string xt = "", string sw = "")
     {
         var sourcePath = NormalizeAssemblyPath(source, requireExisting: true);
-        PreflightValidator.ValidateEnvironment(WorkerClient.WorkerPath);
+        var workerClient = new WorkerClient(_runtimePaths);
+        PreflightValidator.ValidateEnvironment(workerClient.WorkerPath);
         var batchId = Guid.NewGuid().ToString("N");
-        var resultDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            SE2SWIdentity.HostApplicationDataDirectoryName,
-            SE2SWIdentity.ModuleApplicationDataDirectoryName,
-            SE2SWIdentity.ProbesDirectoryName);
+        var resultDirectory = _runtimePaths.ProbesDirectory;
         Directory.CreateDirectory(resultDirectory);
         var resultPath = Path.Combine(resultDirectory, batchId + ".result.json");
         try
         {
-            var probe = await new WorkerClient().ProbeAssemblyAsync(
+            var probe = await workerClient.ProbeAssemblyAsync(
                 new AssemblyProbeRequest(batchId, sourcePath, resultPath),
                 static _ => { },
                 CancellationToken.None).ConfigureAwait(false);

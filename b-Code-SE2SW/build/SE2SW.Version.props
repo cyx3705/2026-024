@@ -1,7 +1,14 @@
 <Project>
   <!-- 唯一可编辑的发布版本源。改这里，manifest 与程序集版本一起走。 -->
   <PropertyGroup>
-    <SE2SWVersion>4.0.0</SE2SWVersion>
+    <SE2SWVersion>4.1.0</SE2SWVersion>
+    <AppShellVersion>3.1.9</AppShellVersion>
+    <AppShellPackageRoot Condition="'$(AppShellPackageRoot)' == ''">C:\OneHistory\OneHistory-Projects\2026-023-AppShell\z-Package-AppShell</AppShellPackageRoot>
+    <AppShellHostRoot Condition="'$(AppShellHostRoot)' == ''">$(AppShellPackageRoot)\host</AppShellHostRoot>
+    <AppShellManifestPath>$(AppShellPackageRoot)\manifest.json</AppShellManifestPath>
+    <AppShellCorePath>$(AppShellHostRoot)\AppShell.Core.dll</AppShellCorePath>
+    <AppShellManifestSha256>9D27B06100988DE89547931201E5612487C5ADA3C14C9D7277BFFA1C1450E72A</AppShellManifestSha256>
+    <AppShellCoreSha256>0EA9D28EEE8AB28A20679042B937A4C94A288177B543602E50C30EDC2115A58B</AppShellCoreSha256>
     <Version>$(SE2SWVersion)</Version>
     <AssemblyVersion>$(SE2SWVersion).0</AssemblyVersion>
     <FileVersion>$(SE2SWVersion).0</FileVersion>

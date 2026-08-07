@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\..\b-Code-SE2SW\build\SE2SW.Version.props" />
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -8,5 +9,25 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\b-Code-SE2SW\src\SE2SW\SE2SW.csproj" />
+    <Reference Include="AppShell.Core">
+      <HintPath>$(AppShellHostRoot)\AppShell.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="AppShell.Services">
+      <HintPath>$(AppShellHostRoot)\AppShell.Services.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="AppShell.Shell">
+      <HintPath>$(AppShellHostRoot)\AppShell.Shell.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="AvalonDock">
+      <HintPath>$(AppShellHostRoot)\AvalonDock.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="AvalonDock.Themes.VS2013">
+      <HintPath>$(AppShellHostRoot)\AvalonDock.Themes.VS2013.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
 </Project>

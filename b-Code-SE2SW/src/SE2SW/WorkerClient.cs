@@ -7,6 +7,7 @@ namespace SE2SW;
 
 public sealed class WorkerClient
 {
+    private readonly MappingRuntimePaths _runtimePaths;
     private static readonly TimeSpan StageInactivityTimeout = TimeSpan.FromSeconds(180);
 
     /// <summary>
@@ -23,8 +24,10 @@ public sealed class WorkerClient
         => verb == WorkerProtocol.AssemblyBuildVerb ? AssemblyInactivityTimeout : StageInactivityTimeout;
     private static readonly JsonSerializerOptions JsonOptions = WorkerProtocol.CreateJsonOptions();
 
-    public static string WorkerPath
-        => WorkerLocator.Locate();
+    public WorkerClient(MappingRuntimePaths? runtimePaths = null)
+        => _runtimePaths = runtimePaths ?? MappingRuntimePaths.CreateAppShellFallback();
+
+    public string WorkerPath => WorkerLocator.Locate(_runtimePaths);
 
     public async Task<int> RunAsync(
         BatchRequest request,
@@ -75,7 +78,7 @@ public sealed class WorkerClient
             progress,
             cancellationToken).ConfigureAwait(false);
 
-    private static async Task<int> RunWorkerAsync<TRequest>(
+    private async Task<int> RunWorkerAsync<TRequest>(
         string verb,
         string batchId,
         TRequest request,
@@ -88,11 +91,7 @@ public sealed class WorkerClient
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(progress);
 
-        var requestDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            SE2SWIdentity.HostApplicationDataDirectoryName,
-            SE2SWIdentity.ModuleApplicationDataDirectoryName,
-            SE2SWIdentity.RequestsDirectoryName);
+        var requestDirectory = _runtimePaths.RequestsDirectory;
         Directory.CreateDirectory(requestDirectory);
         var requestPath = Path.Combine(requestDirectory, batchId + ".json");
         var cancellationPath = Path.Combine(requestDirectory, batchId + ".cancel");

@@ -7,14 +7,16 @@
   },
   "project": {
     "id": "2026-024",
-    "name": "SE2SW",
-    "title": "SE2SW Solid Edge 到 SolidWorks 转换工具",
-    "kind": [
-      "software",
-      "cad-automation",
-      "ohs-module"
-    ],
+    "name": "Mapping",
+    "title": "Mapping 文件映射模块",
+    "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active"
+  },
+  "appShellHost": {
+    "packageRoot": "../2026-023-AppShell/z-Package-AppShell",
+    "version": "3.1.9",
+    "manifestSha256": "9D27B06100988DE89547931201E5612487C5ADA3C14C9D7277BFFA1C1450E72A",
+    "coreSha256": "0EA9D28EEE8AB28A20679042B937A4C94A288177B543602E50C30EDC2115A58B"
   },
   "paths": {
     "activeRoots": [
@@ -23,27 +25,19 @@
       "b-Code",
       "b-Code-SE2SW",
       "b-Code-SE2SW-Tests",
-      "z-SE2SW"
+      "z-SE2SW",
+      "z-Package-Mapping"
     ],
-    "sourceRoots": [
-      "b-Code",
-      "b-Code-SE2SW",
-      "b-Code-SE2SW-Tests"
-    ],
+    "sourceRoots": ["b-Code", "b-Code-SE2SW", "b-Code-SE2SW-Tests"],
     "generatedRoots": [
       "b-Code-SE2SW/**/bin",
       "b-Code-SE2SW/**/obj",
       "b-Code-SE2SW-Tests/**/bin",
-      "b-Code-SE2SW-Tests/**/obj"
+      "b-Code-SE2SW-Tests/**/obj",
+      "z-Package-Mapping/**"
     ],
-    "archiveRoots": [
-      "b-Office/history"
-    ],
-    "allowedRootDirectoryPrefixes": [
-      "a-",
-      "b-",
-      "z-"
-    ]
+    "archiveRoots": ["b-Office/history"],
+    "allowedRootDirectoryPrefixes": ["a-", "b-", "z-"]
   },
   "documents": {
     "center": "b-Office/文档中心.md",
@@ -55,7 +49,7 @@
     "technicalContract": "b-Office/current/技术合同.md",
     "decisions": "b-Office/current/有效决策.md",
     "verification": "b-Office/current/验证合同.md",
-    "roadmap": "b-Office/current/V3.7.0计划.md",
+    "roadmap": "b-Office/current/V4.1.0-AppShell迁移计划.md",
     "architectureDiagram": "b-Office/current/SE2SW转换架构.drawio",
     "historyBoundary": "b-Office/history/历史资料说明.md"
   },
@@ -65,11 +59,11 @@
     "test": "dotnet run --project .\\b-Code-SE2SW-Tests\\tests\\SE2SW.Smoke\\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false",
     "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code\\Test-ProjectContract.ps1 -Instantiation",
     "run": null,
-    "package": null
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-SE2SW\\eng\\Build-MappingPackage.ps1"
   },
   "externalDependencies": [
     ".NET 8 SDK and Windows Desktop Runtime",
-    "OneHistory.AppShell.Core 3.0.3",
+    "AppShell.Core 3.1.9 host snapshot (manifest SHA256 9D27B06100988DE89547931201E5612487C5ADA3C14C9D7277BFFA1C1450E72A)",
     "Solid Edge 2020 COM automation",
     "SolidWorks 2025 SP5 COM automation",
     "SolidWorks FeatureWorks"
@@ -81,6 +75,7 @@
     "**/obj/**",
     "**/node_modules/**",
     "**/.vs/**",
+    "z-Package-Mapping/**",
     "artifacts/**"
   ]
 }

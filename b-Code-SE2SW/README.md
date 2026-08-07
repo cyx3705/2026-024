@@ -2,7 +2,7 @@
 
 > 对外模块：`Mapping` / `mapping`
 >
-> 当前版本：`4.0.0`
+> 当前版本：`4.1.0`
 >
 > 发布清单：`../z-SE2SW/module.manifest.json`
 
@@ -20,8 +20,8 @@ SolidWorks COM 导入、识别并保存为零件或装配体。
 src/SE2SW.Contracts   请求、进度、路径和装配协议
 src/SE2SW             WPF UI、扫描、预检、Mapping 模块入口
 src/SE2SW.Worker      Solid Edge / SolidWorks COM 工作进程
-build/                唯一版本源
-eng/                  模块清单版本同步脚本
+build/                唯一版本源与 AppShell 3.1.9 路径
+eng/                  清单同步、正式包和双槽部署脚本
 ```
 
 ## 构建与离线验证
@@ -33,5 +33,6 @@ dotnet build .\b-Code-SE2SW\src\SE2SW\SE2SW.csproj -c Release -p:NuGetAudit=fals
 dotnet run --project .\b-Code-SE2SW-Tests\tests\SE2SW.Smoke\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false
 ```
 
-只修改 `build/SE2SW.Version.props` 后，通过 `eng/Update-SE2SWManifest.ps1` 同步清单版本。正式入槽
-必须显式执行 OHS `tool.sync name=Mapping`；只读命令域为 `mapping`。
+生产工程直接引用 `2026-023-AppShell/z-Package-AppShell/host/AppShell.Core.dll` 3.1.9，宿主 DLL 不随模块包复制。
+只修改 `build/SE2SW.Version.props` 后，通过 `eng/Update-SE2SWManifest.ps1` 同步清单版本；正式包由
+`eng/Build-MappingPackage.ps1` 生成，部署使用 `eng/Deploy-Mapping.ps1 -Apply`。只读命令域为 `mapping`。

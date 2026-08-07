@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.IO;
+using System.Text.RegularExpressions;
 using SE2SW;
 
 namespace SE2SW.UiSmoke;
@@ -13,6 +14,22 @@ internal static class Program
     private static void Main(string[] args)
     {
         var application = new Application();
+        var dark = args.Contains("--dark", StringComparer.OrdinalIgnoreCase);
+        application.Resources.MergedDictionaries.Add(new ResourceDictionary
+        {
+            Source = new Uri(
+                dark
+                    ? "/AppShell.Shell;component/Themes/ShellTokens.Dark.xaml"
+                    : "/AppShell.Shell;component/Themes/ShellTokens.xaml",
+                UriKind.Relative),
+        });
+        application.Resources.MergedDictionaries.Add(new ResourceDictionary
+        {
+            Source = new Uri("/AppShell.Shell;component/Themes/ShellControls.xaml", UriKind.Relative),
+        });
+        var sourcePath = LocateRepoFile(Path.Combine("b-Code-SE2SW", "src", "SE2SW", "AssemblyView.xaml"));
+        if (Regex.IsMatch(File.ReadAllText(sourcePath), "#[0-9A-Fa-f]{6,8}", RegexOptions.CultureInvariant))
+            throw new InvalidOperationException("生产 Mapping XAML 不得残留固定十六进制颜色。");
         var assemblyIndex = Array.FindIndex(args, item =>
             string.Equals(item, "--assembly", StringComparison.OrdinalIgnoreCase));
         var showAssembly = assemblyIndex >= 0;
@@ -29,6 +46,7 @@ internal static class Program
         var busy = args.Contains("--busy", StringComparer.OrdinalIgnoreCase);
         var expandOptions = args.Contains("--expand-options", StringComparer.OrdinalIgnoreCase);
         var workspace = new SE2SWWorkspaceView();
+        workspace.SetResourceReference(Control.BackgroundProperty, "Shell.Brush.Canvas");
         if (folder is not null)
             workspace.UnifiedPage.ViewModel.SetPartDirectory(folder);
         else if (assemblyPath is not null)
@@ -40,18 +58,24 @@ internal static class Program
             Title = folder is not null
                 ? "Mapping UI Smoke · 零件文件夹"
                 : showAssembly ? "Mapping UI Smoke · 装配体" : "Mapping UI Smoke · 选择来源",
-            Width = compact ? 820 : 1280,
-            Height = compact ? 620 : 820,
+            Width = ReadDoubleArgument(args, "--width") ?? (compact ? 820 : 1280),
+            Height = ReadDoubleArgument(args, "--height") ?? (compact ? 620 : 820),
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
             Content = workspace,
         };
+        window.SetResourceReference(Window.BackgroundProperty, "Shell.Brush.Canvas");
+        window.SetResourceReference(Control.ForegroundProperty, "Shell.Brush.TextPrimary");
         var captureIndex = Array.FindIndex(args, item =>
             string.Equals(item, "--capture", StringComparison.OrdinalIgnoreCase));
         if (captureIndex >= 0 && captureIndex + 1 < args.Length)
         {
             window.Show();
             workspace.UpdateLayout();
-            if (Math.Abs(workspace.UnifiedPage.OutputPathBarHeight - 34) > 0.01)
-                throw new InvalidOperationException("顶部路径条高度必须稳定为 34 px。");
+            if (workspace.UnifiedPage.OutputPathBarHeight < 32)
+                throw new InvalidOperationException("顶部 Mapping 工具栏高度不得低于宿主 32 px 合同。");
+            if (Math.Abs(workspace.UnifiedPage.SourceColumnWidth - workspace.UnifiedPage.ContentColumnWidth) > 1)
+                throw new InvalidOperationException("转换来源与转换内容必须保持等宽栏。");
             if (busy && workspace.UnifiedPage.OutputActivityVisibility != Visibility.Visible)
                 throw new InvalidOperationException("运行期间顶部路径条必须显示不定进度条。");
             if (!busy && workspace.UnifiedPage.OutputActivityVisibility != Visibility.Collapsed)
@@ -102,11 +126,17 @@ internal static class Program
                 workspace.UpdateLayout();
             }
             var dpi = VisualTreeHelper.GetDpi(workspace);
+            var requestedDpiPercent = ReadDoubleArgument(args, "--dpi");
+            if (requestedDpiPercent is not null && requestedDpiPercent is not (100 or 125 or 150))
+                throw new InvalidOperationException("--dpi 只接受 100、125 或 150。");
+            var renderScale = requestedDpiPercent is null
+                ? dpi.DpiScaleX
+                : requestedDpiPercent.Value / 100d;
             var bitmap = new RenderTargetBitmap(
-                Math.Max(1, (int)Math.Ceiling(workspace.ActualWidth * dpi.DpiScaleX)),
-                Math.Max(1, (int)Math.Ceiling(workspace.ActualHeight * dpi.DpiScaleY)),
-                dpi.PixelsPerInchX,
-                dpi.PixelsPerInchY,
+                Math.Max(1, (int)Math.Ceiling(workspace.ActualWidth * renderScale)),
+                Math.Max(1, (int)Math.Ceiling(workspace.ActualHeight * renderScale)),
+                96d * renderScale,
+                96d * renderScale,
                 PixelFormats.Pbgra32);
             bitmap.Render(workspace);
             var encoder = new PngBitmapEncoder();
@@ -120,6 +150,29 @@ internal static class Program
         application.Run(window);
     }
 
+    private static double? ReadDoubleArgument(IReadOnlyList<string> args, string name)
+    {
+        var index = Array.FindIndex(args.ToArray(), item =>
+            string.Equals(item, name, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 && index + 1 < args.Count
+            && double.TryParse(args[index + 1], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+    }
+
+    private static string LocateRepoFile(string relativePath)
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            var candidate = Path.Combine(directory.FullName, relativePath);
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        throw new FileNotFoundException($"找不到 Smoke 源文件：{relativePath}");
+    }
+
     private sealed class BusyPreviewState
     {
         public bool IsBusy => true;
@@ -129,13 +182,12 @@ internal static class Program
         public bool CanFullyDefineSketches => false;
         public bool CanContinueWhenPartFails => false;
         public bool CanRebuildMates => false;
-        public bool CanRestoreXtDirectory => false;
-        public bool CanRestoreSolidWorksDirectory => false;
         public bool IsPartDirectoryMode => false;
+        public IReadOnlyList<MappingContentOption> MappingContents => MappingContentOption.Available;
+        public MappingContentOption SelectedMappingContent { get; set; } = MappingContentOption.Available[1];
         public string SourceLabel => "装配体";
         public string SourcePath => @"C:\very-long-source-path\assembly\Top.asm";
-        public string XtDirectory => @"C:\very-long-output-path\parasolid\XT";
-        public string SolidWorksDirectory => @"C:\very-long-output-path\solidworks\SW";
+        public string StatusText => "正在转换装配体";
         public string PartsPanelTitle => "唯一零件";
         public string PrimaryActionText => "转换装配体";
         public IReadOnlyList<object> AssemblyTree => [];

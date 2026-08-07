@@ -1,35 +1,38 @@
-# SE2SW OHS 模块发布说明
+# Mapping AppShell / OHS 模块发布说明
 
-## 权威来源
+## 当前正式宿主
 
-- 版本：`b-Code-SE2SW/build/SE2SW.Version.props`
-- 生产源码：`b-Code-SE2SW/src`
-- 自动验证：`b-Code-SE2SW-Tests`
-- 注册清单：`z-SE2SW/module.manifest.json`
+- AppShell `3.1.9`：`../2026-023-AppShell/z-Package-AppShell`
+- 宿主 manifest SHA256：`9D27B06100988DE89547931201E5612487C5ADA3C14C9D7277BFFA1C1450E72A`
+- AppShell.Core SHA256：`0EA9D28EEE8AB28A20679042B937A4C94A288177B543602E50C30EDC2115A58B`
+- 模块输入清单：`z-SE2SW/module.manifest.json`
+- 正式输出：`z-Package-Mapping`
 
-## 发布前门禁
-
-从项目根目录执行：
+## 构建正式包
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\b-Code\Test-ProjectContract.ps1 -Instantiation
-dotnet build .\b-Code-SE2SW\src\SE2SW\SE2SW.csproj -c Release -p:NuGetAudit=false
-dotnet run --project .\b-Code-SE2SW-Tests\tests\SE2SW.Smoke\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false
-New-Item -ItemType Directory -Force .\artifacts | Out-Null
-dotnet run --project .\b-Code-SE2SW-Tests\tests\SE2SW.UiSmoke\SE2SW.UiSmoke.csproj -c Release -p:NuGetAudit=false -- --capture .\artifacts\se2sw-ui.png
-dotnet format .\b-Code-SE2SW\src\SE2SW\SE2SW.csproj --verify-no-changes --no-restore
-powershell -NoProfile -ExecutionPolicy Bypass -File .\b-Code-SE2SW\eng\Update-SE2SWManifest.ps1 -ManifestPath .\z-SE2SW\module.manifest.json
+powershell -NoProfile -ExecutionPolicy Bypass -File .\b-Code-SE2SW\eng\Build-MappingPackage.ps1
 ```
 
-清单必须保持 `name=SE2SW`、`ui=true`、`mcpExposure=hidden`，并声明 Release 目录中的主程序集、
-XML 文档、Contracts 和 Worker 运行资产。
+脚本验证宿主版本、manifest SHA、Core SHA、Release 构建和模块清单版本，生成七个 SE2SW 运行产物、
+`module.manifest.json`、`appshell.snapshot.json` 与 `SHA256SUMS`。包内出现 `AppShell*.dll` 即失败。
 
-## 入槽与核验
+## 双槽部署
 
-发布需要显式执行 OHS `tool.scan` 和 `tool.sync name=SE2SW`。完成后用 `tool.list` 核对来源项目与版本，
-用 `module.list` 核对 `se2sw` 已加载，再逐文件比较清单声明的 7 个产物与正式槽 SHA-256。
+默认仅预览：
 
-## 回退
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\b-Code-SE2SW\eng\Deploy-Mapping.ps1
+```
 
-正式同步前保留完整模块槽备份。回退时整体替换 `Modules/SE2SW`，不得混合覆盖不同版本文件；随后执行
-`module.reload` 并重新核对版本、指令数和来源。远端推送、正式入槽和回退都需要用户明确授权。
+关闭 AppShell 前端与服务端后显式执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\b-Code-SE2SW\eng\Deploy-Mapping.ps1 -Apply
+```
+
+目标为 `%AppData%\AppShell\Modules\Mapping` 与 `%AppData%\AppShell\service\Modules\Mapping`。脚本先在
+Modules 外建立备份和暂存目录，部署后逐文件核验正式包 SHA；两个槽都成功后，才把旧
+`%AppData%\OneHistoryStudio\Modules\SE2SW` 移到 `%AppData%\OneHistoryStudio\module-backups`。
+
+部署后由运行中的 AppShell 核验 `module.list` 为 Mapping 4.1.0、`command.list domain=mapping` 完整，MCP 只出现只读查询。

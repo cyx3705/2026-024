@@ -16,6 +16,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private readonly Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _runPartWorker;
     private readonly Action _validateEnvironment;
     private readonly Dispatcher _uiDispatcher;
+    private readonly MappingRuntimePaths _runtimePaths;
     private readonly object _lifecycleGate = new();
     private readonly object _dispatchGate = new();
     private readonly Queue<Action> _pendingUiUpdates = new();
@@ -25,8 +26,6 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private ConversionSourceKind _sourceKind;
     private string _xtDirectory = string.Empty;
     private string _solidWorksDirectory = string.Empty;
-    private string? _customXtDirectory;
-    private string? _customSolidWorksDirectory;
     private string _assemblyOutputPath = string.Empty;
     private string _statusText = "请选择转换来源";
     private string _warningSummary = string.Empty;
@@ -47,6 +46,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private AssemblyProbeResult? _probeResult;
     private MateOutcome? _mateOutcome;
     private string? _sourceHashAfterProbe;
+    private IProgress<string>? _operationProgress;
     private bool _disposed;
 
     public ObservableCollection<AssemblyTreeNode> AssemblyTree { get; } = [];
@@ -101,10 +101,6 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         private set => SetField(ref _solidWorksDirectory, value);
     }
 
-    public bool HasCustomXtDirectory => _customXtDirectory is not null;
-    public bool HasCustomSolidWorksDirectory => _customSolidWorksDirectory is not null;
-    public bool CanRestoreXtDirectory => CanEdit && HasCustomXtDirectory;
-    public bool CanRestoreSolidWorksDirectory => CanEdit && HasCustomSolidWorksDirectory;
     public bool CanCancel => IsBusy && !_cancelRequested;
 
     public string AssemblyOutputPath
@@ -138,8 +134,6 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(CanFullyDefineSketches));
             OnPropertyChanged(nameof(CanRebuildMates));
             OnPropertyChanged(nameof(CanContinueWhenPartFails));
-            OnPropertyChanged(nameof(CanRestoreXtDirectory));
-            OnPropertyChanged(nameof(CanRestoreSolidWorksDirectory));
             OnPropertyChanged(nameof(CanCancel));
         }
     }
@@ -248,15 +242,26 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public AssemblyViewModel()
+        : this(MappingRuntimePaths.CreateAppShellFallback())
+    {
+    }
+
+    internal AssemblyViewModel(MappingRuntimePaths runtimePaths)
+        : this(new WorkerClient(runtimePaths), runtimePaths, Dispatcher.CurrentDispatcher)
+    {
+    }
+
+    private AssemblyViewModel(
+        WorkerClient workerClient,
+        MappingRuntimePaths runtimePaths,
+        Dispatcher uiDispatcher)
         : this(
-            (request, progress, cancellationToken) =>
-                new WorkerClient().ProbeAssemblyAsync(request, progress, cancellationToken),
-            (request, progress, cancellationToken) =>
-                new WorkerClient().RunAssemblyAsync(request, progress, cancellationToken),
-            () => PreflightValidator.ValidateEnvironment(WorkerClient.WorkerPath),
-            Dispatcher.CurrentDispatcher,
-            (request, progress, cancellationToken) =>
-                new WorkerClient().RunAsync(request, progress, cancellationToken))
+            workerClient.ProbeAssemblyAsync,
+            workerClient.RunAssemblyAsync,
+            () => PreflightValidator.ValidateEnvironment(workerClient.WorkerPath),
+            uiDispatcher,
+            workerClient.RunAsync,
+            runtimePaths)
     {
     }
 
@@ -265,15 +270,17 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         Func<AssemblyBatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> runWorker,
         Action validateEnvironment,
         Dispatcher uiDispatcher,
-        Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? runPartWorker = null)
+        Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? runPartWorker = null,
+        MappingRuntimePaths? runtimePaths = null)
     {
         _probeWorker = probeWorker ?? throw new ArgumentNullException(nameof(probeWorker));
         _runWorker = runWorker ?? throw new ArgumentNullException(nameof(runWorker));
         _runPartWorker = runPartWorker
             ?? ((request, progress, cancellationToken) =>
-                new WorkerClient().RunAsync(request, progress, cancellationToken));
+                new WorkerClient(runtimePaths).RunAsync(request, progress, cancellationToken));
         _validateEnvironment = validateEnvironment ?? throw new ArgumentNullException(nameof(validateEnvironment));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
+        _runtimePaths = runtimePaths ?? MappingRuntimePaths.CreateAppShellFallback();
     }
 
     public void SetSourceFile(string path)
@@ -320,35 +327,20 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     public Task ProbeAsync()
         => StartOperationAsync(isProbe: true, ProbeCoreAsync);
 
-    public Task ConvertAsync()
-        => StartOperationAsync(
-            isProbe: false,
-            IsPartDirectoryMode ? ConvertPartsCoreAsync : ConvertAssemblyCoreAsync);
-
-    public void SetXtOutputDirectory(string path)
-        => SetOutputDirectory(path, isXtDirectory: true);
-
-    public void SetSolidWorksOutputDirectory(string path)
-        => SetOutputDirectory(path, isXtDirectory: false);
-
-    public void RestoreDefaultXtDirectory()
+    public async Task ConvertAsync(IProgress<string>? progress = null)
     {
-        if (!CanEdit || _customXtDirectory is null)
-            return;
-        _customXtDirectory = null;
-        OnPropertyChanged(nameof(HasCustomXtDirectory));
-        OnPropertyChanged(nameof(CanRestoreXtDirectory));
-        RefreshOutputPlan();
-    }
-
-    public void RestoreDefaultSolidWorksDirectory()
-    {
-        if (!CanEdit || _customSolidWorksDirectory is null)
-            return;
-        _customSolidWorksDirectory = null;
-        OnPropertyChanged(nameof(HasCustomSolidWorksDirectory));
-        OnPropertyChanged(nameof(CanRestoreSolidWorksDirectory));
-        RefreshOutputPlan();
+        _operationProgress = progress;
+        try
+        {
+            await StartOperationAsync(
+                isProbe: false,
+                IsPartDirectoryMode ? ConvertPartsCoreAsync : ConvertAssemblyCoreAsync);
+        }
+        finally
+        {
+            if (ReferenceEquals(_operationProgress, progress))
+                _operationProgress = null;
+        }
     }
 
     public bool Cancel()
@@ -467,11 +459,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         _validateEnvironment();
 
         var batchId = Guid.NewGuid().ToString("N");
-        var resultDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            SE2SWIdentity.HostApplicationDataDirectoryName,
-            SE2SWIdentity.ModuleApplicationDataDirectoryName,
-            SE2SWIdentity.ProbesDirectoryName);
+        var resultDirectory = _runtimePaths.ProbesDirectory;
         Directory.CreateDirectory(resultDirectory);
         var resultPath = Path.Combine(resultDirectory, batchId + ".result.json");
         try
@@ -480,9 +468,9 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             QueueUiUpdate(() => StatusText = "正在只读解析装配树");
             var result = await _probeWorker(
                 request,
-                workerEvent => QueueUiUpdate(() => ApplyWorkerEvent(workerEvent)),
+                ReportWorkerEvent,
                 cancellationToken).ConfigureAwait(false);
-            var plan = AssemblyPlanner.Create(result, _customXtDirectory, _customSolidWorksDirectory);
+            var plan = AssemblyPlanner.Create(result, customXtDirectory: null, customSolidWorksDirectory: null);
             var sourceHash = ComputeSha256(result.SourceAssemblyPath);
             QueueUiUpdate(() => ApplyProbeResult(result, plan, sourceHash));
         }
@@ -545,7 +533,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
                 // 不能只依赖 UI 调度后的字段：Worker 已经退出而 Dispatcher 尚未消费事件时，
                 // _mateOutcome 仍可能是旧值。这里保存本批次的原始回执，再异步更新界面。
                 reportedMate ??= workerEvent.Mate ?? workerEvent.Assembly?.Mate;
-                QueueUiUpdate(() => ApplyWorkerEvent(workerEvent));
+                ReportWorkerEvent(workerEvent);
             },
             cancellationToken).ConfigureAwait(false);
         if (exitCode == 0 && request.RebuildMates && plan.RelationCount > 0 && reportedMate is null)
@@ -608,7 +596,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         QueueUiUpdate(() => StatusText = $"正在转换 {jobs.Length} 个零件");
         var exitCode = await _runPartWorker(
             request,
-            workerEvent => QueueUiUpdate(() => ApplyWorkerEvent(workerEvent)),
+            ReportWorkerEvent,
             cancellationToken).ConfigureAwait(false);
         QueueUiUpdate(() => StatusText = exitCode == 0 ? "零件转换完成" : "零件转换结束，存在失败项");
     }
@@ -698,6 +686,12 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         ConversionProgressPresenter.ApplyFeatureOutcome(row, workerEvent.Feature);
     }
 
+    private void ReportWorkerEvent(WorkerEvent workerEvent)
+    {
+        _operationProgress?.Report(ConversionProgressPresenter.FormatMessage(workerEvent));
+        QueueUiUpdate(() => ApplyWorkerEvent(workerEvent));
+    }
+
     private void UpdateAssemblyOutputPaths()
     {
         try
@@ -708,8 +702,8 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             var directory = Path.GetDirectoryName(fullPath) ?? throw new InvalidDataException();
             var directories = ExternalOutputLayout.Resolve(
                 directory,
-                _customXtDirectory,
-                _customSolidWorksDirectory);
+                xtDirectory: null,
+                solidWorksDirectory: null);
             XtDirectory = directories.XtDirectory;
             SolidWorksDirectory = directories.SolidWorksDirectory;
             AssemblyOutputPath = ConversionPathLayout.ResolveAssemblyOutputPath(fullPath, directories.SolidWorksDirectory);
@@ -748,8 +742,8 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         Parts.Clear();
         var directories = ExternalOutputLayout.Resolve(
             _partDirectory,
-            _customXtDirectory,
-            _customSolidWorksDirectory);
+            xtDirectory: null,
+            solidWorksDirectory: null);
         XtDirectory = directories.XtDirectory;
         SolidWorksDirectory = directories.SolidWorksDirectory;
         AssemblyOutputPath = string.Empty;
@@ -757,8 +751,8 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
                      ConversionMode.External,
                      _partDirectory,
                      outputDirectories: directories,
-                     allowLegacyXt: _customXtDirectory is null,
-                     allowLegacySolidWorks: _customSolidWorksDirectory is null))
+                     allowLegacyXt: true,
+                     allowLegacySolidWorks: true))
             Parts.Add(new ConversionFileRow(candidate));
 
         WarningSummary = string.Empty;
@@ -774,66 +768,11 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(CanConvert));
     }
 
-    private void SetOutputDirectory(string path, bool isXtDirectory)
-    {
-        if (!CanEdit)
-            return;
-        if (string.IsNullOrWhiteSpace(path))
-            throw new ArgumentException("输出目录不能为空。", nameof(path));
-        var fullPath = Path.GetFullPath(path.Trim());
-        if (File.Exists(fullPath))
-            throw new IOException($"输出目录被同名文件占用：{fullPath}");
-
-        if (isXtDirectory)
-        {
-            if (string.Equals(_customXtDirectory, fullPath, StringComparison.OrdinalIgnoreCase))
-                return;
-            _customXtDirectory = fullPath;
-            OnPropertyChanged(nameof(HasCustomXtDirectory));
-            OnPropertyChanged(nameof(CanRestoreXtDirectory));
-        }
-        else
-        {
-            if (string.Equals(_customSolidWorksDirectory, fullPath, StringComparison.OrdinalIgnoreCase))
-                return;
-            _customSolidWorksDirectory = fullPath;
-            OnPropertyChanged(nameof(HasCustomSolidWorksDirectory));
-            OnPropertyChanged(nameof(CanRestoreSolidWorksDirectory));
-        }
-        RefreshOutputPlan();
-    }
-
-    private void RefreshOutputPlan()
-    {
-        if (IsAssemblyMode)
-        {
-            if (_probeResult is not null && _sourceHashAfterProbe is not null)
-            {
-                var plan = AssemblyPlanner.Create(
-                    _probeResult,
-                    _customXtDirectory,
-                    _customSolidWorksDirectory);
-                ApplyProbeResult(_probeResult, plan, _sourceHashAfterProbe);
-            }
-            else
-            {
-                UpdateAssemblyOutputPaths();
-            }
-        }
-        else if (IsPartDirectoryMode)
-        {
-            ScanPartDirectory(updateStatus: true);
-        }
-    }
-
     private void ResetOutputDirectories()
     {
-        _customXtDirectory = null;
-        _customSolidWorksDirectory = null;
-        OnPropertyChanged(nameof(HasCustomXtDirectory));
-        OnPropertyChanged(nameof(HasCustomSolidWorksDirectory));
-        OnPropertyChanged(nameof(CanRestoreXtDirectory));
-        OnPropertyChanged(nameof(CanRestoreSolidWorksDirectory));
+        XtDirectory = string.Empty;
+        SolidWorksDirectory = string.Empty;
+        AssemblyOutputPath = string.Empty;
     }
 
     private void SetSourceKind(ConversionSourceKind value)

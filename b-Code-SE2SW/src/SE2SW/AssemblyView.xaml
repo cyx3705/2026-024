@@ -1,101 +1,32 @@
 <UserControl x:Class="SE2SW.AssemblyView"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:SE2SW"
-        MinWidth="760" MinHeight="460"
-        Background="#F3F5F4"
-        FontFamily="Microsoft YaHei UI"
-        FontSize="13"
-        >
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SE2SW"
+             MinWidth="320"
+             MinHeight="320"
+             Background="Transparent"
+             FontFamily="{DynamicResource Shell.Font.Family}"
+             FontSize="{DynamicResource Shell.Font.Body}"
+             Foreground="{DynamicResource Shell.Brush.TextPrimary}">
     <UserControl.Resources>
-        <Style TargetType="Button">
-            <Setter Property="Height" Value="34" />
-            <Setter Property="Padding" Value="14,0" />
-            <Setter Property="Background" Value="White" />
-            <Setter Property="BorderBrush" Value="#BBC5C1" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Foreground" Value="#283431" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="ButtonBorder" Padding="{TemplateBinding Padding}"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="4">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#E9EFEC" />
-                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#7B928B" />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#DCE6E2" />
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.45" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="#14665C" />
-            <Setter Property="BorderBrush" Value="#14665C" />
-            <Setter Property="Foreground" Value="White" />
-        </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Height" Value="34" />
-            <Setter Property="Padding" Value="9,6" />
-            <Setter Property="BorderBrush" Value="#BBC5C1" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Background" Value="White" />
-        </Style>
-        <Style TargetType="DataGridColumnHeader">
-            <Setter Property="Background" Value="#EEF1F0" />
-            <Setter Property="Foreground" Value="#40504C" />
-            <Setter Property="BorderBrush" Value="#DCE2DF" />
+        <Style x:Key="Mapping.DataGridHeader" TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="{DynamicResource Shell.Brush.SurfaceAlt}" />
+            <Setter Property="Foreground" Value="{DynamicResource Shell.Brush.TextSecondary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Shell.Brush.Hairline}" />
             <Setter Property="BorderThickness" Value="0,0,1,1" />
-            <Setter Property="Padding" Value="10,0" />
-        </Style>
-        <Style x:Key="HorizontalOptionExpander" TargetType="Expander">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Expander">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ToggleButton x:Name="HeaderToggle" Background="Transparent" BorderThickness="0"
-                                          Padding="8,5" FocusVisualStyle="{x:Null}"
-                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
-                                <StackPanel Orientation="Horizontal">
-                                    <ContentPresenter Content="{TemplateBinding Header}" VerticalAlignment="Center" />
-                                    <TextBlock x:Name="Arrow" Text="›" FontSize="20" FontFamily="Segoe UI Symbol"
-                                               Margin="7,-2,0,0" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </ToggleButton>
-                            <ContentPresenter x:Name="ExpandSite" ContentSource="Content" Margin="8,0,0,0"
-                                              VerticalAlignment="Center" Visibility="Collapsed" />
-                        </StackPanel>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsExpanded" Value="True">
-                                <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible" />
-                                <Setter TargetName="Arrow" Property="Text" Value="‹" />
-                            </Trigger>
-                            <Trigger SourceName="HeaderToggle" Property="IsMouseOver" Value="True">
-                                <Setter TargetName="HeaderToggle" Property="Background" Value="#E9EFEC" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+            <Setter Property="FontFamily" Value="{DynamicResource Shell.Font.Family}" />
+            <Setter Property="FontSize" Value="{DynamicResource Shell.Font.Small}" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding" Value="{DynamicResource Shell.Space.ControlPad}" />
+            <Setter Property="MinHeight" Value="{DynamicResource Shell.Size.Control}" />
         </Style>
         <HierarchicalDataTemplate DataType="{x:Type local:AssemblyTreeNode}" ItemsSource="{Binding Children}">
             <StackPanel Orientation="Horizontal" ToolTip="{Binding SourcePath}">
-                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding StateText, StringFormat=  · {0}}" Foreground="#71807B" />
+                <TextBlock Style="{DynamicResource Shell.Text.Body}"
+                           Text="{Binding DisplayName}"
+                           FontWeight="SemiBold" />
+                <TextBlock Style="{DynamicResource Shell.Text.Caption}"
+                           Text="{Binding StateText, StringFormat=  · {0}}" />
             </StackPanel>
         </HierarchicalDataTemplate>
     </UserControl.Resources>
@@ -107,50 +38,85 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Border x:Name="OutputPathBar" Grid.Row="0" Margin="22,16,22,10" Height="34"
-                Background="White" BorderBrush="#BBC5C1" BorderThickness="1"
-                CornerRadius="4" ClipToBounds="True">
+        <Border x:Name="OutputPathBar"
+                Grid.Row="0"
+                Margin="{DynamicResource Shell.Space.PadTight}"
+                MinHeight="{DynamicResource Shell.Size.Tab}"
+                Background="{DynamicResource Shell.Brush.SurfaceAlt}"
+                BorderBrush="{DynamicResource Shell.Brush.Hairline}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource Shell.Radius.Inner}"
+                ClipToBounds="True">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="SourceColumn" Width="*" />
+                    <ColumnDefinition x:Name="ContentColumn" Width="*" />
                 </Grid.ColumnDefinitions>
-                <Button x:Name="SourceSelectorButton" Padding="12,0" Background="Transparent" BorderThickness="0"
-                        HorizontalContentAlignment="Stretch" Click="OnChooseSourceClick"
+
+                <Button x:Name="SourceSelectorButton"
+                        Padding="{DynamicResource Shell.Space.PadTight}"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        HorizontalContentAlignment="Stretch"
+                        Click="OnChooseSourceClick"
                         ToolTip="点击选择装配体或零件文件夹">
                     <Button.ContextMenu>
                         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                            <MenuItem Header="取消当前操作" Click="OnCancelClick" IsEnabled="{Binding CanCancel}" />
+                            <MenuItem Header="取消当前操作"
+                                      Click="OnCancelClick"
+                                      IsEnabled="{Binding CanCancel}" />
                         </ContextMenu>
                     </Button.ContextMenu>
                     <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="88" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding SourceLabel}" Foreground="#596762" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Margin="6,0,0,0" Text="{Binding SourcePath}" TextTrimming="CharacterEllipsis"
-                                   Foreground="#283431" VerticalAlignment="Center" ToolTip="{Binding SourcePath}" />
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Style="{DynamicResource Shell.Text.Caption}"
+                                   Text="{Binding SourceLabel}" />
+                        <TextBlock Grid.Row="1"
+                                   Style="{DynamicResource Shell.Text.Body}"
+                                   Text="{Binding SourcePath}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding SourcePath}" />
                     </Grid>
                 </Button>
-                <Border Grid.Column="1" BorderBrush="#D7DDDA" BorderThickness="1,0,0,0" Padding="12,0">
+
+                <Border Grid.Column="1"
+                        Padding="{DynamicResource Shell.Space.PadTight}"
+                        BorderBrush="{DynamicResource Shell.Brush.Hairline}"
+                        BorderThickness="1,0,0,0">
                     <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="72" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="转换内容" Foreground="#596762" VerticalAlignment="Center" />
-                        <ComboBox x:Name="MappingContentSelector" Grid.Column="1" Margin="6,0,0,0"
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Style="{DynamicResource Shell.Text.Caption}"
+                                   Text="转换内容" />
+                        <ComboBox x:Name="MappingContentSelector"
+                                  Grid.Row="1"
                                   ItemsSource="{Binding MappingContents}"
                                   SelectedItem="{Binding SelectedMappingContent, Mode=TwoWay}"
-                                  DisplayMemberPath="DisplayName"
                                   ToolTip="选择来源内容与目标文件类型"
-                                  IsEnabled="{Binding CanEdit}" />
+                                  IsEnabled="{Binding CanEdit}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                     </Grid>
                 </Border>
-                <ProgressBar x:Name="OutputActivityBar" Grid.ColumnSpan="2" Height="3"
-                             Margin="1,0,1,0" VerticalAlignment="Bottom" IsIndeterminate="True"
-                             Background="#D9E0DD" Foreground="#14665C" IsHitTestVisible="False">
+
+                <ProgressBar x:Name="OutputActivityBar"
+                             Grid.ColumnSpan="2"
+                             Height="3"
+                             VerticalAlignment="Bottom"
+                             IsIndeterminate="True"
+                             Background="{DynamicResource Shell.Brush.Hairline}"
+                             Foreground="{DynamicResource Shell.Brush.Accent}"
+                             IsHitTestVisible="False">
                     <ProgressBar.Style>
                         <Style TargetType="ProgressBar">
                             <Setter Property="Visibility" Value="Collapsed" />
@@ -165,29 +131,31 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="22,0,22,10">
+        <Grid Grid.Row="1" Margin="{DynamicResource Shell.Space.PadTight}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition>
                     <ColumnDefinition.Style>
                         <Style TargetType="ColumnDefinition">
                             <Setter Property="Width" Value="2*" />
-                            <Setter Property="MinWidth" Value="250" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsPartDirectoryMode}" Value="True">
                                     <Setter Property="Width" Value="0" />
-                                    <Setter Property="MinWidth" Value="0" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </ColumnDefinition.Style>
                 </ColumnDefinition>
-                <ColumnDefinition Width="3*" MinWidth="350" />
+                <ColumnDefinition Width="3*" />
             </Grid.ColumnDefinitions>
-            <Border Background="White" BorderBrush="#D7DDDA" BorderThickness="1"
-                    CornerRadius="4" Margin="0,0,7,0">
+
+            <Border Background="{DynamicResource Shell.Brush.Surface}"
+                    BorderBrush="{DynamicResource Shell.Brush.Hairline}"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource Shell.Radius.Inner}">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Visibility" Value="Visible" />
+                        <Setter Property="Margin" Value="0,0,4,0" />
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsPartDirectoryMode}" Value="True">
                                 <Setter Property="Visibility" Value="Collapsed" />
@@ -196,17 +164,32 @@
                     </Style>
                 </Border.Style>
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="装配结构" Padding="11,9"
-                               FontWeight="SemiBold" Foreground="#34413F" Background="#EEF1F0" />
-                    <TreeView ItemsSource="{Binding AssemblyTree}" BorderThickness="0" Padding="8" />
+                    <Border DockPanel.Dock="Top"
+                            Padding="{DynamicResource Shell.Space.PadTight}"
+                            Background="{DynamicResource Shell.Brush.SurfaceAlt}"
+                            BorderBrush="{DynamicResource Shell.Brush.Hairline}"
+                            BorderThickness="0,0,0,1">
+                        <TextBlock Style="{DynamicResource Shell.Text.Body}"
+                                   Text="装配结构"
+                                   FontWeight="SemiBold" />
+                    </Border>
+                    <TreeView ItemsSource="{Binding AssemblyTree}"
+                              Padding="{DynamicResource Shell.Space.PadTight}"
+                              Background="Transparent"
+                              Foreground="{DynamicResource Shell.Brush.TextPrimary}"
+                              BorderThickness="0" />
                 </DockPanel>
             </Border>
-            <Border Background="White" BorderBrush="#D7DDDA" BorderThickness="1" CornerRadius="4">
+
+            <Border Background="{DynamicResource Shell.Brush.Surface}"
+                    BorderBrush="{DynamicResource Shell.Brush.Hairline}"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource Shell.Radius.Inner}">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Grid.Column" Value="1" />
                         <Setter Property="Grid.ColumnSpan" Value="1" />
-                        <Setter Property="Margin" Value="7,0,0,0" />
+                        <Setter Property="Margin" Value="4,0,0,0" />
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsPartDirectoryMode}" Value="True">
                                 <Setter Property="Grid.Column" Value="0" />
@@ -217,54 +200,81 @@
                     </Style>
                 </Border.Style>
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="{Binding PartsPanelTitle}" Padding="11,9"
-                               FontWeight="SemiBold" Foreground="#34413F" Background="#EEF1F0" />
-                    <DataGrid ItemsSource="{Binding Parts}" AutoGenerateColumns="False" CanUserAddRows="False"
-                              CanUserDeleteRows="False" CanUserResizeRows="False" IsReadOnly="True"
-                              HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                              HorizontalGridLinesBrush="#E5EAE7" BorderThickness="0" RowHeight="36"
-                              ColumnHeaderHeight="34">
+                    <Border DockPanel.Dock="Top"
+                            Padding="{DynamicResource Shell.Space.PadTight}"
+                            Background="{DynamicResource Shell.Brush.SurfaceAlt}"
+                            BorderBrush="{DynamicResource Shell.Brush.Hairline}"
+                            BorderThickness="0,0,0,1">
+                        <TextBlock Style="{DynamicResource Shell.Text.Body}"
+                                   Text="{Binding PartsPanelTitle}"
+                                   FontWeight="SemiBold" />
+                    </Border>
+                    <DataGrid ItemsSource="{Binding Parts}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserResizeRows="False"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal"
+                              Background="{DynamicResource Shell.Brush.Surface}"
+                              Foreground="{DynamicResource Shell.Brush.TextPrimary}"
+                              RowBackground="{DynamicResource Shell.Brush.Surface}"
+                              AlternatingRowBackground="{DynamicResource Shell.Brush.SurfaceAlt}"
+                              HorizontalGridLinesBrush="{DynamicResource Shell.Brush.Hairline}"
+                              BorderThickness="0"
+                              RowHeight="32"
+                              ColumnHeaderHeight="28"
+                              ColumnHeaderStyle="{StaticResource Mapping.DataGridHeader}">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Solid Edge 零件" Binding="{Binding FileName}" Width="2*" MinWidth="180" />
-                            <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="82" />
-                            <DataGridTextColumn Header="特征" Binding="{Binding FeatureText}" Width="68" />
-                            <DataGridTextColumn Header="草图" Binding="{Binding SketchText}" Width="68" />
-                            <DataGridTextColumn Header="结果" Binding="{Binding Detail}" Width="2.4*" MinWidth="180" />
+                            <DataGridTextColumn Header="Solid Edge 零件" Binding="{Binding FileName}" Width="2*" MinWidth="120" />
+                            <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="72" />
+                            <DataGridTextColumn Header="特征" Binding="{Binding FeatureText}" Width="58" />
+                            <DataGridTextColumn Header="草图" Binding="{Binding SketchText}" Width="58" />
+                            <DataGridTextColumn Header="结果" Binding="{Binding Detail}" Width="2.4*" MinWidth="120" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
             </Border>
         </Grid>
 
-        <Grid Grid.Row="2" Margin="22,0,22,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <Expander Header="转换选项" VerticalAlignment="Center" HorizontalAlignment="Left"
-                      ExpandDirection="Right" Style="{StaticResource HorizontalOptionExpander}"
-                      IsEnabled="{Binding CanEdit}">
-                <Border Margin="8,0,0,0" Padding="10,8" Background="White"
-                        BorderBrush="#D7DDDA" BorderThickness="1" CornerRadius="4">
-                    <StackPanel Orientation="Horizontal">
-                        <CheckBox Content="识别特征" IsChecked="{Binding RecognizeFeatures}" />
-                        <CheckBox Content="完全定义草图" Margin="16,0,0,0"
-                                  IsChecked="{Binding FullyDefineSketches}"
-                                  IsEnabled="{Binding CanFullyDefineSketches}" />
-                        <CheckBox Content="零件失败时继续（默认开启）" Margin="16,0,0,0"
-                                  IsChecked="{Binding ContinueWhenPartFails}"
-                                  IsEnabled="{Binding CanContinueWhenPartFails}" />
-                        <CheckBox Content="重建装配关系（默认开启）" Margin="16,0,0,0"
-                                  IsChecked="{Binding RebuildMates}"
-                                  IsEnabled="{Binding CanRebuildMates}"
-                                  ToolTip="{Binding RebuildMatesHint}" />
-                    </StackPanel>
-                </Border>
-            </Expander>
-            <Button Grid.Column="1" Content="{Binding PrimaryActionText}" MinWidth="138"
-                    Style="{StaticResource PrimaryButton}" Click="OnConvertClick"
-                    IsEnabled="{Binding CanConvert}" />
+        <Grid Grid.Row="2" Margin="{DynamicResource Shell.Space.PadTight}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <GroupBox Header="转换选项">
+                <StackPanel>
+                    <CheckBox Content="识别特征"
+                              IsChecked="{Binding RecognizeFeatures}" />
+                    <CheckBox Content="完全定义草图"
+                              IsChecked="{Binding FullyDefineSketches}"
+                              IsEnabled="{Binding CanFullyDefineSketches}" />
+                    <CheckBox Content="零件失败时继续"
+                              IsChecked="{Binding ContinueWhenPartFails}"
+                              IsEnabled="{Binding CanContinueWhenPartFails}" />
+                    <CheckBox Content="重建装配关系"
+                              IsChecked="{Binding RebuildMates}"
+                              IsEnabled="{Binding CanRebuildMates}"
+                              ToolTip="{Binding RebuildMatesHint}" />
+                </StackPanel>
+            </GroupBox>
+            <Grid Grid.Row="1" Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Style="{DynamicResource Shell.Text.Caption}"
+                           Text="{Binding StatusText}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" />
+                <Button Grid.Column="1"
+                        MinWidth="128"
+                        Style="{DynamicResource Shell.Button.Accent}"
+                        Content="{Binding PrimaryActionText}"
+                        Click="OnConvertClick"
+                        IsEnabled="{Binding CanConvert}" />
+            </Grid>
         </Grid>
-
     </Grid>
 </UserControl>
