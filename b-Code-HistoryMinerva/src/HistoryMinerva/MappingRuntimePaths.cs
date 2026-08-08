@@ -10,10 +10,10 @@ public sealed class MappingRuntimePaths
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(hostDataDirectory);
         HostDataDirectory = Path.GetFullPath(hostDataDirectory);
-        ModuleDataDirectory = Path.Combine(HostDataDirectory, "HistoryMinerva");
+        ModuleDataDirectory = Path.Combine(HostDataDirectory, HistoryMinervaIdentity.DataDirectoryName);
         ModuleDirectory = string.IsNullOrWhiteSpace(configuredModuleDirectory)
-            ? Path.Combine(HostDataDirectory, "Modules", SE2SWIdentity.ModuleSlotName)
-            : Path.Combine(Path.GetFullPath(configuredModuleDirectory), SE2SWIdentity.ModuleSlotName);
+            ? Path.Combine(HostDataDirectory, "Modules", HistoryMinervaIdentity.Name)
+            : Path.Combine(Path.GetFullPath(configuredModuleDirectory), HistoryMinervaIdentity.Name);
     }
 
     public string HostDataDirectory { get; }
@@ -38,9 +38,9 @@ public sealed class MappingRuntimePaths
         var candidates = new List<string>();
         var assemblyLocation = Assembly.GetExecutingAssembly().Location;
         if (!string.IsNullOrWhiteSpace(assemblyLocation))
-            candidates.Add(Path.Combine(Path.GetDirectoryName(assemblyLocation)!, SE2SWIdentity.WorkerFileName));
-        candidates.Add(Path.Combine(AppContext.BaseDirectory, SE2SWIdentity.WorkerFileName));
-        candidates.Add(Path.Combine(ModuleDirectory, SE2SWIdentity.WorkerFileName));
+            candidates.Add(Path.Combine(Path.GetDirectoryName(assemblyLocation)!, HistoryMinervaIdentity.WorkerFileName));
+        candidates.Add(Path.Combine(AppContext.BaseDirectory, HistoryMinervaIdentity.WorkerFileName));
+        candidates.Add(Path.Combine(ModuleDirectory, HistoryMinervaIdentity.WorkerFileName));
         return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 

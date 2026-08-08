@@ -1,4 +1,5 @@
 using System.IO;
+using SE2SW.Contracts;
 
 namespace SWuse;
 
@@ -6,7 +7,7 @@ internal static class SWuseWorkspace
 {
     public static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-        "HistoryMinervaWorkspace");
+        HistoryMinervaIdentity.WorkspaceDirectoryName);
 
     public static string DefaultProgram => """
         using SWuse.Api;

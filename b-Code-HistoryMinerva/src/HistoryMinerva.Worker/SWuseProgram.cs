@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using SE2SW.Contracts;
 using SWuse.Api;
 using SWuse.Contracts;
 
@@ -41,7 +42,7 @@ internal static class Program
             if (string.Equals(args[index], "--request", StringComparison.OrdinalIgnoreCase))
                 return Path.GetFullPath(args[index + 1]);
         }
-        throw new InvalidDataException("用法：HistoryMinerva.Worker --request <request.json>");
+        throw new InvalidDataException($"用法：{HistoryMinervaIdentity.WorkerFileName} --request <request.json>");
     }
 }
 

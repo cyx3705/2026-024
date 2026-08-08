@@ -58,7 +58,8 @@ if (-not $SkipBuild) {
 }
 
 & (Join-Path $PSScriptRoot 'Update-HistoryMinervaManifest.ps1') -ManifestPath $moduleManifestPath
-$moduleManifest = Get-Content -LiteralPath $moduleManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$moduleManifestText = [System.IO.File]::ReadAllText($moduleManifestPath, [System.Text.Encoding]::UTF8)
+$moduleManifest = $moduleManifestText | ConvertFrom-Json
 if ($moduleManifest.name -ne 'HistoryMinerva' -or $moduleManifest.version -ne $moduleVersion) {
     throw "Module manifest does not match HistoryMinerva $moduleVersion"
 }
@@ -83,8 +84,9 @@ foreach ($file in $runtimeFiles) {
     }
 }
 
+# z-HistoryMinerva is the single release folder: manifest and runtime payload live together.
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path $projectRoot 'z-Package-HistoryMinerva'
+    $OutputRoot = Join-Path $projectRoot 'z-HistoryMinerva'
 }
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 $projectPrefix = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd('\') + '\'
@@ -99,7 +101,11 @@ $null = New-Item -ItemType Directory -Path $OutputRoot
 foreach ($file in $runtimeFiles) {
     Copy-Item -LiteralPath (Join-Path $buildOutput $file) -Destination (Join-Path $OutputRoot $file)
 }
-Copy-Item -LiteralPath $moduleManifestPath -Destination (Join-Path $OutputRoot 'module.manifest.json')
+# The manifest lives inside the release folder being rebuilt, so restore the validated copy from memory.
+[System.IO.File]::WriteAllText(
+    (Join-Path $OutputRoot 'module.manifest.json'),
+    $moduleManifestText,
+    [System.Text.UTF8Encoding]::new($false))
 
 $snapshot = [ordered]@{
     schemaVersion = 1

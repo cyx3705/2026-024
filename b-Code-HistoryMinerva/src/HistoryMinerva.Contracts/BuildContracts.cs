@@ -3,14 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace SWuse.Contracts;
 
-public static class SWuseIdentity
-{
-    public const string ModuleName = "HistoryMinerva";
-    public const string CommandDomain = "historyminerva";
-    public const string WindowId = "historyminerva";
-    public const string ApplicationDataDirectoryName = "HistoryMinerva";
-    public const string ModuleApplicationDataDirectoryName = "HistoryMinerva";
-}
+// 模块名称常量已并入 SE2SW.Contracts.HistoryMinervaIdentity 唯一权威源，本文件不再持有身份字面量。
 
 public enum BuildDiagnosticSeverity
 {

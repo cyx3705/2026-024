@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using SE2SW.Contracts;
 using SWuse.Contracts;
 
 namespace SWuse;
 
 internal static class SWuseWorkerClient
 {
-    public static string WorkerPath => Path.Combine(AppContext.BaseDirectory, "HistoryMinerva.Worker.exe");
+    public static string WorkerPath => Path.Combine(AppContext.BaseDirectory, HistoryMinervaIdentity.WorkerFileName);
 
     public static async Task<SWuseBuildResult> RunAsync(SWuseBuildRequest request, CancellationToken cancellationToken)
     {
@@ -16,8 +17,8 @@ internal static class SWuseWorkerClient
 
         var requestDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            SWuseIdentity.ApplicationDataDirectoryName,
-            SWuseIdentity.ModuleApplicationDataDirectoryName,
+            HistoryMinervaIdentity.DataDirectoryName,
+            HistoryMinervaIdentity.DataDirectoryName,
             "requests");
         Directory.CreateDirectory(requestDirectory);
         var requestPath = Path.Combine(requestDirectory, Guid.NewGuid().ToString("N") + ".json");

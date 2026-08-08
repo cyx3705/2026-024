@@ -2,6 +2,7 @@ using AppShell.Core.Commands;
 using AppShell.Core.Docking;
 using AppShell.Core.Logging;
 using AppShell.Core.Modules;
+using SE2SW.Contracts;
 
 namespace SE2SW;
 
@@ -28,7 +29,7 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware, IModuleContextAwar
         _runtimePaths = new MappingRuntimePaths(
             context.DataDirectory,
             context.Settings.Get("module.dir"));
-        context.Log.Info("historyminerva", $"UI 运行目录已接入 AppShell：{_runtimePaths.ModuleDataDirectory}");
+        context.Log.Info(HistoryMinervaIdentity.WindowId, $"UI 运行目录已接入 AppShell：{_runtimePaths.ModuleDataDirectory}");
 
         // 无窗服务宿主不会注入 ShellUi，因此只在前端注册依赖当前页面状态的命令。
         if (_shellUi is not null)
@@ -37,9 +38,9 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware, IModuleContextAwar
             {
                 registry.Register(new CommandDescriptor
                 {
-                    Name = "historyminerva.convert",
-                    Summary = "转换 HistoryMinerva 页面当前选择的来源",
-                    Example = "historyminerva.convert",
+                    Name = HistoryMinervaIdentity.CommandDomain + ".convert",
+                    Summary = $"转换 {HistoryMinervaIdentity.WindowTitle} 页面当前选择的来源",
+                    Example = HistoryMinervaIdentity.CommandDomain + ".convert",
                     Readonly = false,
                     Dangerous = false,
                     RequiresUiThread = true,
@@ -48,9 +49,9 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware, IModuleContextAwar
                 });
                 registry.Register(new CommandDescriptor
                 {
-                    Name = "historyminerva.cancel",
-                    Summary = "取消 HistoryMinerva 页面当前转换或探查",
-                    Example = "historyminerva.cancel",
+                    Name = HistoryMinervaIdentity.CommandDomain + ".cancel",
+                    Summary = $"取消 {HistoryMinervaIdentity.WindowTitle} 页面当前转换或探查",
+                    Example = HistoryMinervaIdentity.CommandDomain + ".cancel",
                     Readonly = false,
                     Dangerous = false,
                     RequiresUiThread = true,
@@ -69,13 +70,13 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware, IModuleContextAwar
         _workspace = new SE2SWWorkspaceView(_runtimePaths, _context.Bus);
         _windows.Add(_shellUi.RegisterToolWindow(new ToolWindowDescriptor
         {
-            Id = "historyminerva",
-            Title = "HistoryMinerva",
+            Id = HistoryMinervaIdentity.WindowId,
+            Title = HistoryMinervaIdentity.WindowTitle,
             DefaultSide = DockSide.Center,
             DefaultRatio = 0.75,
             IsSingleton = true,
             ContentFactory = () => _workspace,
-        }, "HistoryMinerva"));
+        }, HistoryMinervaIdentity.Name));
     }
 
     public void DestroyUi()
@@ -95,10 +96,10 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware, IModuleContextAwar
         if (!viewModel.CanConvert)
             return CommandResult.Fail(viewModel.StatusText);
 
-        _context?.Log.Info("historyminerva", $"开始执行 {viewModel.SelectedMappingContent.DisplayName}");
+        _context?.Log.Info(HistoryMinervaIdentity.WindowId, $"开始执行 {viewModel.SelectedMappingContent.DisplayName}");
         command.Progress?.Report(viewModel.OperationText);
         await viewModel.ConvertAsync(command.Progress);
-        _context?.Log.Info("historyminerva", viewModel.StatusText);
+        _context?.Log.Info(HistoryMinervaIdentity.WindowId, viewModel.StatusText);
         return CommandResult.Ok(viewModel.StatusText);
     }
 

@@ -14,7 +14,7 @@ internal static class Program
         if (paths is null)
         {
             Console.Error.WriteLine(
-                $"Usage: HistoryMinerva.Worker {WorkerProtocol.PartsRequestVerb}|{WorkerProtocol.PartImportVerb}|{WorkerProtocol.AssemblyProbeVerb}|{WorkerProtocol.AssemblyBuildVerb} "
+                $"Usage: {HistoryMinervaIdentity.WorkerFileName} {WorkerProtocol.PartsRequestVerb}|{WorkerProtocol.PartImportVerb}|{WorkerProtocol.AssemblyProbeVerb}|{WorkerProtocol.AssemblyBuildVerb} "
                 + $"<absolute-json-path> {WorkerProtocol.CancellationArgument} <absolute-signal-path>");
             return 2;
         }

@@ -25,16 +25,14 @@
       "b-Code",
       "b-Code-HistoryMinerva",
       "b-Code-HistoryMinerva-Tests",
-      "z-HistoryMinerva",
-      "z-Package-HistoryMinerva"
+      "z-HistoryMinerva"
     ],
     "sourceRoots": ["b-Code", "b-Code-HistoryMinerva", "b-Code-HistoryMinerva-Tests"],
     "generatedRoots": [
       "b-Code-HistoryMinerva/**/bin",
       "b-Code-HistoryMinerva/**/obj",
       "b-Code-HistoryMinerva-Tests/**/bin",
-      "b-Code-HistoryMinerva-Tests/**/obj",
-      "z-Package-HistoryMinerva/**"
+      "b-Code-HistoryMinerva-Tests/**/obj"
     ],
     "archiveRoots": ["b-Office/history"],
     "allowedRootDirectoryPrefixes": ["a-", "b-", "z-"]
@@ -75,7 +73,6 @@
     "**/obj/**",
     "**/node_modules/**",
     "**/.vs/**",
-    "z-Package-HistoryMinerva/**",
     "artifacts/**"
   ]
 }

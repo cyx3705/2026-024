@@ -119,9 +119,9 @@ static void TestSharedContractsAndVersion()
     Equal(expected, typeof(WorkerRequestValidator).Assembly.GetName().Version?.ToString(3), "Worker 程序集版本必须来自唯一版本源");
     Equal(expected, new ModuleInfo().Version, "模块运行时版本不得另存字符串副本");
     Equal(expected, ReadVersionFromManifest(), "注册清单版本必须与版本真源一致");
-    Equal("historyminerva", new ModuleInfo().ModuleName, "合并模块必须使用 historyminerva 指令域");
-    Equal("HistoryMinerva", SWuseIdentity.ModuleName, "合并后模块身份必须统一为 HistoryMinerva");
-    Equal("historyminerva", SWuseIdentity.CommandDomain, "合并后指令域必须统一为 historyminerva");
+    Equal(HistoryMinervaIdentity.Name, new ModuleInfo().ModuleName, "模块名必须来自 HistoryMinervaIdentity 权威源");
+    Equal(HistoryMinervaIdentity.Name, HistoryMinervaIdentity.CommandDomain, "命令域必须与模块名同根（宿主按 ModuleName 反射生成）");
+    Equal("HistoryMinerva", HistoryMinervaIdentity.Name, "权威源模块名字面量必须为 HistoryMinerva");
     Equal(180, FeatureRecognitionPolicy.DefaultTimeoutSeconds, "特征识别默认无进度预算必须是三分钟");
     Equal(180, FeatureRecognitionPolicy.NormalizeTimeoutSeconds(0), "缺省超时必须回到三分钟");
     Equal(180, FeatureRecognitionPolicy.NormalizeTimeoutSeconds(180), "显式三分钟超时不得被改写");
@@ -453,8 +453,8 @@ static void TestCommandSurface(string root)
         "show 必须如实告知 SWuse 独立窗口已移除");
     True(commands.Hide().Contains("已在 4.2.0 移除", StringComparison.Ordinal),
         "hide 必须如实告知无独立窗口可隐藏");
-    True(commands.Status().Contains("historyminerva", StringComparison.Ordinal),
-        "status 必须以 historyminerva 身份报告 Worker 状态");
+    True(commands.Status().Contains(HistoryMinervaIdentity.Name, StringComparison.Ordinal),
+        "status 必须以 HistoryMinerva 身份报告 Worker 状态");
 }
 
 static void TestCustomOutputDirectories(string root)
@@ -1572,10 +1572,10 @@ static void TestUiModuleRegistration(string root)
     ((IShellUiAware)module).ShellUi = registrar;
     module.Attach(context);
 
-    True(context.Registry.TryGet("historyminerva.convert", out var convert),
-        "AppShell 前端必须注册 historyminerva.convert");
-    True(context.Registry.TryGet("historyminerva.cancel", out var cancel),
-        "AppShell 前端必须注册 historyminerva.cancel");
+    True(context.Registry.TryGet("HistoryMinerva.convert", out var convert),
+        "AppShell 前端必须注册 HistoryMinerva.convert");
+    True(context.Registry.TryGet("HistoryMinerva.cancel", out var cancel),
+        "AppShell 前端必须注册 HistoryMinerva.cancel");
     foreach (var registeredCommand in new[] { convert, cancel })
     {
         True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
@@ -1583,7 +1583,7 @@ static void TestUiModuleRegistration(string root)
         True(!registeredCommand.AllowMcpExecution,
             $"{registeredCommand.Name} 不得允许 MCP 执行");
         Equal(CommandExecutionSite.Frontend,
-            FrontendCommandCapability.From(registeredCommand, "module:HistoryMinerva").CreateProxy().ExecutionSite,
+            FrontendCommandCapability.From(registeredCommand, "module:" + HistoryMinervaIdentity.Name).CreateProxy().ExecutionSite,
             $"{registeredCommand.Name} 发布到服务目录后必须成为前端命令");
     }
 
@@ -1595,16 +1595,16 @@ static void TestUiModuleRegistration(string root)
             module.CreateUi();
             Equal(1, registrar.Descriptors.Count, "模块应只注册一个单页工具窗口");
             var descriptor = registrar.Descriptors.Single();
-            Equal("historyminerva", descriptor.Id, "窗口 ID 必须统一为 historyminerva");
-            Equal("HistoryMinerva", descriptor.Title, "窗口标题必须使用模块名 HistoryMinerva");
+            Equal(HistoryMinervaIdentity.WindowId, descriptor.Id, "窗口 ID 必须来自权威源 WindowId");
+            Equal(HistoryMinervaIdentity.WindowTitle, descriptor.Title, "窗口标题必须是去 History 的短形 Minerva");
             True(descriptor.ContentFactory != null, "单页工具窗口必须提供内容工厂");
             Equal(DockSide.Center, descriptor.DefaultSide, "HistoryMinerva 必须注册为中央业务页");
             Equal(0.75, descriptor.DefaultRatio, "HistoryMinerva 中央页必须保留 0.75 描述比例");
             True(descriptor.IsSingleton, "HistoryMinerva 中央页必须是单例");
 
-            var result = context.Bus.ExecuteAsync("historyminerva.convert", "Smoke").GetAwaiter().GetResult();
+            var result = context.Bus.ExecuteAsync("HistoryMinerva.convert", "Smoke").GetAwaiter().GetResult();
             True(!result.Success && result.Message.Contains("请选择", StringComparison.Ordinal),
-                "未选择来源时 historyminerva.convert 必须通过总线返回可读失败原因");
+                "未选择来源时 HistoryMinerva.convert 必须通过总线返回可读失败原因");
             True(context.Log.Entries.Any(entry =>
                     entry.Category.Equals("cmd:result:historyminerva", StringComparison.OrdinalIgnoreCase)),
                 "historyminerva 命令结果必须进入 AppShell 控制台日志");
@@ -1627,23 +1627,23 @@ static void TestUiModuleRegistration(string root)
     var serviceModule = new SE2SWUiModule();
     serviceModule.Attach(serviceContext);
     serviceModule.CreateUi();
-    True(!serviceContext.Registry.TryGet("historyminerva.convert", out _)
-         && !serviceContext.Registry.TryGet("historyminerva.cancel", out _),
+    True(!serviceContext.Registry.TryGet("HistoryMinerva.convert", out _)
+         && !serviceContext.Registry.TryGet("HistoryMinerva.cancel", out _),
         "无 ShellUi 的服务宿主不得重复注册页面状态命令");
 
     var runtimePaths = new MappingRuntimePaths(dataRoot, moduleRoot);
-    Equal(Path.Combine(dataRoot, "HistoryMinerva", SE2SWIdentity.RequestsDirectoryName),
+    Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, SE2SWIdentity.RequestsDirectoryName),
         runtimePaths.RequestsDirectory,
         "Worker 请求必须迁入 AppShell 数据根");
-    Equal(Path.Combine(dataRoot, "HistoryMinerva", SE2SWIdentity.ProbesDirectoryName),
+    Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, SE2SWIdentity.ProbesDirectoryName),
         runtimePaths.ProbesDirectory,
         "探查结果必须迁入 AppShell 数据根");
     True(runtimePaths.WorkerCandidates().Contains(
-            Path.Combine(moduleRoot, SE2SWIdentity.ModuleSlotName, SE2SWIdentity.WorkerFileName),
+            Path.Combine(moduleRoot, HistoryMinervaIdentity.Name, HistoryMinervaIdentity.WorkerFileName),
             StringComparer.OrdinalIgnoreCase),
         "Worker 定位必须包含 AppShell HistoryMinerva 部署槽");
-    Equal("HistoryMinerva", SE2SWIdentity.ModuleSlotName, "部署槽必须与模块同名");
-    Equal("HistoryMinerva.Worker.exe", SE2SWIdentity.WorkerFileName, "Worker 已合并为单个 HistoryMinerva.Worker.exe");
+    Equal(HistoryMinervaIdentity.Name, "HistoryMinerva", "部署槽字面量必须与权威源一致");
+    Equal("HistoryMinerva.Worker.exe", HistoryMinervaIdentity.WorkerFileName, "Worker 已合并为单个 HistoryMinerva.Worker.exe");
 }
 
 static void TestUnifiedSourceWorkspace()

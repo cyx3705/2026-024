@@ -3,16 +3,18 @@
 HistoryMinerva 是注册到 AppShell 宿主的单一 CAD 模块（4.2.0）。前身 Mapping（SE2SW）与 SWuse
 两个模块经破坏性重构合并为一个发布单元：纯前端 + 纯后端。
 
-- **前端**：`HistoryMinerva.dll`——中央停靠页（原 Mapping 页面原样保留：`.par → .SLDPRT`、
-  `.asm → .SLDASM`），模块指令域统一为 `historyminerva`；SWuse 独立窗口已移除（待打磨后回归），
-  其占位指令 `historyminerva.show/hide/status` 如实说明现状。
+- **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（原 Mapping 页面原样保留：
+  `.par → .SLDPRT`、`.asm → .SLDASM`），模块名与指令域统一为 `HistoryMinerva`（全部取自
+  `HistoryMinervaIdentity` 唯一权威源）；SWuse 独立窗口已移除（待打磨后回归），
+  其占位指令 `HistoryMinerva.show/hide/status` 如实说明现状。
 - **后端**：单一 `HistoryMinerva.Worker.exe`（x64 STA）内部按参数形态路由两条既有协议——
   SE2SW 的 `<verb> <json> --cancel <signal>` 四参数链与 SWuse 的 `--request <json>` 双参数链；
   协议与数据目录行为不变。SWuse 的 C# 建模能力（Roslyn 编译 + `SWuse.Api`）保留在协议层。
 - **测试**：`b-Code-HistoryMinerva-Tests` 下 Smoke 合一、UiSmoke 与全部 CAD 探针/门禁归拢一处。
 
 内部程序集、命名空间与 JSON 协议继续沿用 `SE2SW.*` / `SWuse.*` 名称（沿用 V4.0.0
-“对外改名、内部不动”先例）；对外模块名、窗口、指令域与 MCP 名称统一为 `HistoryMinerva` / `historyminerva`。
+“对外改名、内部不动”先例）；对外模块名、指令域与 MCP 名称统一为 `HistoryMinerva`，
+发布目录为单一 `z-HistoryMinerva`（清单与运行产物同处）。
 
 用户界面只配置两件事：转换来源与转换内容。内部使用 Parasolid `.x_t` 和独立 Worker 完成
 CAD COM 自动化；源 CAD 文件保持只读，产物写入来源目录下的 `XT/` 与 `SW/`。

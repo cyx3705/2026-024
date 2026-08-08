@@ -1,5 +1,6 @@
 using Microsoft.Win32;
 using AppShell.Core.Commands;
+using SE2SW.Contracts;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -94,7 +95,9 @@ public partial class AssemblyView : UserControl, IDisposable
         if (_commandBus is null)
             await _viewModel.ConvertAsync();
         else
-            await _commandBus.ExecuteAsync("historyminerva.convert", "HistoryMinerva:UI");
+            await _commandBus.ExecuteAsync(
+                HistoryMinervaIdentity.CommandDomain + ".convert",
+                HistoryMinervaIdentity.Name + ":UI");
     }
 
     private async void OnCancelClick(object sender, RoutedEventArgs e)
@@ -102,7 +105,9 @@ public partial class AssemblyView : UserControl, IDisposable
         if (_commandBus is null)
             _viewModel.Cancel();
         else
-            await _commandBus.ExecuteAsync("historyminerva.cancel", "HistoryMinerva:UI");
+            await _commandBus.ExecuteAsync(
+                HistoryMinervaIdentity.CommandDomain + ".cancel",
+                HistoryMinervaIdentity.Name + ":UI");
     }
 
     public void Dispose()

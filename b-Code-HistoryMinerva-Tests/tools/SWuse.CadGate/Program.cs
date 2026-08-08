@@ -3,13 +3,14 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32;
+using SE2SW.Contracts;
 using SWuse.Contracts;
 
 var keepArtifacts = args.Any(argument => string.Equals(argument, "--keep", StringComparison.OrdinalIgnoreCase));
 var moduleRoot = FindModuleRoot();
-var workerPath = Path.Combine(moduleRoot, "src", "HistoryMinerva.Worker", "bin", "Release", "net8.0-windows", "win-x64", "HistoryMinerva.Worker.exe");
+var workerPath = Path.Combine(moduleRoot, "src", "HistoryMinerva.Worker", "bin", "Release", "net8.0-windows", "win-x64", HistoryMinervaIdentity.WorkerFileName);
 if (!File.Exists(workerPath))
-    throw new FileNotFoundException("Release HistoryMinerva.Worker.exe was not found. Build HistoryMinerva first.", workerPath);
+    throw new FileNotFoundException($"Release {HistoryMinervaIdentity.WorkerFileName} was not found. Build HistoryMinerva first.", workerPath);
 
 var beforeSolidWorks = ProcessIds("SLDWORKS");
 if (beforeSolidWorks.Count != 0)

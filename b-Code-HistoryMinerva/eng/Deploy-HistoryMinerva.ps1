@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $moduleRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = Split-Path -Parent $moduleRoot
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
-    $PackageRoot = Join-Path $projectRoot 'z-Package-HistoryMinerva'
+    $PackageRoot = Join-Path $projectRoot 'z-HistoryMinerva'
 }
 $PackageRoot = [System.IO.Path]::GetFullPath($PackageRoot)
 $ApplicationDataRoot = [System.IO.Path]::GetFullPath($ApplicationDataRoot)
