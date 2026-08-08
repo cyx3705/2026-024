@@ -1,6 +1,6 @@
 # HistoryMinerva
 
-HistoryMinerva 是注册到 AppShell 宿主的单一 CAD 模块（4.2.0）。前身 Mapping（SE2SW）与 SWuse
+HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块（4.2.1）。前身 Mapping（SE2SW）与 SWuse
 两个模块经破坏性重构合并为一个发布单元：纯前端 + 纯后端。
 
 - **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（原 Mapping 页面原样保留：
@@ -26,11 +26,11 @@ CAD COM 自动化；源 CAD 文件保持只读，产物写入来源目录下的 
 | 项目身份、路径和命令 | [`project.manifest.json`](./project.manifest.json) |
 | 项目状态 | [`b-Office/current/项目概览.md`](./b-Office/current/项目概览.md) |
 | 需求与架构 | [`b-Office/current/技术合同.md`](./b-Office/current/技术合同.md) |
-| 4.2.0 前后端分离重构 | [`b-Office/history/44-V4.2.0-前后端分离重构计划.md`](./b-Office/history/44-V4.2.0-前后端分离重构计划.md) |
+| 4.2.1 前后端分离重构 | [`b-Office/history/44-V4.2.0-前后端分离重构计划.md`](./b-Office/history/44-V4.2.0-前后端分离重构计划.md) |
 | 验证方式 | [`b-Office/current/验证合同.md`](./b-Office/current/验证合同.md) |
 | 生产模块源码 | [`b-Code-HistoryMinerva/README.md`](./b-Code-HistoryMinerva/README.md) |
 | 独立测试与 CAD 门禁 | [`b-Code-HistoryMinerva-Tests/README.md`](./b-Code-HistoryMinerva-Tests/README.md) |
-| AppShell 模块清单 | [`z-HistoryMinerva/module.manifest.json`](./z-HistoryMinerva/module.manifest.json) |
+| HistoryVulcan 模块清单 | [`z-HistoryMinerva/module.manifest.json`](./z-HistoryMinerva/module.manifest.json) |
 | 模块对外 API | [`b-Office/package/模块API.md`](./b-Office/package/模块API.md) |
 | 模块合并计划（4.1.0） | [`b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md`](./b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md) |
 | SWuse V0.1 设计档案 | [`b-Office/history/swuse-v0.1/docs`](./b-Office/history/swuse-v0.1/docs) |

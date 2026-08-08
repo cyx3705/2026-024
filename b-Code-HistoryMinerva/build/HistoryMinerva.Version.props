@@ -1,14 +1,12 @@
 <Project>
   <!-- 唯一可编辑的发布版本源。改这里，manifest 与程序集版本一起走。 -->
   <PropertyGroup>
-    <HistoryMinervaVersion>4.2.0</HistoryMinervaVersion>
-    <AppShellVersion>3.1.9</AppShellVersion>
-    <AppShellPackageRoot Condition="'$(AppShellPackageRoot)' == ''">C:\OneHistory\OneHistory-Projects\2026-023-AppShell\z-Package-AppShell</AppShellPackageRoot>
-    <AppShellHostRoot Condition="'$(AppShellHostRoot)' == ''">$(AppShellPackageRoot)\host</AppShellHostRoot>
-    <AppShellManifestPath>$(AppShellPackageRoot)\manifest.json</AppShellManifestPath>
-    <AppShellCorePath>$(AppShellHostRoot)\AppShell.Core.dll</AppShellCorePath>
-    <AppShellManifestSha256>237074D09D743460E30F79EB96A1594B65158C367B0A872AB01823EE4DC9B343</AppShellManifestSha256>
-    <AppShellCoreSha256>CB61FD06CA990A876AAC26123F29E16444237E8AEBC614A6DE2DA5CCDF984D61</AppShellCoreSha256>
+    <HistoryMinervaVersion>4.2.1</HistoryMinervaVersion>
+    <HistoryVulcanVersion>3.2.2</HistoryVulcanVersion>
+    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-HistoryVulcan</HistoryVulcanPackageRoot>
+    <HistoryVulcanHostRoot Condition="'$(HistoryVulcanHostRoot)' == ''">$(HistoryVulcanPackageRoot)\host</HistoryVulcanHostRoot>
+    <HistoryVulcanManifestPath>$(HistoryVulcanPackageRoot)\manifest.json</HistoryVulcanManifestPath>
+    <HistoryVulcanCorePath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HistoryVulcanCorePath>
     <Version>$(HistoryMinervaVersion)</Version>
     <AssemblyVersion>$(HistoryMinervaVersion).0</AssemblyVersion>
     <FileVersion>$(HistoryMinervaVersion).0</FileVersion>

@@ -1,4 +1,4 @@
-using AppShell.Core.Modules;
+using HistoryVulcan.Core.Modules;
 
 namespace SWuse;
 

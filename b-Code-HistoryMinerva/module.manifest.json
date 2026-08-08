@@ -1,0 +1,21 @@
+{
+    "schemaVersion":  1,
+    "type":  "HistoryVulcan.Module",
+    "name":  "HistoryMinerva",
+    "version":  "4.2.1",
+    "description":  "HistoryMinerva CAD module with Solid Edge to SolidWorks conversion and a unified worker.",
+    "artifact":  "HistoryMinerva.dll",
+    "docs":  "HistoryMinerva.xml",
+    "deps":  [
+                 "HistoryMinerva.Contracts.dll",
+                 "HistoryMinerva.Api.dll",
+                 "HistoryMinerva.Worker.exe",
+                 "HistoryMinerva.Worker.dll",
+                 "HistoryMinerva.Worker.deps.json",
+                 "HistoryMinerva.Worker.runtimeconfig.json",
+                 "Microsoft.CodeAnalysis.dll",
+                 "Microsoft.CodeAnalysis.CSharp.dll"
+             ],
+    "mcpExposure":  "readonly",
+    "ui":  true
+}

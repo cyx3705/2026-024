@@ -1,6 +1,6 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva 4.2.0 模块对外消费面的唯一合同。构建与部署验收命令见
+本文件是 HistoryMinerva 4.2.1 模块对外消费面的唯一合同。构建与部署验收命令见
 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用，均不再单列文档。
 
 ## 模块身份
@@ -14,7 +14,7 @@
 | 窗口内部标识 / 日志类别 | `historyminerva` |
 | Worker 可执行文件 | `HistoryMinerva.Worker.exe` |
 
-## AppShell 命令面
+## HistoryVulcan 命令面
 
 宿主命令表忽略大小写（小写输入照常命中）；MCP 曝光为只读（`mcpExposure=readonly`）。
 
@@ -22,7 +22,7 @@
 | --- | --- | --- |
 | `HistoryMinerva.convert` | 仅前端 | 转换当前选择来源；UI 线程、`Readonly=false`、`AllowMcpExecution=false` |
 | `HistoryMinerva.cancel` | 仅前端 | 取消当前转换或探查；元数据同上 |
-| `HistoryMinerva.show` | 双槽 | 占位：SWuse 独立窗口已于 4.2.0 移除，如实说明现状 |
+| `HistoryMinerva.show` | 双槽 | 占位：SWuse 独立窗口已于 4.2.1 移除，如实说明现状 |
 | `HistoryMinerva.hide` | 双槽 | 占位：无独立窗口可隐藏 |
 | `HistoryMinerva.status` | 双槽 | 报告 `HistoryMinerva.Worker.exe` 是否就绪 |
 
@@ -42,5 +42,5 @@
 
 ## 数据目录
 
-- 转换侧：`%AppData%/AppShell/HistoryMinerva/`（`requests/` 请求、`probes/` 探查结果）。
+- 转换侧：`%AppData%/HistoryVulcan/HistoryMinerva/`（`requests/` 请求、`probes/` 探查结果）。
 - 建模侧：`%LocalAppData%/HistoryMinerva/HistoryMinerva/requests/`（构建请求暂存，执行后自删）。

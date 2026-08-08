@@ -12,11 +12,11 @@
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active"
   },
-  "appShellHost": {
-    "packageRoot": "../2026-023-AppShell/z-Package-AppShell",
-    "version": "3.1.9",
-    "manifestSha256": "237074D09D743460E30F79EB96A1594B65158C367B0A872AB01823EE4DC9B343",
-    "coreSha256": "CB61FD06CA990A876AAC26123F29E16444237E8AEBC614A6DE2DA5CCDF984D61"
+  "historyVulcanHost": {
+    "packageRoot": "../2026-023-HistoryVulcan/z-HistoryVulcan",
+    "version": "3.2.2",
+    "manifestSha256": "EE9E059452DFC6FE41BF108C8D28440AAD659A1E3D183F60A4A62EF5851D78F6",
+    "coreSha256": "89B88F0C639F98867DFAD62A3CE65B4FA1597451A1AF153B68C503BAF7ECCD53"
   },
   "paths": {
     "activeRoots": [
@@ -59,7 +59,7 @@
   },
   "externalDependencies": [
     ".NET 8 SDK and Windows Desktop Runtime",
-    "AppShell.Core 3.1.9 host snapshot (manifest SHA256 237074D09D743460E30F79EB96A1594B65158C367B0A872AB01823EE4DC9B343)",
+    "HistoryVulcan.Core 3.2.2 host snapshot (manifest SHA256 EE9E059452DFC6FE41BF108C8D28440AAD659A1E3D183F60A4A62EF5851D78F6)",
     "Solid Edge 2020 COM automation",
     "SolidWorks 2025 SP5 COM automation",
     "SolidWorks FeatureWorks"

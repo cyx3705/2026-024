@@ -1,7 +1,7 @@
-using AppShell.Core.Commands;
-using AppShell.Core.Docking;
-using AppShell.Core.Logging;
-using AppShell.Core.Modules;
+using HistoryVulcan.Core.Commands;
+using HistoryVulcan.Core.Docking;
+using HistoryVulcan.Core.Logging;
+using HistoryVulcan.Core.Modules;
 using SE2SW.Contracts;
 
 namespace SE2SW;
@@ -39,6 +39,7 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware, IModuleContextAwar
                 registry.Register(new CommandDescriptor
                 {
                     Name = HistoryMinervaIdentity.CommandDomain + ".convert",
+                    CommandClass = "conversion",
                     Summary = $"转换 {HistoryMinervaIdentity.WindowTitle} 页面当前选择的来源",
                     Example = HistoryMinervaIdentity.CommandDomain + ".convert",
                     Readonly = false,
@@ -50,6 +51,7 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware, IModuleContextAwar
                 registry.Register(new CommandDescriptor
                 {
                     Name = HistoryMinervaIdentity.CommandDomain + ".cancel",
+                    CommandClass = "conversion",
                     Summary = $"取消 {HistoryMinervaIdentity.WindowTitle} 页面当前转换或探查",
                     Example = HistoryMinervaIdentity.CommandDomain + ".cancel",
                     Readonly = false,
