@@ -31,7 +31,7 @@ CAD COM 自动化；源 CAD 文件保持只读，产物写入来源目录下的 
 | 生产模块源码 | [`b-Code-HistoryMinerva/README.md`](./b-Code-HistoryMinerva/README.md) |
 | 独立测试与 CAD 门禁 | [`b-Code-HistoryMinerva-Tests/README.md`](./b-Code-HistoryMinerva-Tests/README.md) |
 | AppShell 模块清单 | [`z-HistoryMinerva/module.manifest.json`](./z-HistoryMinerva/module.manifest.json) |
-| NuGet/OHS 发布说明 | [`b-Office/package/复用说明.md`](./b-Office/package/复用说明.md) |
+| 模块对外 API | [`b-Office/package/模块API.md`](./b-Office/package/模块API.md) |
 | 模块合并计划（4.1.0） | [`b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md`](./b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md) |
 | SWuse V0.1 设计档案 | [`b-Office/history/swuse-v0.1/docs`](./b-Office/history/swuse-v0.1/docs) |
 
