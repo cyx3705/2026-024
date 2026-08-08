@@ -1,4 +1,4 @@
-# OneHistoryStudio baseline begin
+# HistoryJanus baseline begin
 *.1 filter=lfs diff=lfs merge=lfs -text
 *.48719 text eol=lf
 *.7z filter=lfs diff=lfs merge=lfs -text
@@ -207,7 +207,7 @@
 *.zheng text eol=lf
 *.zw1 filter=lfs diff=lfs merge=lfs -text
 *._ text eol=lf
-# OneHistoryStudio baseline end
+# HistoryJanus baseline end
 
 * text=auto
 
