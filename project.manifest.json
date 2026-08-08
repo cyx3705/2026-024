@@ -47,7 +47,7 @@
     "technicalContract": "b-Office/current/技术合同.md",
     "decisions": "b-Office/current/有效决策.md",
     "verification": "b-Office/current/验证合同.md",
-    "roadmap": "b-Office/current/V4.2.0-前后端分离重构计划.md",
+    "roadmap": "b-Office/history/44-V4.2.0-前后端分离重构计划.md",
     "architectureDiagram": "b-Office/current/SE2SW转换架构.drawio",
     "historyBoundary": "b-Office/history/历史资料说明.md"
   },
