@@ -8,37 +8,33 @@
   "project": {
     "id": "2026-024",
     "name": "HistoryMinerva",
-    "title": "HistoryMinerva CAD 模块集（Mapping 与 SWuse）",
+    "title": "HistoryMinerva CAD 模块（Mapping 前端 + 合并 Worker 后端）",
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active"
   },
   "appShellHost": {
     "packageRoot": "../2026-023-AppShell/z-Package-AppShell",
     "version": "3.1.9",
-    "manifestSha256": "9D27B06100988DE89547931201E5612487C5ADA3C14C9D7277BFFA1C1450E72A",
-    "coreSha256": "0EA9D28EEE8AB28A20679042B937A4C94A288177B543602E50C30EDC2115A58B"
+    "manifestSha256": "237074D09D743460E30F79EB96A1594B65158C367B0A872AB01823EE4DC9B343",
+    "coreSha256": "CB61FD06CA990A876AAC26123F29E16444237E8AEBC614A6DE2DA5CCDF984D61"
   },
   "paths": {
     "activeRoots": [
       "b-Office/current",
       "b-Office/package",
       "b-Code",
-      "b-Code-SE2SW",
-      "b-Code-SE2SW-Tests",
-      "b-Code-SWuse",
-      "z-SE2SW",
-      "z-SWuse",
-      "z-Package-Mapping"
+      "b-Code-HistoryMinerva",
+      "b-Code-HistoryMinerva-Tests",
+      "z-HistoryMinerva",
+      "z-Package-HistoryMinerva"
     ],
-    "sourceRoots": ["b-Code", "b-Code-SE2SW", "b-Code-SE2SW-Tests", "b-Code-SWuse"],
+    "sourceRoots": ["b-Code", "b-Code-HistoryMinerva", "b-Code-HistoryMinerva-Tests"],
     "generatedRoots": [
-      "b-Code-SE2SW/**/bin",
-      "b-Code-SE2SW/**/obj",
-      "b-Code-SE2SW-Tests/**/bin",
-      "b-Code-SE2SW-Tests/**/obj",
-      "b-Code-SWuse/**/bin",
-      "b-Code-SWuse/**/obj",
-      "z-Package-Mapping/**"
+      "b-Code-HistoryMinerva/**/bin",
+      "b-Code-HistoryMinerva/**/obj",
+      "b-Code-HistoryMinerva-Tests/**/bin",
+      "b-Code-HistoryMinerva-Tests/**/obj",
+      "z-Package-HistoryMinerva/**"
     ],
     "archiveRoots": ["b-Office/history"],
     "allowedRootDirectoryPrefixes": ["a-", "b-", "z-"]
@@ -53,25 +49,21 @@
     "technicalContract": "b-Office/current/技术合同.md",
     "decisions": "b-Office/current/有效决策.md",
     "verification": "b-Office/current/验证合同.md",
-    "roadmap": "b-Office/current/V4.1.0-AppShell迁移计划.md",
+    "roadmap": "b-Office/current/V4.2.0-前后端分离重构计划.md",
     "architectureDiagram": "b-Office/current/SE2SW转换架构.drawio",
     "historyBoundary": "b-Office/history/历史资料说明.md"
   },
   "commands": {
-    "setup": "dotnet restore .\\b-Code-SE2SW\\src\\SE2SW\\SE2SW.csproj --configfile .\\nuget.config -p:NuGetAudit=false",
-    "build": "dotnet build .\\b-Code-SE2SW\\src\\SE2SW\\SE2SW.csproj -c Release -p:NuGetAudit=false",
-    "test": "dotnet run --project .\\b-Code-SE2SW-Tests\\tests\\SE2SW.Smoke\\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false",
+    "setup": "dotnet restore .\\b-Code-HistoryMinerva\\src\\HistoryMinerva\\HistoryMinerva.csproj --configfile .\\nuget.config -p:NuGetAudit=false",
+    "build": "dotnet build .\\b-Code-HistoryMinerva\\src\\HistoryMinerva\\HistoryMinerva.csproj -c Release -p:NuGetAudit=false",
+    "test": "dotnet run --project .\\b-Code-HistoryMinerva-Tests\\tests\\HistoryMinerva.Smoke\\HistoryMinerva.Smoke.csproj -c Release -p:NuGetAudit=false",
     "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code\\Test-ProjectContract.ps1 -Instantiation",
     "run": null,
-    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-SE2SW\\eng\\Build-MappingPackage.ps1",
-    "setup-swuse": "dotnet restore .\\b-Code-SWuse\\src\\SWuse\\SWuse.csproj -p:NuGetAudit=false",
-    "build-swuse": "dotnet build .\\b-Code-SWuse\\src\\SWuse\\SWuse.csproj -c Release -p:NuGetAudit=false",
-    "test-swuse": "dotnet run --project .\\b-Code-SWuse\\tests\\SWuse.Smoke\\SWuse.Smoke.csproj -c Release -p:NuGetAudit=false",
-    "package-swuse": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-SWuse\\eng\\Publish-SWuse.ps1"
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-HistoryMinerva\\eng\\Build-HistoryMinervaPackage.ps1"
   },
   "externalDependencies": [
     ".NET 8 SDK and Windows Desktop Runtime",
-    "AppShell.Core 3.1.9 host snapshot (manifest SHA256 9D27B06100988DE89547931201E5612487C5ADA3C14C9D7277BFFA1C1450E72A)",
+    "AppShell.Core 3.1.9 host snapshot (manifest SHA256 237074D09D743460E30F79EB96A1594B65158C367B0A872AB01823EE4DC9B343)",
     "Solid Edge 2020 COM automation",
     "SolidWorks 2025 SP5 COM automation",
     "SolidWorks FeatureWorks"
@@ -83,7 +75,7 @@
     "**/obj/**",
     "**/node_modules/**",
     "**/.vs/**",
-    "z-Package-Mapping/**",
+    "z-Package-HistoryMinerva/**",
     "artifacts/**"
   ]
 }

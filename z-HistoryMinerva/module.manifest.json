@@ -1,0 +1,19 @@
+{
+    "name":  "HistoryMinerva",
+    "version":  "4.2.0",
+    "description":  "HistoryMinerva CAD 模块：Solid Edge → SolidWorks 映射转换停靠页，与 SolidWorks C# 建模后端（协议层，经合并的单一 Worker）",
+    "artifact":  "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/HistoryMinerva.dll",
+    "docs":  "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/HistoryMinerva.xml",
+    "deps":  [
+                 "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/HistoryMinerva.Contracts.dll",
+                 "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/HistoryMinerva.Api.dll",
+                 "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/HistoryMinerva.Worker.exe",
+                 "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/HistoryMinerva.Worker.dll",
+                 "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/HistoryMinerva.Worker.deps.json",
+                 "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/HistoryMinerva.Worker.runtimeconfig.json",
+                 "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/Microsoft.CodeAnalysis.dll",
+                 "b-Code-HistoryMinerva/src/HistoryMinerva/bin/Release/net8.0-windows/Microsoft.CodeAnalysis.CSharp.dll"
+             ],
+    "mcpExposure":  "readonly",
+    "ui":  true
+}

@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\build\HistoryMinerva.Version.props" />
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="HistoryMinerva.Smoke" />
+    <InternalsVisibleTo Include="HistoryMinerva.UiSmoke" />
+    <ProjectReference Include="..\HistoryMinerva.Contracts\HistoryMinerva.Contracts.csproj" />
+    <ProjectReference Include="..\HistoryMinerva.Worker\HistoryMinerva.Worker.csproj" ReferenceOutputAssembly="false" />
+    <Reference Include="AppShell.Core">
+      <HintPath>$(AppShellCorePath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <Target Name="ValidateAppShellSnapshot" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(AppShellManifestPath)')" Text="AppShell manifest not found: $(AppShellManifestPath)" />
+    <Error Condition="!Exists('$(AppShellCorePath)')" Text="AppShell.Core not found: $(AppShellCorePath)" />
+    <GetFileHash Files="$(AppShellManifestPath)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_AppShellManifestHash" />
+    </GetFileHash>
+    <GetFileHash Files="$(AppShellCorePath)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_AppShellCoreHash" />
+    </GetFileHash>
+    <GetAssemblyIdentity AssemblyFiles="$(AppShellCorePath)">
+      <Output TaskParameter="Assemblies" ItemName="_AppShellCoreIdentity" />
+    </GetAssemblyIdentity>
+    <Error Condition="'%(_AppShellManifestHash.FileHash)' != '$(AppShellManifestSha256)'"
+           Text="AppShell manifest hash changed. Expected=$(AppShellManifestSha256) Actual=%(_AppShellManifestHash.FileHash)" />
+    <Error Condition="'%(_AppShellCoreHash.FileHash)' != '$(AppShellCoreSha256)'"
+           Text="AppShell.Core hash changed. Expected=$(AppShellCoreSha256) Actual=%(_AppShellCoreHash.FileHash)" />
+    <Error Condition="'%(_AppShellCoreIdentity.Version)' != '$(AppShellVersion).0'"
+           Text="AppShell.Core version mismatch. Expected=$(AppShellVersion).0 Actual=%(_AppShellCoreIdentity.Version)" />
+  </Target>
+  <Target Name="CopyWorkerArtifacts" AfterTargets="Build">
+    <ItemGroup>
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.exe" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.dll" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.deps.json" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.runtimeconfig.json" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Api.dll" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\Microsoft.CodeAnalysis.dll" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\Microsoft.CodeAnalysis.CSharp.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WorkerArtifact)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

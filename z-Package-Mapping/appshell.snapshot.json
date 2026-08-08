@@ -1,9 +1,0 @@
-{
-    "schemaVersion":  1,
-    "module":  "Mapping",
-    "moduleVersion":  "4.1.0",
-    "appShellVersion":  "3.1.9",
-    "appShellManifestSha256":  "9D27B06100988DE89547931201E5612487C5ADA3C14C9D7277BFFA1C1450E72A",
-    "appShellCoreSha256":  "0EA9D28EEE8AB28A20679042B937A4C94A288177B543602E50C30EDC2115A58B",
-    "appShellSource":  "../2026-023-AppShell/z-Package-AppShell"
-}

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\build\HistoryMinerva.Version.props" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
+    <NoWarn>$(NoWarn);NU1801</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HistoryMinerva.Contracts\HistoryMinerva.Contracts.csproj" />
+    <ProjectReference Include="..\HistoryMinerva.Api\HistoryMinerva.Api.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <InternalsVisibleTo Include="HistoryMinerva.Smoke" />
+  </ItemGroup>
+</Project>

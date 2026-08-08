@@ -1,0 +1,9 @@
+{
+    "schemaVersion":  1,
+    "module":  "HistoryMinerva",
+    "moduleVersion":  "4.2.0",
+    "appShellVersion":  "3.1.9",
+    "appShellManifestSha256":  "237074D09D743460E30F79EB96A1594B65158C367B0A872AB01823EE4DC9B343",
+    "appShellCoreSha256":  "CB61FD06CA990A876AAC26123F29E16444237E8AEBC614A6DE2DA5CCDF984D61",
+    "appShellSource":  "../2026-023-AppShell/z-Package-AppShell"
+}
