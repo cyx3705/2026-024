@@ -9,24 +9,24 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\b-Code-HistoryMinerva\src\HistoryMinerva\HistoryMinerva.csproj" />
-    <Reference Include="AppShell.Core">
-      <HintPath>$(AppShellHostRoot)\AppShell.Core.dll</HintPath>
+    <Reference Include="HistoryVulcan.Core">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HintPath>
       <Private>true</Private>
     </Reference>
-    <Reference Include="AppShell.Services">
-      <HintPath>$(AppShellHostRoot)\AppShell.Services.dll</HintPath>
+    <Reference Include="HistoryVulcan.Services">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll</HintPath>
       <Private>true</Private>
     </Reference>
-    <Reference Include="AppShell.Shell">
-      <HintPath>$(AppShellHostRoot)\AppShell.Shell.dll</HintPath>
+    <Reference Include="HistoryVulcan.Shell">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Shell.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="AvalonDock">
-      <HintPath>$(AppShellHostRoot)\AvalonDock.dll</HintPath>
+      <HintPath>$(HistoryVulcanHostRoot)\AvalonDock.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="AvalonDock.Themes.VS2013">
-      <HintPath>$(AppShellHostRoot)\AvalonDock.Themes.VS2013.dll</HintPath>
+      <HintPath>$(HistoryVulcanHostRoot)\AvalonDock.Themes.VS2013.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>

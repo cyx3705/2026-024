@@ -6,11 +6,11 @@ using SE2SW.Worker;
 using SWuse;
 using SWuse.Api;
 using SWuse.Contracts;
-using AppShell.Core.Docking;
-using AppShell.Core.Commands;
-using AppShell.Core.Logging;
-using AppShell.Core.Modules;
-using AppShell.Core.Storage;
+using HistoryVulcan.Core.Docking;
+using HistoryVulcan.Core.Commands;
+using HistoryVulcan.Core.Logging;
+using HistoryVulcan.Core.Modules;
+using HistoryVulcan.Core.Storage;
 using System.Text.Json;
 using System.Windows.Threading;
 
@@ -1573,9 +1573,9 @@ static void TestUiModuleRegistration(string root)
     module.Attach(context);
 
     True(context.Registry.TryGet("HistoryMinerva.convert", out var convert),
-        "AppShell 前端必须注册 HistoryMinerva.convert");
+        "HistoryVulcan 前端必须注册 HistoryMinerva.convert");
     True(context.Registry.TryGet("HistoryMinerva.cancel", out var cancel),
-        "AppShell 前端必须注册 HistoryMinerva.cancel");
+        "HistoryVulcan 前端必须注册 HistoryMinerva.cancel");
     foreach (var registeredCommand in new[] { convert, cancel })
     {
         True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
@@ -1606,8 +1606,8 @@ static void TestUiModuleRegistration(string root)
             True(!result.Success && result.Message.Contains("请选择", StringComparison.Ordinal),
                 "未选择来源时 HistoryMinerva.convert 必须通过总线返回可读失败原因");
             True(context.Log.Entries.Any(entry =>
-                    entry.Category.Equals("cmd:result:historyminerva", StringComparison.OrdinalIgnoreCase)),
-                "historyminerva 命令结果必须进入 AppShell 控制台日志");
+                    entry.Category.Equals("cmd:result:historyminerva:conversion", StringComparison.OrdinalIgnoreCase)),
+                "historyminerva 命令结果必须进入 HistoryVulcan 控制台日志并携带命令类");
 
             module.DestroyUi();
             Equal(1, registrar.DisposeCount, "热卸载必须释放 HistoryMinerva 窗口句柄");
@@ -1634,14 +1634,14 @@ static void TestUiModuleRegistration(string root)
     var runtimePaths = new MappingRuntimePaths(dataRoot, moduleRoot);
     Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, SE2SWIdentity.RequestsDirectoryName),
         runtimePaths.RequestsDirectory,
-        "Worker 请求必须迁入 AppShell 数据根");
+        "Worker 请求必须迁入 HistoryVulcan 数据根");
     Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, SE2SWIdentity.ProbesDirectoryName),
         runtimePaths.ProbesDirectory,
-        "探查结果必须迁入 AppShell 数据根");
+        "探查结果必须迁入 HistoryVulcan 数据根");
     True(runtimePaths.WorkerCandidates().Contains(
             Path.Combine(moduleRoot, HistoryMinervaIdentity.Name, HistoryMinervaIdentity.WorkerFileName),
             StringComparer.OrdinalIgnoreCase),
-        "Worker 定位必须包含 AppShell HistoryMinerva 部署槽");
+        "Worker 定位必须包含 HistoryVulcan HistoryMinerva 部署槽");
     Equal(HistoryMinervaIdentity.Name, "HistoryMinerva", "部署槽字面量必须与权威源一致");
     Equal("HistoryMinerva.Worker.exe", HistoryMinervaIdentity.WorkerFileName, "Worker 已合并为单个 HistoryMinerva.Worker.exe");
 }

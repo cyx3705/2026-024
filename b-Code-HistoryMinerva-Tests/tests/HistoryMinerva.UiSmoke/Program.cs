@@ -19,13 +19,13 @@ internal static class Program
         {
             Source = new Uri(
                 dark
-                    ? "/AppShell.Shell;component/Themes/ShellTokens.Dark.xaml"
-                    : "/AppShell.Shell;component/Themes/ShellTokens.xaml",
+                    ? "/HistoryVulcan.Shell;component/Themes/ShellTokens.Dark.xaml"
+                    : "/HistoryVulcan.Shell;component/Themes/ShellTokens.xaml",
                 UriKind.Relative),
         });
         application.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
-            Source = new Uri("/AppShell.Shell;component/Themes/ShellControls.xaml", UriKind.Relative),
+            Source = new Uri("/HistoryVulcan.Shell;component/Themes/ShellControls.xaml", UriKind.Relative),
         });
         var sourcePath = LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "src", "HistoryMinerva", "AssemblyView.xaml"));
         if (Regex.IsMatch(File.ReadAllText(sourcePath), "#[0-9A-Fa-f]{6,8}", RegexOptions.CultureInvariant))

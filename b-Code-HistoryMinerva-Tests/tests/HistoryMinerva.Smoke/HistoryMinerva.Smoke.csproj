@@ -10,12 +10,12 @@
     <ProjectReference Include="..\..\..\b-Code-HistoryMinerva\src\HistoryMinerva\HistoryMinerva.csproj" />
     <ProjectReference Include="..\..\..\b-Code-HistoryMinerva\src\HistoryMinerva.Api\HistoryMinerva.Api.csproj" />
     <ProjectReference Include="..\..\..\b-Code-HistoryMinerva\src\HistoryMinerva.Worker\HistoryMinerva.Worker.csproj" />
-    <Reference Include="AppShell.Core">
-      <HintPath>$(AppShellHostRoot)\AppShell.Core.dll</HintPath>
+    <Reference Include="HistoryVulcan.Core">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HintPath>
       <Private>true</Private>
     </Reference>
-    <Reference Include="AppShell.Services">
-      <HintPath>$(AppShellHostRoot)\AppShell.Services.dll</HintPath>
+    <Reference Include="HistoryVulcan.Services">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>
