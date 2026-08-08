@@ -1,0 +1,19 @@
+{
+    "name":  "SWuse",
+    "version":  "0.1.1",
+    "description":  "SolidWorks C# 静态零件构建实验环境（独立窗口）",
+    "artifact":  "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/SWuse.dll",
+    "docs":  "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/SWuse.xml",
+    "deps":  [
+                 "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/SWuse.Api.dll",
+                 "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/SWuse.Contracts.dll",
+                 "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/SWuse.Worker.exe",
+                 "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/SWuse.Worker.dll",
+                 "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/SWuse.Worker.deps.json",
+                 "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/SWuse.Worker.runtimeconfig.json",
+                 "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/Microsoft.CodeAnalysis.dll",
+                 "b-Code-SWuse/src/SWuse/bin/Release/net8.0-windows/Microsoft.CodeAnalysis.CSharp.dll"
+             ],
+    "mcpExposure":  "hidden",
+    "ui":  true
+}

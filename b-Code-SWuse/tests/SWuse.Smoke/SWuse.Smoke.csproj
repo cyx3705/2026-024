@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SWuse\SWuse.csproj" />
+    <ProjectReference Include="..\..\src\SWuse.Api\SWuse.Api.csproj" />
+    <ProjectReference Include="..\..\src\SWuse.Contracts\SWuse.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\SWuse.Worker\SWuse.Worker.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <SWuseModuleRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..'))</SWuseModuleRoot>
+    <SWuseWorkerPath>$(SWuseModuleRoot)\src\SWuse.Worker\bin\$(Configuration)\net8.0-windows\win-x64\SWuse.Worker.dll</SWuseWorkerPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="SWuseWorkerPath" Value="$(SWuseWorkerPath)" />
+  </ItemGroup>
+</Project>

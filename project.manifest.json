@@ -7,8 +7,8 @@
   },
   "project": {
     "id": "2026-024",
-    "name": "Mapping",
-    "title": "Mapping 文件映射模块",
+    "name": "HistoryMinerva",
+    "title": "HistoryMinerva CAD 模块集（Mapping 与 SWuse）",
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active"
   },
@@ -25,15 +25,19 @@
       "b-Code",
       "b-Code-SE2SW",
       "b-Code-SE2SW-Tests",
+      "b-Code-SWuse",
       "z-SE2SW",
+      "z-SWuse",
       "z-Package-Mapping"
     ],
-    "sourceRoots": ["b-Code", "b-Code-SE2SW", "b-Code-SE2SW-Tests"],
+    "sourceRoots": ["b-Code", "b-Code-SE2SW", "b-Code-SE2SW-Tests", "b-Code-SWuse"],
     "generatedRoots": [
       "b-Code-SE2SW/**/bin",
       "b-Code-SE2SW/**/obj",
       "b-Code-SE2SW-Tests/**/bin",
       "b-Code-SE2SW-Tests/**/obj",
+      "b-Code-SWuse/**/bin",
+      "b-Code-SWuse/**/obj",
       "z-Package-Mapping/**"
     ],
     "archiveRoots": ["b-Office/history"],
@@ -59,7 +63,11 @@
     "test": "dotnet run --project .\\b-Code-SE2SW-Tests\\tests\\SE2SW.Smoke\\SE2SW.Smoke.csproj -c Release -p:NuGetAudit=false",
     "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code\\Test-ProjectContract.ps1 -Instantiation",
     "run": null,
-    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-SE2SW\\eng\\Build-MappingPackage.ps1"
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-SE2SW\\eng\\Build-MappingPackage.ps1",
+    "setup-swuse": "dotnet restore .\\b-Code-SWuse\\src\\SWuse\\SWuse.csproj -p:NuGetAudit=false",
+    "build-swuse": "dotnet build .\\b-Code-SWuse\\src\\SWuse\\SWuse.csproj -c Release -p:NuGetAudit=false",
+    "test-swuse": "dotnet run --project .\\b-Code-SWuse\\tests\\SWuse.Smoke\\SWuse.Smoke.csproj -c Release -p:NuGetAudit=false",
+    "package-swuse": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-SWuse\\eng\\Publish-SWuse.ps1"
   },
   "externalDependencies": [
     ".NET 8 SDK and Windows Desktop Runtime",
