@@ -1,11 +1,11 @@
 using Microsoft.Win32;
 using HistoryVulcan.Core.Commands;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 public partial class AssemblyView : UserControl, IDisposable
 {
@@ -92,22 +92,33 @@ public partial class AssemblyView : UserControl, IDisposable
 
     private async void OnConvertClick(object sender, RoutedEventArgs e)
     {
-        if (_commandBus is null)
-            await _viewModel.ConvertAsync();
-        else
-            await _commandBus.ExecuteAsync(
+        // 页面按钮必须有反应：旧宿主前端 EnableCommands=false 时
+        // HistoryMinerva.convert 未入本机总线表，ExecuteAsync 会被 RemoteExecutor
+        // 转到服务进程（无页面实例）后静默失败。总线成功则沿用；失败且仍可转换时回退本页。
+        if (_commandBus is not null)
+        {
+            var result = await _commandBus.ExecuteAsync(
                 HistoryMinervaIdentity.CommandDomain + ".convert",
                 HistoryMinervaIdentity.Name + ":UI");
+            if (result.Success || !_viewModel.CanConvert)
+                return;
+        }
+
+        await _viewModel.ConvertAsync();
     }
 
     private async void OnCancelClick(object sender, RoutedEventArgs e)
     {
-        if (_commandBus is null)
-            _viewModel.Cancel();
-        else
-            await _commandBus.ExecuteAsync(
+        if (_commandBus is not null)
+        {
+            var result = await _commandBus.ExecuteAsync(
                 HistoryMinervaIdentity.CommandDomain + ".cancel",
                 HistoryMinervaIdentity.Name + ":UI");
+            if (result.Success)
+                return;
+        }
+
+        _viewModel.Cancel();
     }
 
     public void Dispose()
