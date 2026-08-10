@@ -1,4 +1,4 @@
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 internal static class TemporaryOutput
 {

@@ -1,6 +1,7 @@
 # HistoryMinerva
 
-HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块（4.2.1）。前身 Mapping（SE2SW）与 SWuse
+HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块。当前源码、候选与正式
+`z-HistoryMinerva` 均为 `4.2.3`。前身 Mapping 与 SWuse
 两个模块经破坏性重构合并为一个发布单元：纯前端 + 纯后端。
 
 - **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（原 Mapping 页面原样保留：
@@ -8,12 +9,12 @@ HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块（4.2.1）�
   `HistoryMinervaIdentity` 唯一权威源）；SWuse 独立窗口已移除（待打磨后回归），
   其占位指令 `HistoryMinerva.show/hide/status` 如实说明现状。
 - **后端**：单一 `HistoryMinerva.Worker.exe`（x64 STA）内部按参数形态路由两条既有协议——
-  SE2SW 的 `<verb> <json> --cancel <signal>` 四参数链与 SWuse 的 `--request <json>` 双参数链；
+  HistoryMinerva 的 `<verb> <json> --cancel <signal>` 四参数链与 SWuse 的 `--request <json>` 双参数链；
   协议与数据目录行为不变。SWuse 的 C# 建模能力（Roslyn 编译 + `SWuse.Api`）保留在协议层。
 - **测试**：`b-Code-HistoryMinerva-Tests` 下 Smoke 合一、UiSmoke 与全部 CAD 探针/门禁归拢一处。
 
-内部程序集、命名空间与 JSON 协议继续沿用 `SE2SW.*` / `SWuse.*` 名称（沿用 V4.0.0
-“对外改名、内部不动”先例）；对外模块名、指令域与 MCP 名称统一为 `HistoryMinerva`，
+内部程序集、命名空间与 JSON 协议统一为 `HistoryMinerva.*` / `SWuse.*`，不保留旧转换模块的兼容别名；
+对外模块名、指令域与 MCP 名称统一为 `HistoryMinerva`，
 发布目录为单一 `z-HistoryMinerva`（清单与运行产物同处）。
 
 用户界面只配置两件事：转换来源与转换内容。内部使用 Parasolid `.x_t` 和独立 Worker 完成
@@ -30,7 +31,7 @@ CAD COM 自动化；源 CAD 文件保持只读，产物写入来源目录下的 
 | 验证方式 | [`b-Office/current/验证合同.md`](./b-Office/current/验证合同.md) |
 | 生产模块源码 | [`b-Code-HistoryMinerva/README.md`](./b-Code-HistoryMinerva/README.md) |
 | 独立测试与 CAD 门禁 | [`b-Code-HistoryMinerva-Tests/README.md`](./b-Code-HistoryMinerva-Tests/README.md) |
-| HistoryVulcan 模块清单 | [`z-HistoryMinerva/module.manifest.json`](./z-HistoryMinerva/module.manifest.json) |
+| 最新正式模块清单（当前 4.2.3） | [`z-HistoryMinerva/module.manifest.json`](./z-HistoryMinerva/module.manifest.json) |
 | 模块对外 API | [`b-Office/package/模块API.md`](./b-Office/package/模块API.md) |
 | 模块合并计划（4.1.0） | [`b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md`](./b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md) |
 | SWuse V0.1 设计档案 | [`b-Office/history/swuse-v0.1/docs`](./b-Office/history/swuse-v0.1/docs) |

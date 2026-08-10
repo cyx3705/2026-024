@@ -26,7 +26,7 @@ foreach ($required in @($historyVulcanManifestPath, $historyVulcanCorePath, $mod
 [xml]$versionProps = Get-Content -LiteralPath $versionPropsPath -Raw -Encoding UTF8
 $moduleVersion = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryMinervaVersion } | Where-Object { $_ })[0]
  $expectedHostVersion = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryVulcanVersion } | Where-Object { $_ })[0]
-if ($moduleVersion -notmatch '^\d+\.\d+\.\d+$' -or $expectedHostVersion -ne '3.2.2') {
+if ($moduleVersion -notmatch '^\d+\.\d+\.\d+$' -or $expectedHostVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw "Invalid HistoryMinerva/HistoryVulcan snapshot declaration: HistoryMinerva=$moduleVersion HistoryVulcan=$expectedHostVersion"
 }
 
@@ -35,8 +35,8 @@ if ($hostManifest.product -ne 'HistoryVulcan' -or $hostManifest.version -ne $exp
     throw "HistoryVulcan host snapshot must be ${expectedHostVersion}: $historyVulcanManifestPath"
 }
 $coreVersion = (Get-Item -LiteralPath $historyVulcanCorePath).VersionInfo.FileVersion
-if ($coreVersion -ne '3.2.2.0') {
-    throw "HistoryVulcan.Core file version must be 3.2.2.0: $coreVersion"
+if ($coreVersion -ne "$expectedHostVersion.0") {
+    throw "HistoryVulcan.Core file version must be ${expectedHostVersion}.0: $coreVersion"
 }
 
 if (-not $SkipBuild) {

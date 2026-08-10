@@ -1,5 +1,5 @@
 using System.IO;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
 namespace SWuse;
 

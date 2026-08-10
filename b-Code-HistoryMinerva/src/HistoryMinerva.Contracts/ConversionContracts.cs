@@ -1,4 +1,4 @@
-namespace SE2SW.Contracts;
+namespace HistoryMinerva.Contracts;
 
 public enum ConversionMode
 {

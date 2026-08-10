@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace RelationProbe;
 
 /// <summary>
-/// SE2SW V3.2 装配关系只读探针。
+/// HistoryMinerva V3.2 装配关系只读探针。
 ///
 /// 两个动词共用一次 Solid Edge 会话：
 ///   阶段 A（默认）  读 .asm 的装配关系，dump 类型库成员表 + 实测值 + 几何引用；
@@ -213,7 +213,7 @@ internal sealed class ProbeOptions
         用法: RelationProbe --samples <样件目录> [选项]
           --samples <目录>     必填。含 .asm 与 .par 的样件目录。
           --asm <文件名>       可重复。默认探查目录下全部 .asm。
-          --work-dir <目录>    副本与导出产物的落位，默认 %TEMP%\SE2SW-RelationProbe-<时间戳>。
+          --work-dir <目录>    副本与导出产物的落位，默认 %TEMP%\HistoryMinerva-RelationProbe-<时间戳>。
           --in-place           直接读样件原件，不复制。仍做哈希前后比对。
           --export-check       追加阶段 B：把每个 .asm 整体导出为 .x_t。
           --sw-verify          阶段 B 用 SolidWorks 导入产物核验体数与坐标系。
@@ -289,7 +289,7 @@ internal sealed class ProbeOptions
             SampleDirectory = Path.GetFullPath(samples),
             WorkRoot = Path.GetFullPath(workRoot ?? Path.Combine(
                 Path.GetTempPath(),
-                "SE2SW-RelationProbe-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"))),
+                "HistoryMinerva-RelationProbe-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"))),
             AssemblyNames = names,
             InPlace = inPlace,
             ExportCheck = exportCheck,

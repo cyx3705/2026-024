@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// 启动一个**专属**的 SolidWorks 进程并按 PID 绑定它。

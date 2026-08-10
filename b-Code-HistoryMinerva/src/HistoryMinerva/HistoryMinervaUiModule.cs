@@ -2,17 +2,17 @@ using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Docking;
 using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
-public sealed class SE2SWUiModule : IUiModule, IShellUiAware, IModuleContextAware
+public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleContextAware
 {
     private readonly List<IDisposable> _windows = [];
     private IShellUiRegistrar? _shellUi;
     private IModuleContext? _context;
     private MappingRuntimePaths? _runtimePaths;
-    private SE2SWWorkspaceView? _workspace;
+    private HistoryMinervaWorkspaceView? _workspace;
 
     IShellUiRegistrar IShellUiAware.ShellUi
     {
@@ -69,7 +69,7 @@ public sealed class SE2SWUiModule : IUiModule, IShellUiAware, IModuleContextAwar
         if (_shellUi is null || _context is null || _runtimePaths is null || _windows.Count != 0)
             return;
 
-        _workspace = new SE2SWWorkspaceView(_runtimePaths, _context.Bus);
+        _workspace = new HistoryMinervaWorkspaceView(_runtimePaths, _context.Bus);
         _windows.Add(_shellUi.RegisterToolWindow(new ToolWindowDescriptor
         {
             Id = HistoryMinervaIdentity.WindowId,

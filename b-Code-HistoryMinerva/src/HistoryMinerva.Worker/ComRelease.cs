@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 internal static class ComRelease
 {

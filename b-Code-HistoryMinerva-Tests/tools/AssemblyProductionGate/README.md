@@ -13,7 +13,7 @@ V3.0.2 另提供 `--reuse-existing` 安全重试门禁：它不修改默认模�
 ```powershell
 dotnet run --project .\tools\AssemblyProductionGate\AssemblyProductionGate.csproj -c Release -- `
   --se-asm "<绝对.asm>" `
-  --worker ".\src\SE2SW.Worker\bin\Release\net8.0-windows\win-x64\SE2SW.Worker.exe" `
+  --worker ".\src\HistoryMinerva.Worker\bin\Release\net8.0-windows\win-x64\HistoryMinerva.Worker.exe" `
   --assembly-template "<探针生成的物理.asmdot>"
 ```
 
@@ -22,6 +22,6 @@ dotnet run --project .\tools\AssemblyProductionGate\AssemblyProductionGate.cspro
 ```powershell
 dotnet run --project .\tools\AssemblyProductionGate\AssemblyProductionGate.csproj -c Release -- `
   --se-asm "<绝对.asm>" `
-  --worker ".\src\SE2SW.Worker\bin\Release\net8.0-windows\win-x64\SE2SW.Worker.exe" `
+  --worker ".\src\HistoryMinerva.Worker\bin\Release\net8.0-windows\win-x64\HistoryMinerva.Worker.exe" `
   --reuse-existing
 ```

@@ -1,7 +1,7 @@
-<UserControl x:Class="SE2SW.AssemblyView"
+<UserControl x:Class="HistoryMinerva.AssemblyView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:SE2SW"
+             xmlns:local="clr-namespace:HistoryMinerva"
              MinWidth="320"
              MinHeight="320"
              Background="Transparent"
@@ -15,7 +15,7 @@
             <Setter Property="BorderBrush" Value="{DynamicResource Shell.Brush.Hairline}" />
             <Setter Property="BorderThickness" Value="0,0,1,1" />
             <Setter Property="FontFamily" Value="{DynamicResource Shell.Font.Family}" />
-            <Setter Property="FontSize" Value="{DynamicResource Shell.Font.Small}" />
+            <Setter Property="FontSize" Value="{DynamicResource Shell.Font.Body}" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
             <Setter Property="Padding" Value="{DynamicResource Shell.Space.ControlPad}" />
             <Setter Property="MinHeight" Value="{DynamicResource Shell.Size.Control}" />
@@ -54,7 +54,7 @@
                 </Grid.ColumnDefinitions>
 
                 <Button x:Name="SourceSelectorButton"
-                        Padding="{DynamicResource Shell.Space.PadTight}"
+                        Padding="{DynamicResource Shell.Space.ControlPad}"
                         Background="Transparent"
                         BorderThickness="0"
                         HorizontalContentAlignment="Stretch"
@@ -68,33 +68,43 @@
                         </ContextMenu>
                     </Button.ContextMenu>
                     <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Style="{DynamicResource Shell.Text.Caption}"
-                                   Text="{Binding SourceLabel}" />
-                        <TextBlock Grid.Row="1"
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="SourceLabelText"
                                    Style="{DynamicResource Shell.Text.Body}"
+                                   FontWeight="SemiBold"
+                                   Text="{Binding SourceLabel}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock x:Name="SourcePathText"
+                                   Grid.Column="1"
+                                   Style="{DynamicResource Shell.Text.Body}"
+                                   Margin="{DynamicResource Shell.Space.Gap}"
                                    Text="{Binding SourcePath}"
                                    TextTrimming="CharacterEllipsis"
-                                   ToolTip="{Binding SourcePath}" />
+                                   ToolTip="{Binding SourcePath}"
+                                   VerticalAlignment="Center" />
                     </Grid>
                 </Button>
 
                 <Border Grid.Column="1"
-                        Padding="{DynamicResource Shell.Space.PadTight}"
+                        Padding="{DynamicResource Shell.Space.ControlPad}"
                         BorderBrush="{DynamicResource Shell.Brush.Hairline}"
                         BorderThickness="1,0,0,0">
                     <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Style="{DynamicResource Shell.Text.Caption}"
-                                   Text="转换内容" />
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="ContentLabelText"
+                                   Style="{DynamicResource Shell.Text.Body}"
+                                   FontWeight="SemiBold"
+                                   Text="转换内容"
+                                   VerticalAlignment="Center" />
                         <ComboBox x:Name="MappingContentSelector"
-                                  Grid.Row="1"
+                                  Grid.Column="1"
+                                  Margin="{DynamicResource Shell.Space.Gap}"
                                   ItemsSource="{Binding MappingContents}"
                                   SelectedItem="{Binding SelectedMappingContent, Mode=TwoWay}"
                                   ToolTip="选择来源内容与目标文件类型"
@@ -199,82 +209,86 @@
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
-                <DockPanel>
-                    <Border DockPanel.Dock="Top"
-                            Padding="{DynamicResource Shell.Space.PadTight}"
-                            Background="{DynamicResource Shell.Brush.SurfaceAlt}"
-                            BorderBrush="{DynamicResource Shell.Brush.Hairline}"
-                            BorderThickness="0,0,0,1">
-                        <TextBlock Style="{DynamicResource Shell.Text.Body}"
-                                   Text="{Binding PartsPanelTitle}"
-                                   FontWeight="SemiBold" />
-                    </Border>
-                    <DataGrid ItemsSource="{Binding Parts}"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              CanUserResizeRows="False"
-                              IsReadOnly="True"
-                              HeadersVisibility="Column"
-                              GridLinesVisibility="Horizontal"
-                              Background="{DynamicResource Shell.Brush.Surface}"
-                              Foreground="{DynamicResource Shell.Brush.TextPrimary}"
-                              RowBackground="{DynamicResource Shell.Brush.Surface}"
-                              AlternatingRowBackground="{DynamicResource Shell.Brush.SurfaceAlt}"
-                              HorizontalGridLinesBrush="{DynamicResource Shell.Brush.Hairline}"
-                              BorderThickness="0"
-                              RowHeight="32"
-                              ColumnHeaderHeight="28"
-                              ColumnHeaderStyle="{StaticResource Mapping.DataGridHeader}">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Solid Edge 零件" Binding="{Binding FileName}" Width="2*" MinWidth="120" />
-                            <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="72" />
-                            <DataGridTextColumn Header="特征" Binding="{Binding FeatureText}" Width="58" />
-                            <DataGridTextColumn Header="草图" Binding="{Binding SketchText}" Width="58" />
-                            <DataGridTextColumn Header="结果" Binding="{Binding Detail}" Width="2.4*" MinWidth="120" />
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
+                <DataGrid x:Name="PartsDataGrid"
+                          ItemsSource="{Binding Parts}"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserResizeRows="False"
+                          IsReadOnly="True"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal"
+                          Background="{DynamicResource Shell.Brush.Surface}"
+                          Foreground="{DynamicResource Shell.Brush.TextPrimary}"
+                          RowBackground="{DynamicResource Shell.Brush.Surface}"
+                          AlternatingRowBackground="{DynamicResource Shell.Brush.SurfaceAlt}"
+                          HorizontalGridLinesBrush="{DynamicResource Shell.Brush.Hairline}"
+                          BorderThickness="0"
+                          RowHeight="32"
+                          ColumnHeaderHeight="28"
+                          ColumnHeaderStyle="{StaticResource Mapping.DataGridHeader}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Solid Edge 零件" Binding="{Binding FileName}" Width="2*" MinWidth="120" />
+                        <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="72" />
+                        <DataGridTextColumn Header="特征" Binding="{Binding FeatureText}" Width="58" />
+                        <DataGridTextColumn Header="草图" Binding="{Binding SketchText}" Width="58" />
+                        <DataGridTextColumn Header="结果" Binding="{Binding Detail}" Width="2.4*" MinWidth="120" />
+                    </DataGrid.Columns>
+                </DataGrid>
             </Border>
         </Grid>
 
-        <Grid Grid.Row="2" Margin="{DynamicResource Shell.Space.PadTight}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-            <GroupBox Header="转换选项">
-                <StackPanel>
-                    <CheckBox Content="识别特征"
-                              IsChecked="{Binding RecognizeFeatures}" />
-                    <CheckBox Content="完全定义草图"
-                              IsChecked="{Binding FullyDefineSketches}"
-                              IsEnabled="{Binding CanFullyDefineSketches}" />
-                    <CheckBox Content="零件失败时继续"
-                              IsChecked="{Binding ContinueWhenPartFails}"
-                              IsEnabled="{Binding CanContinueWhenPartFails}" />
-                    <CheckBox Content="重建装配关系"
-                              IsChecked="{Binding RebuildMates}"
-                              IsEnabled="{Binding CanRebuildMates}"
-                              ToolTip="{Binding RebuildMatesHint}" />
-                </StackPanel>
-            </GroupBox>
-            <Grid Grid.Row="1" Margin="0,4,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Style="{DynamicResource Shell.Text.Caption}"
-                           Text="{Binding StatusText}"
-                           TextTrimming="CharacterEllipsis"
+        <Grid x:Name="OptionsActionBar"
+              Grid.Row="2"
+              Margin="{DynamicResource Shell.Space.PadTight}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <WrapPanel x:Name="OptionsList"
+                       Orientation="Horizontal"
+                       VerticalAlignment="Center">
+                <TextBlock x:Name="OptionsLabelText"
+                           Style="{DynamicResource Shell.Text.Body}"
+                           FontWeight="SemiBold"
+                           Margin="{DynamicResource Shell.Space.Gap}"
+                           Text="转换选项"
                            VerticalAlignment="Center" />
-                <Button Grid.Column="1"
-                        MinWidth="128"
-                        Style="{DynamicResource Shell.Button.Accent}"
-                        Content="{Binding PrimaryActionText}"
-                        Click="OnConvertClick"
-                        IsEnabled="{Binding CanConvert}" />
-            </Grid>
+                <CheckBox Content="识别特征"
+                          Margin="{DynamicResource Shell.Space.Gap}"
+                          IsChecked="{Binding RecognizeFeatures}" />
+                <CheckBox Content="完全定义草图"
+                          Margin="{DynamicResource Shell.Space.Gap}"
+                          IsChecked="{Binding FullyDefineSketches}"
+                          IsEnabled="{Binding CanFullyDefineSketches}" />
+                <CheckBox Content="零件失败时继续"
+                          Margin="{DynamicResource Shell.Space.Gap}"
+                          IsChecked="{Binding ContinueWhenPartFails}"
+                          IsEnabled="{Binding CanContinueWhenPartFails}" />
+                <CheckBox Content="重建装配关系"
+                          Margin="{DynamicResource Shell.Space.Gap}"
+                          IsChecked="{Binding RebuildMates}"
+                          IsEnabled="{Binding CanRebuildMates}"
+                          ToolTip="{Binding RebuildMatesHint}" />
+            </WrapPanel>
+            <TextBlock x:Name="StatusText"
+                       Grid.Column="1"
+                       Style="{DynamicResource Shell.Text.Body}"
+                       Margin="{DynamicResource Shell.Space.ControlPad}"
+                       Text="{Binding StatusText}"
+                       TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center" />
+            <Button x:Name="ConvertButton"
+                    Grid.Column="2"
+                    MinWidth="128"
+                    MinHeight="{DynamicResource Shell.Size.Control}"
+                    Margin="{DynamicResource Shell.Space.Gap}"
+                    Style="{DynamicResource Shell.Button.Accent}"
+                    Content="{Binding PrimaryActionText}"
+                    Click="OnConvertClick"
+                    IsEnabled="{Binding CanConvert}"
+                    VerticalAlignment="Center" />
         </Grid>
     </Grid>
 </UserControl>

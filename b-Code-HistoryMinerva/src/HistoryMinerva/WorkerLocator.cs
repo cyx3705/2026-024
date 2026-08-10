@@ -1,4 +1,4 @@
-namespace SE2SW;
+namespace HistoryMinerva;
 
 public static class WorkerLocator
 {

@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 using SWuse.Api;
 using SWuse.Contracts;
 

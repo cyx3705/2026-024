@@ -1,6 +1,6 @@
 # SolidEdgeExportProbe
 
-Solid Edge 2020 `.par -> .x_t` COM 导出探针。只验证 SE2SW 转换链的第一段，不涉及 SolidWorks、
+Solid Edge 2020 `.par -> .x_t` COM 导出探针。只验证 HistoryMinerva 转换链的第一段，不涉及 SolidWorks、
 不涉及 WPF、不涉及 OHS 模块宿主。
 
 ## 构建

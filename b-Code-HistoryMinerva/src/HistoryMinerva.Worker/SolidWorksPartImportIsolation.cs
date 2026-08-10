@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// FeatureWorks 的 COM 服务在同一 Worker 连续识别多个零件后会污染后续导入。
@@ -222,7 +222,7 @@ internal static class SolidWorksPartImportIsolation
         sessionNotActivated = false;
         var runDirectory = Path.Combine(
             Path.GetTempPath(),
-            "SE2SW-PartImport",
+            "HistoryMinerva-PartImport",
             Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(runDirectory);
         var requestPath = Path.Combine(runDirectory, "request.json");
@@ -412,9 +412,10 @@ internal static class SolidWorksPartImportIsolation
         RecognitionTimedOut,
     }
 
-    private static string ResolveWorkerExecutable()
+    internal static string ResolveWorkerExecutable()
     {
-        var besideAssembly = Path.Combine(AppContext.BaseDirectory, "SE2SW.Worker.exe");
+        var workerFileName = HistoryMinervaIdentity.WorkerFileName;
+        var besideAssembly = Path.Combine(AppContext.BaseDirectory, workerFileName);
         if (File.Exists(besideAssembly))
             return besideAssembly;
 
@@ -422,13 +423,13 @@ internal static class SolidWorksPartImportIsolation
         if (!string.IsNullOrWhiteSpace(processPath)
             && string.Equals(
                 Path.GetFileNameWithoutExtension(processPath),
-                "SE2SW.Worker",
+                Path.GetFileNameWithoutExtension(workerFileName),
                 StringComparison.OrdinalIgnoreCase))
         {
             return processPath;
         }
 
-        throw new FileNotFoundException("无法定位 SE2SW.Worker.exe，不能启动单零件隔离导入。", besideAssembly);
+        throw new FileNotFoundException($"无法定位 {workerFileName}，不能启动单零件隔离导入。", besideAssembly);
     }
 
     private static string DescribeChildFailure(

@@ -1,7 +1,7 @@
 using System.IO;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 public sealed record TransformDeviation(string OccurrenceId, double MaxDeviation);
 

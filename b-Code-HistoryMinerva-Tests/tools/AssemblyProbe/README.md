@@ -1,6 +1,6 @@
 # AssemblyProbe
 
-SE2SW V3.0 的装配 COM 门禁探针。它只用于确认 Solid Edge occurrence 矩阵与 SolidWorks
+HistoryMinerva V3.0 的装配 COM 门禁探针。它只用于确认 Solid Edge occurrence 矩阵与 SolidWorks
 `MathTransform` 的真实映射，不作为生产转换入口。
 
 ```powershell

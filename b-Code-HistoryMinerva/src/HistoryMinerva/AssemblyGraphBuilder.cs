@@ -1,7 +1,7 @@
 using System.IO;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 /// <summary>装配图的构建结果。<see cref="Cycles"/> 非空时不可转换。</summary>
 public sealed record AssemblyGraph(
@@ -16,7 +16,7 @@ public sealed record AssemblyGraph(
 /// <summary>
 /// 把"每个装配文档的一级读数"组装成拓扑序的装配节点列表。
 ///
-/// 纯数据变换，不碰 CAD，全部逻辑由 <c>SE2SW.Smoke</c> 离线覆盖。
+/// 纯数据变换，不碰 CAD，全部逻辑由 <c>HistoryMinerva.Smoke</c> 离线覆盖。
 ///
 /// 遵守 V3.3 的每层同构原则：本类只按"某文档有哪些直接子项"推导，
 /// 从不为某一层去查它的父级或祖先——需要祖先信息才能算出的结果，

@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using SE2SW;
-using SE2SW.Contracts;
+using HistoryMinerva;
+using HistoryMinerva.Contracts;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 

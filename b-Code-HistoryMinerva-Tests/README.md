@@ -2,10 +2,10 @@
 
 本目录独立维护 HistoryMinerva 的自动测试、UI Smoke、COM 探针与真实 CAD 生产门禁。生产实现位于
 [`../b-Code-HistoryMinerva`](../b-Code-HistoryMinerva/README.md)，测试仅通过显式 `ProjectReference` 消费它；
-内部程序集和协议继续使用 SE2SW/SWuse 名称。
+内部程序集和协议继续使用 HistoryMinerva/SWuse 名称。
 
 ```text
-tests/HistoryMinerva.Smoke    合并回归：SE2SW 协议/装配/命令/生命周期 + SWuse 建模 API/编译/Worker 协议
+tests/HistoryMinerva.Smoke    合并回归：HistoryMinerva 协议/装配/命令/生命周期 + SWuse 建模 API/编译/Worker 协议
 tests/HistoryMinerva.UiSmoke  WPF 停靠页显示与截图入口，加载 AppShell 3.1.9 浅/深主题
 tools/                        真实 CAD COM 探针与生产门禁（含 SWuse.CadGate）
 ```

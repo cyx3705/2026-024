@@ -1,5 +1,5 @@
 
-namespace SE2SW.Contracts;
+namespace HistoryMinerva.Contracts;
 
 /// <summary>swMateType_e 的子集，只列本版会用到的。</summary>
 public enum SolidWorksMateType

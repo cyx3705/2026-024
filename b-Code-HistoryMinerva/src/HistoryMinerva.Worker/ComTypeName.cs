@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using ComTypes = System.Runtime.InteropServices.ComTypes;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// 读一个 COM 对象的**真实接口名**。

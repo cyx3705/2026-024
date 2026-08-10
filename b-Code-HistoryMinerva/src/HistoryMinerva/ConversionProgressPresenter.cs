@@ -1,6 +1,6 @@
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 /// <summary>
 /// 将稳定的 Worker 进度合同映射为 UI 文本；不参与 ViewModel 生命周期或调度。

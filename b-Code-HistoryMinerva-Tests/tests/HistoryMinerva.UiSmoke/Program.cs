@@ -4,9 +4,9 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.IO;
 using System.Text.RegularExpressions;
-using SE2SW;
+using HistoryMinerva;
 
-namespace SE2SW.UiSmoke;
+namespace HistoryMinerva.UiSmoke;
 
 internal static class Program
 {
@@ -45,7 +45,7 @@ internal static class Program
         var compact = args.Contains("--compact", StringComparer.OrdinalIgnoreCase);
         var busy = args.Contains("--busy", StringComparer.OrdinalIgnoreCase);
         var expandOptions = args.Contains("--expand-options", StringComparer.OrdinalIgnoreCase);
-        var workspace = new SE2SWWorkspaceView();
+        var workspace = new HistoryMinervaWorkspaceView();
         workspace.SetResourceReference(Control.BackgroundProperty, "Shell.Brush.Canvas");
         if (folder is not null)
             workspace.UnifiedPage.ViewModel.SetPartDirectory(folder);
@@ -97,10 +97,81 @@ internal static class Program
                 string.Equals(comboBox.Name, "MappingContentSelector", StringComparison.Ordinal));
             if (contentSelector.Items.Count != 2)
                 throw new InvalidOperationException("顶栏必须只提供两种转换内容。");
+            var sourceLabel = FindVisualChildren<TextBlock>(workspace).Single(textBlock =>
+                string.Equals(textBlock.Name, "SourceLabelText", StringComparison.Ordinal));
+            var sourcePathText = FindVisualChildren<TextBlock>(workspace).Single(textBlock =>
+                string.Equals(textBlock.Name, "SourcePathText", StringComparison.Ordinal));
+            var sourceLabelPosition = sourceLabel.TranslatePoint(new Point(0, 0), workspace);
+            var sourcePathPosition = sourcePathText.TranslatePoint(new Point(0, 0), workspace);
+            if (Math.Abs(sourceLabelPosition.Y + sourceLabel.ActualHeight / 2 -
+                        sourcePathPosition.Y - sourcePathText.ActualHeight / 2) > 1 ||
+                sourcePathText.TranslatePoint(new Point(0, 0), workspace).X <=
+                    sourceLabel.TranslatePoint(new Point(0, 0), workspace).X)
+            {
+                throw new InvalidOperationException("转换来源的标签与选择栏必须同处一行。");
+            }
+            var contentLabel = FindVisualChildren<TextBlock>(workspace).Single(textBlock =>
+                string.Equals(textBlock.Name, "ContentLabelText", StringComparison.Ordinal));
+            var contentLabelPosition = contentLabel.TranslatePoint(new Point(0, 0), workspace);
+            var contentSelectorPosition = contentSelector.TranslatePoint(new Point(0, 0), workspace);
+            if (Math.Abs(contentLabelPosition.Y + contentLabel.ActualHeight / 2 -
+                        contentSelectorPosition.Y - contentSelector.ActualHeight / 2) > 1 ||
+                contentSelector.TranslatePoint(new Point(0, 0), workspace).X <=
+                    contentLabel.TranslatePoint(new Point(0, 0), workspace).X)
+            {
+                throw new InvalidOperationException("转换内容的标签与选择栏必须同处一行。");
+            }
             if (FindVisualChildren<Button>(workspace).Any(button =>
                     button.Name is "XtDirectoryButton" or "SolidWorksDirectoryButton"))
             {
                 throw new InvalidOperationException("顶栏不得保留 XT 或 SW 输出目录栏。");
+            }
+            if (FindVisualChildren<TextBlock>(workspace).Any(textBlock =>
+                    textBlock.Text is "零件" or "唯一零件"))
+            {
+                throw new InvalidOperationException("零件列表上方不得保留独立标题行。");
+            }
+            var optionsActionBar = FindVisualChildren<Grid>(workspace).Single(grid =>
+                string.Equals(grid.Name, "OptionsActionBar", StringComparison.Ordinal));
+            var optionsList = FindVisualChildren<WrapPanel>(optionsActionBar).Single(panel =>
+                string.Equals(panel.Name, "OptionsList", StringComparison.Ordinal));
+            var optionBoxes = FindVisualChildren<CheckBox>(optionsList).ToArray();
+            if (optionBoxes.Length != 4)
+                throw new InvalidOperationException("转换选项必须保留四项配置。");
+            var optionsLabel = FindVisualChildren<TextBlock>(optionsList).Single(textBlock =>
+                string.Equals(textBlock.Name, "OptionsLabelText", StringComparison.Ordinal));
+            var statusText = FindVisualChildren<TextBlock>(optionsActionBar).Single(textBlock =>
+                string.Equals(textBlock.Name, "StatusText", StringComparison.Ordinal));
+            var convertButton = FindVisualChildren<Button>(optionsActionBar).Single(button =>
+                string.Equals(button.Name, "ConvertButton", StringComparison.Ordinal));
+            if (workspace.ActualWidth >= 900)
+            {
+                var actionItems = new FrameworkElement[]
+                {
+                    optionsLabel, optionBoxes[0], optionBoxes[1], optionBoxes[2], optionBoxes[3],
+                    statusText, convertButton,
+                };
+                var firstActionPosition = actionItems[0].TranslatePoint(new Point(0, 0), workspace);
+                var firstActionCenter = firstActionPosition.Y + actionItems[0].ActualHeight / 2;
+                if (actionItems.Any(item =>
+                {
+                    var position = item.TranslatePoint(new Point(0, 0), workspace);
+                    return Math.Abs(position.Y + item.ActualHeight / 2 - firstActionCenter) > 1;
+                }))
+                    throw new InvalidOperationException("宽窗口下转换选项、状态与按钮必须横向排列。");
+            }
+            else
+            {
+                foreach (var item in new FrameworkElement[]
+                {
+                    optionsLabel, optionBoxes[0], optionBoxes[1], optionBoxes[2], optionBoxes[3],
+                    statusText, convertButton,
+                })
+                {
+                    var position = item.TranslatePoint(new Point(0, 0), workspace);
+                    if (position.X < -1 || position.X + item.ActualWidth > workspace.ActualWidth + 1)
+                        throw new InvalidOperationException("窄窗口下转换选项不得水平溢出。");
+                }
             }
             if (FindVisualChildren<TextBlock>(workspace).Any(textBlock =>
                     string.Equals(textBlock.Text, "Solid Edge 转 SolidWorks", StringComparison.Ordinal)))

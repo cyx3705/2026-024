@@ -2,8 +2,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
-using SE2SW;
-using SE2SW.Contracts;
+using HistoryMinerva;
+using HistoryMinerva.Contracts;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -36,7 +36,7 @@ internal static class Program
         catch (Exception ex)
         {
             Console.Error.WriteLine(ex.Message);
-            Console.Error.WriteLine("用法：AssemblyProductionGate --se-asm <绝对.asm> --worker <SE2SW.Worker.exe> --assembly-template <物理.asmdot>；或追加 --reuse-existing 测试安全重试与模板回退");
+            Console.Error.WriteLine("用法：AssemblyProductionGate --se-asm <绝对.asm> --worker <HistoryMinerva.Worker.exe> --assembly-template <物理.asmdot>；或追加 --reuse-existing 测试安全重试与模板回退");
             return 2;
         }
 
@@ -106,7 +106,7 @@ internal static class Program
         var tempGateRoot = Path.GetFullPath(Path.Combine(
             System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
             "Temp",
-            "SE2SW-V300"));
+            "HistoryMinerva-V300"));
         ISldWorks? application = null;
         try
         {
@@ -254,7 +254,7 @@ internal static class Program
 
         var edgeBefore = GetPids("Edge");
         var swBefore = GetPids("SLDWORKS");
-        var gateDirectory = Directory.CreateTempSubdirectory("SE2SW-V300-ProductionGate-").FullName;
+        var gateDirectory = Directory.CreateTempSubdirectory("HistoryMinerva-V300-ProductionGate-").FullName;
         result.GateDirectory = gateDirectory;
         var probeResultPath = Path.Combine(gateDirectory, "assembly-probe-result.json");
         var probeRequest = new AssemblyProbeRequest(

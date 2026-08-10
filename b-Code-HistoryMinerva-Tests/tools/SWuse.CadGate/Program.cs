@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 using SWuse.Contracts;
 
 var keepArtifacts = args.Any(argument => string.Equals(argument, "--keep", StringComparison.OrdinalIgnoreCase));

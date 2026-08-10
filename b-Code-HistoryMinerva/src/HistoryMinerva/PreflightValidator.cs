@@ -1,14 +1,16 @@
 using System.IO;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 public static class PreflightValidator
 {
     public static void ValidateEnvironment(string workerPath)
     {
         if (!File.Exists(workerPath))
-            throw new FileNotFoundException("未找到 SE2SW 工作进程，请重新构建或同步模块。", workerPath);
+            throw new FileNotFoundException(
+                $"未找到 {Path.GetFileNameWithoutExtension(HistoryMinervaIdentity.WorkerFileName)} 工作进程，请重新构建或同步模块。",
+                workerPath);
         if (Type.GetTypeFromProgID("SolidEdge.Application", throwOnError: false) is null)
             throw new InvalidOperationException("未检测到 Solid Edge COM 注册（SolidEdge.Application）。");
         if (Type.GetTypeFromProgID("SldWorks.Application", throwOnError: false) is null)
@@ -128,7 +130,7 @@ public static class PreflightValidator
         if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
             throw new DirectoryNotFoundException($"输出目录不存在：{parent}");
 
-        var probe = Path.Combine(parent, $".se2sw-write-{Guid.NewGuid():N}.tmp");
+        var probe = Path.Combine(parent, $".historyminerva-write-{Guid.NewGuid():N}.tmp");
         try
         {
             using var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);

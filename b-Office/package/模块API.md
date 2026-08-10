@@ -1,7 +1,8 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva 4.2.1 模块对外消费面的唯一合同。构建与部署验收命令见
-`../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用，均不再单列文档。
+本文件是 HistoryMinerva `4.2.3` 源码、候选与正式包对外消费面的唯一合同。当前正式
+`z-HistoryMinerva` 已发布为 `4.2.3`；旧 `4.2.2` 三命令快照只属于发布历史，不适用本合同。
+构建与部署验收命令见 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用。
 
 ## 模块身份
 
@@ -13,6 +14,7 @@
 | 停靠页标题 | `Minerva` |
 | 窗口内部标识 / 日志类别 | `historyminerva` |
 | Worker 可执行文件 | `HistoryMinerva.Worker.exe` |
+| HistoryVulcan 宿主基线 | `3.4.0` 正式快照 |
 
 ## HistoryVulcan 命令面
 
@@ -32,7 +34,7 @@
 
 | 协议 | 参数形态 | 用途 |
 | --- | --- | --- |
-| SE2SW 转换 | `<verb> <json> --cancel <signal>` | `--request` 零件批次 / `--import-part` 单件导入 / `--probe-assembly` 装配探查 / `--assembly` 装配构建 |
+| HistoryMinerva 转换 | `<verb> <json> --cancel <signal>` | `--request` 零件批次 / `--import-part` 单件导入 / `--probe-assembly` 装配探查 / `--assembly` 装配构建 |
 | SWuse 构建 | `--request <json>` | Roslyn dry-run 编译 + SolidWorks 零件构建，结果 JSON 写 stdout |
 
 ## SWuse.Api 建模表面

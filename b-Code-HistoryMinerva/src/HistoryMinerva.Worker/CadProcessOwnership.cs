@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 internal sealed class CadProcessOwnership
 {

@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 public sealed class ConversionFileRow : INotifyPropertyChanged
 {

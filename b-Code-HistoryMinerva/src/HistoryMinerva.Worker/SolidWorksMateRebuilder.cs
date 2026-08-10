@@ -1,7 +1,7 @@
 
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// V3.5 §3.5–§3.6：在一个刚生成好的 <c>.SLDASM</c> 上重建装配关系。

@@ -1,6 +1,6 @@
 # MateMatchProbe
 
-SE2SW V3.5 的只读匹配探针。它回答一个问题：**Solid Edge 关系给出的几何，
+HistoryMinerva V3.5 的只读匹配探针。它回答一个问题：**Solid Edge 关系给出的几何，
 能不能在对应的 SolidWorks 组件上唯一定位到一个面。**
 
 不是生产入口，不产出任何进入管线的文件。设计依据见

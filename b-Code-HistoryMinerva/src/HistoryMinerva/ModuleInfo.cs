@@ -1,10 +1,10 @@
 using BaseVariable;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
 namespace SWuse;
 
 /// <summary>
-/// HistoryMinerva 模块入口。4.2.0 破坏性重构：Mapping（SE2SW）与 SWuse 合并为单一模块，
+/// HistoryMinerva 模块入口。4.2.0 破坏性重构：Mapping（HistoryMinerva）与 SWuse 合并为单一模块，
 /// 模块名与命令域统一来自 <see cref="HistoryMinervaIdentity"/> 权威源；映射停靠页即模块唯一页面。
 /// </summary>
 public sealed class ModuleInfo : ModuleInfoBase

@@ -1,6 +1,6 @@
 # RelationProbe
 
-SE2SW V3.2 的装配关系只读探针。它把"SE 到底能读出什么装配关系"从猜测变成实测表，
+HistoryMinerva V3.2 的装配关系只读探针。它把"SE 到底能读出什么装配关系"从猜测变成实测表，
 并顺带确认子装配整体导出 Parasolid 的可行性。**不是生产转换入口，不产出任何进入管线的文件。**
 
 设计依据见 [`装配关系探针历史设计`](../../../b-Office/history/18-V3.2-装配关系探针.md)。
@@ -26,7 +26,7 @@ dotnet run --project .\tools\RelationProbe\RelationProbe.csproj -c Release -- `
 |---|---|
 | `--samples <目录>` | 必填。含 `.asm` 与 `.par` 的样件目录。 |
 | `--asm <文件名>` | 可重复。默认探查目录下全部 `.asm`。 |
-| `--work-dir <目录>` | 副本与导出产物的落位，默认 `%TEMP%\SE2SW-RelationProbe-<时间戳>`。 |
+| `--work-dir <目录>` | 副本与导出产物的落位，默认 `%TEMP%\HistoryMinerva-RelationProbe-<时间戳>`。 |
 | `--in-place` | 直接读原件，不复制。仍做哈希前后比对。 |
 | `--export-check` | 追加阶段 B：把每个 `.asm` 当独立顶层文档整体导出为 `.x_t`。 |
 | `--sw-verify` | 阶段 B 用 SolidWorks 导入产物，核验实体数与坐标系。需要 `--export-check`。 |

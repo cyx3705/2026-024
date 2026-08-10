@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 public sealed class WorkerClient
 {
@@ -120,7 +120,8 @@ public sealed class WorkerClient
             process.StartInfo.ArgumentList.Add(WorkerProtocol.CancellationArgument);
             process.StartInfo.ArgumentList.Add(cancellationPath);
             if (!process.Start())
-                throw new InvalidOperationException("无法启动 SE2SW 工作进程。");
+                throw new InvalidOperationException(
+                    $"无法启动 {Path.GetFileNameWithoutExtension(HistoryMinervaIdentity.WorkerFileName)} 工作进程。");
 
             using var cancellationRegistration = cancellationToken.Register(() =>
             {

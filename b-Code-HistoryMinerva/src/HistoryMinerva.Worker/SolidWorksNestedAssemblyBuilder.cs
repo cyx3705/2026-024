@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// V3.3：按拓扑序自底向上生成嵌套 <c>.SLDASM</c>。

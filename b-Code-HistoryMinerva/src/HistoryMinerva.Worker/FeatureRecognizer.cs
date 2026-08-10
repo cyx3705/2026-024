@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// V2.0：对导入后的哑实体执行 FeatureWorks 自动特征识别，再对识别出的每个草图执行完全定义。

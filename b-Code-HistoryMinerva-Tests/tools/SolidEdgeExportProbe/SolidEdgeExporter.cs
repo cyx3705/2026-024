@@ -466,7 +466,7 @@ internal sealed class SolidEdgeExporter
         }
 
         // 真正写一个探测文件，比检查 ACL 更可靠。
-        string canary = Path.Combine(outputDir, $".se2sw-probe-{Guid.NewGuid():N}.tmp");
+        string canary = Path.Combine(outputDir, $".historyminerva-probe-{Guid.NewGuid():N}.tmp");
         try
         {
             File.WriteAllBytes(canary, Array.Empty<byte>());

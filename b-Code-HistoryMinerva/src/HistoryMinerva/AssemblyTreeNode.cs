@@ -1,8 +1,8 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 public sealed class AssemblyTreeNode
 {

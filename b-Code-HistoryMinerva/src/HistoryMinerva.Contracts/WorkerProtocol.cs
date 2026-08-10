@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace SE2SW.Contracts;
+namespace HistoryMinerva.Contracts;
 
 /// <summary>
 /// UI 与独立 Worker 共同消费的命令行和 JSON 协议。

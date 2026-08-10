@@ -1,6 +1,6 @@
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// Keeps nested-assembly counters auditable. A reused assembly is not reopened during the

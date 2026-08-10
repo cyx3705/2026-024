@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
 namespace FeatureWorksBatchSmoke;
 
@@ -33,7 +33,7 @@ internal static class Program
         {
             Console.Error.WriteLine(ex.Message);
             Console.Error.WriteLine(
-                "Usage: FeatureWorksBatchSmoke --worker <SE2SW.Worker.exe> --part <part.par> [--part <part.par> ...] [--single-batch] [--require-healthy-recognition] [--timeout-seconds <30-600>] [--keep]");
+                "Usage: FeatureWorksBatchSmoke --worker <HistoryMinerva.Worker.exe> --part <part.par> [--part <part.par> ...] [--single-batch] [--require-healthy-recognition] [--timeout-seconds <30-600>] [--keep]");
             return 2;
         }
 
@@ -85,7 +85,7 @@ internal static class Program
         report.EdgeProcessesBefore = edgeBaseline;
         report.SolidWorksProcessesBefore = solidWorksBaseline;
 
-        report.RunDirectory = Directory.CreateTempSubdirectory("SE2SW-FeatureWorksBatchSmoke-").FullName;
+        report.RunDirectory = Directory.CreateTempSubdirectory("HistoryMinerva-FeatureWorksBatchSmoke-").FullName;
         if (options.SingleBatch)
         {
             RunSingleBatch(options, report);

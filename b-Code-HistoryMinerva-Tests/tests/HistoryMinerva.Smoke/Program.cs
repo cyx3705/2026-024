@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Reflection;
-using SE2SW;
-using SE2SW.Contracts;
-using SE2SW.Worker;
+using HistoryMinerva;
+using HistoryMinerva.Contracts;
+using HistoryMinerva.Worker;
 using SWuse;
 using SWuse.Api;
 using SWuse.Contracts;
@@ -118,10 +118,19 @@ static void TestSharedContractsAndVersion()
     Equal(expected, typeof(PartBuilder).Assembly.GetName().Version?.ToString(3), "Api 程序集版本必须来自唯一版本源");
     Equal(expected, typeof(WorkerRequestValidator).Assembly.GetName().Version?.ToString(3), "Worker 程序集版本必须来自唯一版本源");
     Equal(expected, new ModuleInfo().Version, "模块运行时版本不得另存字符串副本");
-    Equal(expected, ReadVersionFromManifest(), "注册清单版本必须与版本真源一致");
+    Equal(expected, ReadVersionFromSourceManifest(), "源码注册清单版本必须与版本真源一致");
     Equal(HistoryMinervaIdentity.Name, new ModuleInfo().ModuleName, "模块名必须来自 HistoryMinervaIdentity 权威源");
     Equal(HistoryMinervaIdentity.Name, HistoryMinervaIdentity.CommandDomain, "命令域必须与模块名同根（宿主按 ModuleName 反射生成）");
     Equal("HistoryMinerva", HistoryMinervaIdentity.Name, "权威源模块名字面量必须为 HistoryMinerva");
+    Equal(
+        HistoryMinervaIdentity.WorkerFileName,
+        Path.GetFileName(SolidWorksPartImportIsolation.ResolveWorkerExecutable()),
+        "单零件隔离导入必须定位合并后的 HistoryMinerva Worker");
+    var missingWorker = Capture<FileNotFoundException>(() =>
+        PreflightValidator.ValidateEnvironment(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))));
+    True(
+        missingWorker.Message.Contains(Path.GetFileNameWithoutExtension(HistoryMinervaIdentity.WorkerFileName), StringComparison.Ordinal),
+        "缺失 Worker 的预检提示必须使用 HistoryMinerva 名称");
     Equal(180, FeatureRecognitionPolicy.DefaultTimeoutSeconds, "特征识别默认无进度预算必须是三分钟");
     Equal(180, FeatureRecognitionPolicy.NormalizeTimeoutSeconds(0), "缺省超时必须回到三分钟");
     Equal(180, FeatureRecognitionPolicy.NormalizeTimeoutSeconds(180), "显式三分钟超时不得被改写");
@@ -340,10 +349,10 @@ static string ReadVersionFromSingleSource()
     return match.Groups[1].Value.Trim();
 }
 
-/// <summary>读取项目根目录下的模块注册清单。</summary>
-static string ReadVersionFromManifest()
+/// <summary>读取生产源码根下的模块注册清单；正式 z 快照可在发布前落后于开发线。</summary>
+static string ReadVersionFromSourceManifest()
 {
-    var path = LocateRepoFile(Path.Combine("z-HistoryMinerva", "module.manifest.json"));
+    var path = LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "module.manifest.json"));
     using var document = JsonDocument.Parse(File.ReadAllText(path));
     return document.RootElement.GetProperty("version").GetString() ?? string.Empty;
 }
@@ -441,7 +450,7 @@ static void TestExternalLegacyAndDirectoryCreation(string root)
 }
 
 /// <summary>
-/// 4.2.0 起 mapping.* 只读命令随 SE2SWCommands 一并移除，命令面收敛为：
+/// 4.2.0 起 mapping.* 只读命令随 HistoryMinervaCommands 一并移除，命令面收敛为：
 /// 宿主反射注册的 historyminerva.show/hide/status（SWuseCommands 占位）+
 /// 前端注册的 historyminerva.convert/cancel（见 TestUiModuleRegistration）。
 /// </summary>
@@ -1568,7 +1577,7 @@ static void TestUiModuleRegistration(string root)
     var moduleRoot = Path.Combine(root, "appshell-modules");
     var registrar = new RecordingShellUiRegistrar();
     var context = new RecordingModuleContext(dataRoot, moduleRoot);
-    var module = new SE2SWUiModule();
+    var module = new HistoryMinervaUiModule();
     ((IShellUiAware)module).ShellUi = registrar;
     module.Attach(context);
 
@@ -1624,7 +1633,7 @@ static void TestUiModuleRegistration(string root)
         throw new InvalidOperationException("Mapping UI 模块 Smoke 失败。", uiFailure);
 
     var serviceContext = new RecordingModuleContext(dataRoot, moduleRoot);
-    var serviceModule = new SE2SWUiModule();
+    var serviceModule = new HistoryMinervaUiModule();
     serviceModule.Attach(serviceContext);
     serviceModule.CreateUi();
     True(!serviceContext.Registry.TryGet("HistoryMinerva.convert", out _)
@@ -1632,16 +1641,21 @@ static void TestUiModuleRegistration(string root)
         "无 ShellUi 的服务宿主不得重复注册页面状态命令");
 
     var runtimePaths = new MappingRuntimePaths(dataRoot, moduleRoot);
-    Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, SE2SWIdentity.RequestsDirectoryName),
+    Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, HistoryMinervaIdentity.RequestsDirectoryName),
         runtimePaths.RequestsDirectory,
         "Worker 请求必须迁入 HistoryVulcan 数据根");
-    Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, SE2SWIdentity.ProbesDirectoryName),
+    Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, HistoryMinervaIdentity.ProbesDirectoryName),
         runtimePaths.ProbesDirectory,
         "探查结果必须迁入 HistoryVulcan 数据根");
     True(runtimePaths.WorkerCandidates().Contains(
             Path.Combine(moduleRoot, HistoryMinervaIdentity.Name, HistoryMinervaIdentity.WorkerFileName),
             StringComparer.OrdinalIgnoreCase),
         "Worker 定位必须包含 HistoryVulcan HistoryMinerva 部署槽");
+    True(runtimePaths.WorkerCandidates().Any(path =>
+            path.EndsWith(
+                Path.Combine($"z-{HistoryMinervaIdentity.Name}", HistoryMinervaIdentity.WorkerFileName),
+                StringComparison.OrdinalIgnoreCase)),
+        "Worker 定位必须包含正式 z-HistoryMinerva 发布包回退路径");
     Equal(HistoryMinervaIdentity.Name, "HistoryMinerva", "部署槽字面量必须与权威源一致");
     Equal("HistoryMinerva.Worker.exe", HistoryMinervaIdentity.WorkerFileName, "Worker 已合并为单个 HistoryMinerva.Worker.exe");
 }
@@ -1653,7 +1667,7 @@ static void TestUnifiedSourceWorkspace()
     {
         try
         {
-            using var workspace = new SE2SWWorkspaceView();
+            using var workspace = new HistoryMinervaWorkspaceView();
             Equal(ConversionSourceKind.None, workspace.UnifiedPage.ViewModel.SourceKind,
                 "单页工作区默认必须等待用户选择来源");
             True(workspace.UnifiedPage.ViewModel.SourcePath.Length == 0,

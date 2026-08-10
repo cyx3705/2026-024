@@ -1,6 +1,6 @@
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// 把一个 SolidWorks 组件的面收集成 <see cref="MateCandidate"/>。

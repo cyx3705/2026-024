@@ -1,6 +1,6 @@
 using System.IO;
 using HistoryVulcan.Core.Modules;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
 namespace SWuse;
 

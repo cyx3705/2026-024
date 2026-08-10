@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 internal sealed record OutputFileFacts(
     long Length,

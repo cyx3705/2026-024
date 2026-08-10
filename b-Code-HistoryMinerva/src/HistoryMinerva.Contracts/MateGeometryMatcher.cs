@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace SE2SW.Contracts;
+namespace HistoryMinerva.Contracts;
 
 /// <summary>SolidWorks 侧一个候选面的几何签名。抽出来是为了让匹配逻辑能脱离 CAD 测试。</summary>
 /// <param name="Key">回到 SW 里定位该面用的标识，匹配逻辑不解释它。</param>
@@ -44,7 +44,7 @@ public sealed record MateMatch(
 /// 不用 <c>SelectByID2</c> 的坐标点选：那条路选错面不会报错，只会生成一条语义错误的配合。
 /// 这里枚举候选并要求**唯一命中**——0 个和 &gt;1 个都当场判定为定位失败，绝不猜。
 ///
-/// 纯数学，不碰 CAD，由 <c>SE2SW.Smoke</c> 完整覆盖。
+/// 纯数学，不碰 CAD，由 <c>HistoryMinerva.Smoke</c> 完整覆盖。
 /// </summary>
 public static class MateGeometryMatcher
 {

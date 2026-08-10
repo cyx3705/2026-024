@@ -1,7 +1,7 @@
 using System.Reflection;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// V3.5 §2：从一个已打开的 Solid Edge 装配文档读出它**自己那一层**的装配关系。

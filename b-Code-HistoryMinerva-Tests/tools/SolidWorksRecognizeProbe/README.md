@@ -1,6 +1,6 @@
 # SolidWorksRecognizeProbe
 
-SE2SW V2.0 可实现性探针：`.x_t` -> 导入 -> FeatureWorks 自动特征识别 -> 每个草图完全定义 -> `.SLDPRT`。
+HistoryMinerva V2.0 可实现性探针：`.x_t` -> 导入 -> FeatureWorks 自动特征识别 -> 每个草图完全定义 -> `.SLDPRT`。
 
 只回答"能不能做、怎么做、代价多大"，不是生产实现。
 

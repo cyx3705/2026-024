@@ -1,7 +1,7 @@
 # FeatureWorksBatchSmoke
 
 `FeatureWorksBatchSmoke` is a non-interactive diagnostic for Solid Edge parts.
-By default it runs each requested `.par` in a separate production `SE2SW.Worker` process through:
+By default it runs each requested `.par` in a separate production `HistoryMinerva.Worker` process through:
 
 ```text
 fixture copy -> Solid Edge export -> XT -> SolidWorks import -> FeatureWorks -> SLDPRT
@@ -30,7 +30,7 @@ dotnet build .\tools\FeatureWorksBatchSmoke\FeatureWorksBatchSmoke.csproj -c Rel
 
 ```powershell
 .\tools\FeatureWorksBatchSmoke\bin\Release\net8.0-windows\win-x64\FeatureWorksBatchSmoke.exe `
-  --worker .\src\SE2SW.Worker\bin\Release\net8.0-windows\win-x64\SE2SW.Worker.exe `
+  --worker .\src\HistoryMinerva.Worker\bin\Release\net8.0-windows\win-x64\HistoryMinerva.Worker.exe `
   --part "C:\fixtures\test-part-5.par" `
   --part "C:\fixtures\test-part-6.par" `
   --keep

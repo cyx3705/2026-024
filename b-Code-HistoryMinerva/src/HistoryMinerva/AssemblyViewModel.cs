@@ -5,9 +5,9 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Windows.Threading;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
 {

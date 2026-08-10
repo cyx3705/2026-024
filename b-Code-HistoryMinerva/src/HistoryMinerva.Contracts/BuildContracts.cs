@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace SWuse.Contracts;
 
-// 模块名称常量已并入 SE2SW.Contracts.HistoryMinervaIdentity 唯一权威源，本文件不再持有身份字面量。
+// 模块名称常量已并入 HistoryMinerva.Contracts.HistoryMinervaIdentity 唯一权威源，本文件不再持有身份字面量。
 
 public enum BuildDiagnosticSeverity
 {

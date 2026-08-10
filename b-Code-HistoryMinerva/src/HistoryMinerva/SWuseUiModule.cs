@@ -4,7 +4,7 @@ namespace SWuse;
 
 /// <summary>
 /// SWuse 生命周期占位。4.2.0 起独立 SWuse 窗口已移除（待打磨后再回归）；
-/// 建模能力保留在 HistoryMinerva.Worker 协议层。映射停靠页由 SE2SWUiModule 注册。
+/// 建模能力保留在 HistoryMinerva.Worker 协议层。映射停靠页由 HistoryMinervaUiModule 注册。
 /// </summary>
 public sealed class SWuseUiModule : IUiModule, IShellUiAware
 {

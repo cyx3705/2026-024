@@ -1,6 +1,6 @@
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// V3.3 §3.7：装配产物的复用判定。

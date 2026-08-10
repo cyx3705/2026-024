@@ -1,6 +1,6 @@
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
 internal sealed record AssemblyPartReusePlan(
     IReadOnlyList<ConversionJob> ReusableSolidWorksParts,

@@ -1,13 +1,13 @@
 using System.Text.Json;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW.Worker;
+namespace HistoryMinerva.Worker;
 
-internal static class Program
+internal static class ConversionWorkerProgram
 {
     private static readonly JsonSerializerOptions JsonOptions = WorkerProtocol.CreateJsonOptions();
 
-    // 入口在 HistoryMinervaWorkerEntry.cs（STA），此处是被路由调用的 SE2SW 处理链。
+    // 入口在 HistoryMinervaWorkerEntry.cs（STA），此处是被路由调用的 HistoryMinerva 处理链。
     internal static int Run(string[] args)
     {
         var paths = ReadPaths(args);

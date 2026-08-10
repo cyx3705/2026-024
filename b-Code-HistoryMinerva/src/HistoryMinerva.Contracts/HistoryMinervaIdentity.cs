@@ -1,4 +1,4 @@
-namespace SE2SW.Contracts;
+namespace HistoryMinerva.Contracts;
 
 /// <summary>
 /// HistoryMinerva 模块名称唯一权威源。展示名、命令域、窗口标识、部署槽、
@@ -23,6 +23,12 @@ public static class HistoryMinervaIdentity
 
     /// <summary>宿主数据根与本机数据根下的模块数据目录名。</summary>
     public const string DataDirectoryName = Name;
+
+    /// <summary>模块数据目录下的 Worker 请求目录名。</summary>
+    public const string RequestsDirectoryName = "requests";
+
+    /// <summary>模块数据目录下的装配探查结果目录名。</summary>
+    public const string ProbesDirectoryName = "probes";
 
     /// <summary>用户文档目录下的默认建模工作区目录名。</summary>
     public const string WorkspaceDirectoryName = Name + "Workspace";

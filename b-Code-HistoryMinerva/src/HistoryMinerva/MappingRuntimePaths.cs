@@ -1,8 +1,8 @@
 using System.IO;
 using System.Reflection;
-using SE2SW.Contracts;
+using HistoryMinerva.Contracts;
 
-namespace SE2SW;
+namespace HistoryMinerva;
 
 public sealed class MappingRuntimePaths
 {
@@ -19,8 +19,8 @@ public sealed class MappingRuntimePaths
     public string HostDataDirectory { get; }
     public string ModuleDataDirectory { get; }
     public string ModuleDirectory { get; }
-    public string RequestsDirectory => Path.Combine(ModuleDataDirectory, SE2SWIdentity.RequestsDirectoryName);
-    public string ProbesDirectory => Path.Combine(ModuleDataDirectory, SE2SWIdentity.ProbesDirectoryName);
+    public string RequestsDirectory => Path.Combine(ModuleDataDirectory, HistoryMinervaIdentity.RequestsDirectoryName);
+    public string ProbesDirectory => Path.Combine(ModuleDataDirectory, HistoryMinervaIdentity.ProbesDirectoryName);
 
     public string LocateWorker()
     {
@@ -41,7 +41,68 @@ public sealed class MappingRuntimePaths
             candidates.Add(Path.Combine(Path.GetDirectoryName(assemblyLocation)!, HistoryMinervaIdentity.WorkerFileName));
         candidates.Add(Path.Combine(AppContext.BaseDirectory, HistoryMinervaIdentity.WorkerFileName));
         candidates.Add(Path.Combine(ModuleDirectory, HistoryMinervaIdentity.WorkerFileName));
+        candidates.AddRange(FindPublishedPackageWorkers());
         return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static IEnumerable<string> FindPublishedPackageWorkers()
+    {
+        var seeds = new[]
+        {
+            AppContext.BaseDirectory,
+            Environment.CurrentDirectory,
+            Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty),
+        };
+
+        foreach (var seed in seeds.Where(path => !string.IsNullOrWhiteSpace(path)))
+        {
+            DirectoryInfo? directory;
+            try
+            {
+                directory = new DirectoryInfo(seed!);
+                if (File.Exists(directory.FullName))
+                    directory = directory.Parent;
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+
+            for (; directory is not null; directory = directory.Parent)
+            {
+                var localPackage = Path.Combine(
+                    directory.FullName,
+                    $"z-{HistoryMinervaIdentity.Name}",
+                    HistoryMinervaIdentity.WorkerFileName);
+                if (File.Exists(localPackage))
+                    yield return localPackage;
+
+                if (!Directory.Exists(Path.Combine(directory.FullName, "HistoryVesta.git")))
+                    continue;
+
+                IEnumerable<string> projects;
+                try
+                {
+                    projects = Directory.EnumerateDirectories(directory.FullName);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    yield break;
+                }
+
+                foreach (var project in projects)
+                {
+                    var candidate = Path.Combine(
+                        project,
+                        $"z-{HistoryMinervaIdentity.Name}",
+                        HistoryMinervaIdentity.WorkerFileName);
+                    if (File.Exists(candidate))
+                        yield return candidate;
+                }
+
+                yield break;
+            }
+        }
     }
 
     public static MappingRuntimePaths CreateAppShellFallback()
