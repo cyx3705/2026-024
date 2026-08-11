@@ -2,7 +2,7 @@
     "schemaVersion":  1,
     "type":  "HistoryVulcan.Module",
     "name":  "HistoryMinerva",
-    "version":  "4.3.1",
+    "version":  "4.3.2",
     "description":  "HistoryMinerva CAD module with Solid Edge to SolidWorks conversion, SolidWorks self-preparation, and a unified worker.",
     "artifact":  "HistoryMinerva.dll",
     "docs":  "HistoryMinerva.xml",

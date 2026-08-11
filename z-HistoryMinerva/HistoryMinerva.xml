@@ -198,8 +198,5 @@
             建模能力保留在 HistoryMinerva.Worker 协议层。映射停靠页由 HistoryMinervaUiModule 注册。
             </summary>
         </member>
-        <member name="T:BaseVariable.ModuleInfoBase">
-            <summary>AppShell 模块识别合同的兼容副本。</summary>
-        </member>
     </members>
 </doc>
