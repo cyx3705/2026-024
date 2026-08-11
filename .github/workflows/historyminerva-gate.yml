@@ -1,0 +1,99 @@
+name: HistoryMinerva Quality Gate
+
+on:
+  push:
+    branches:
+      - 2026-024-HistoryMinerva
+  pull_request:
+    branches:
+      - 2026-024-HistoryMinerva
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Locked build, smoke, UI and package gates
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out HistoryMinerva
+        uses: actions/checkout@v7
+        with:
+          path: 2026-024-HistoryMinerva
+          lfs: true
+
+      - name: Check out HistoryVulcan formal host
+        uses: actions/checkout@v7
+        with:
+          ref: 2026-023-HistoryVulcan
+          path: 2026-023-HistoryVulcan
+          lfs: true
+
+      - name: Check out HistoryDiana shared contracts
+        uses: actions/checkout@v7
+        with:
+          ref: 2026-019-HistoryDiana
+          path: 2026-019-HistoryDiana
+          lfs: true
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore locked dependencies
+        working-directory: 2026-024-HistoryMinerva
+        run: dotnet restore .\HistoryMinerva.sln --locked-mode -p:NuGetAudit=false
+
+      - name: Verify static quality gate
+        working-directory: 2026-024-HistoryMinerva
+        shell: pwsh
+        run: .\b-Code-HistoryMinerva\eng\Test-QualityGate.ps1
+
+      - name: Build Debug with warnings as errors
+        working-directory: 2026-024-HistoryMinerva
+        run: dotnet build .\HistoryMinerva.sln -c Debug --no-restore -warnaserror -p:NuGetAudit=false
+
+      - name: Run Smoke Debug
+        working-directory: 2026-024-HistoryMinerva
+        run: dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.Smoke\HistoryMinerva.Smoke.csproj -c Debug --no-build --no-restore -p:NuGetAudit=false
+
+      - name: Build Release with warnings as errors
+        working-directory: 2026-024-HistoryMinerva
+        run: dotnet build .\HistoryMinerva.sln -c Release --no-restore -warnaserror -p:NuGetAudit=false
+
+      - name: Run Smoke Release
+        working-directory: 2026-024-HistoryMinerva
+        run: dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.Smoke\HistoryMinerva.Smoke.csproj -c Release --no-build --no-restore -p:NuGetAudit=false
+
+      - name: Run narrow dark UI Smoke
+        working-directory: 2026-024-HistoryMinerva
+        run: >-
+          dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.UiSmoke\HistoryMinerva.UiSmoke.csproj
+          -c Release --no-build --no-restore -p:NuGetAudit=false --
+          --width 320 --height 680 --dark --dpi 150 --capture $env:RUNNER_TEMP\historyminerva-ui-320-dark.png
+
+      - name: Run wide light UI Smoke
+        working-directory: 2026-024-HistoryMinerva
+        run: >-
+          dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.UiSmoke\HistoryMinerva.UiSmoke.csproj
+          -c Release --no-build --no-restore -p:NuGetAudit=false --
+          --width 1200 --height 820 --dpi 100 --capture $env:RUNNER_TEMP\historyminerva-ui-1200-light.png
+
+      - name: Verify formatting
+        working-directory: 2026-024-HistoryMinerva
+        run: dotnet format .\HistoryMinerva.sln --verify-no-changes --no-restore
+
+      - name: Build and verify candidate package
+        working-directory: 2026-024-HistoryMinerva
+        shell: pwsh
+        run: >-
+          .\b-Code-HistoryMinerva\eng\Build-HistoryMinervaPackage.ps1
+          -Configuration Release -SkipBuild -OutputRoot .\b-Publish\current\HistoryMinerva-CI
+
+      - name: Reject generated tracked changes
+        working-directory: 2026-024-HistoryMinerva
+        run: git diff --exit-code
