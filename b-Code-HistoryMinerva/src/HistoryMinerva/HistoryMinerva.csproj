@@ -1,0 +1,50 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\build\HistoryMinerva.Version.props" />
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="HistoryMinerva.Smoke" />
+    <InternalsVisibleTo Include="HistoryMinerva.UiSmoke" />
+    <ProjectReference Include="..\HistoryMinerva.Contracts\HistoryMinerva.Contracts.csproj" />
+    <ProjectReference Include="..\HistoryMinerva.Worker\HistoryMinerva.Worker.csproj" ReferenceOutputAssembly="false" />
+    <Reference Include="HistoryVulcan.Core">
+      <HintPath>$(HistoryVulcanCorePath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <Target Name="ValidateHistoryVulcanSnapshot" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(HistoryVulcanManifestPath)')" Text="HistoryVulcan manifest not found: $(HistoryVulcanManifestPath)" />
+    <Error Condition="!Exists('$(HistoryVulcanCorePath)')" Text="HistoryVulcan.Core not found: $(HistoryVulcanCorePath)" />
+    <GetAssemblyIdentity AssemblyFiles="$(HistoryVulcanCorePath)">
+      <Output TaskParameter="Assemblies" ItemName="_HistoryVulcanCoreIdentity" />
+    </GetAssemblyIdentity>
+    <!--
+      宿主兼容性按下限判定，不再钉精确版本或构建哈希。
+      Core 自 3.9.0 起冻结（见 HistoryVulcan 的 b-Office/current/冻结合同.md）：公开面只许降
+      不许升，变更须满足三条判据并显式声明。模块该信的是那份合同，不是一串哈希——实测宿主
+      源码零改动原地重建，Core.dll 的 SHA256 就会变，钉哈希等于把模块焊死在宿主的某一次构建上。
+      真正的兼容性由加载器 Smoke 验证：把模块装进 ALC 跑一遍才能发现「宿主删了我在用的 API」。
+    -->
+    <Error Condition="$([System.Version]::Parse('%(_HistoryVulcanCoreIdentity.Version)').CompareTo($([System.Version]::Parse('$(MinimumHistoryVulcanVersion).0')))) &lt; 0"
+           Text="HistoryVulcan.Core %(_HistoryVulcanCoreIdentity.Version) is older than the required minimum $(MinimumHistoryVulcanVersion).0" />
+  </Target>
+  <Target Name="CopyWorkerArtifacts" AfterTargets="Build">
+    <ItemGroup>
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.exe" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.dll" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.deps.json" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.runtimeconfig.json" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Api.dll" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\Microsoft.CodeAnalysis.dll" />
+      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\Microsoft.CodeAnalysis.CSharp.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WorkerArtifact)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
