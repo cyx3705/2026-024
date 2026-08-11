@@ -190,16 +190,7 @@
             </summary>
         </member>
         <member name="T:SWuse.SWuseCommands">
-            <summary>HistoryMinerva.show/hide/status：SWuse 窗口移除后的占位指令。</summary>
-        </member>
-        <member name="M:SWuse.SWuseCommands.Show">
-            <summary>SWuse 独立窗口已在 4.2.0 移除，返回现状说明。</summary>
-        </member>
-        <member name="M:SWuse.SWuseCommands.Hide">
-            <summary>无独立窗口可隐藏。</summary>
-        </member>
-        <member name="M:SWuse.SWuseCommands.Status">
-            <summary>读取 HistoryMinerva Worker 状态。</summary>
+            <summary>Explicit backend command surface for the merged Minerva worker.</summary>
         </member>
         <member name="T:SWuse.SWuseUiModule">
             <summary>
