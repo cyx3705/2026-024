@@ -1,16 +1,19 @@
 namespace HistoryMinerva.Contracts;
 
 /// <summary>
-/// HistoryMinerva 模块名称唯一权威源。展示名、命令域、窗口标识、部署槽、
+/// HistoryMinerva 模块名称唯一权威源。展示名、命令根、窗口标识、部署槽、
 /// 数据目录、Worker 文件名一律引用此类常量，代码中不再出现独立字面量。
 /// </summary>
 public static class HistoryMinervaIdentity
 {
-    /// <summary>模块名，同时是部署槽名、数据目录名与宿主反射命令域的根。</summary>
+    /// <summary>模块名，同时是部署槽名与数据目录名。</summary>
     public const string Name = "HistoryMinerva";
 
-    /// <summary>命令域：与宿主按 ModuleName 反射生成的前缀保持一致。</summary>
+    /// <summary>保留的模块身份域；新命令名称使用 <see cref="CommandRoot"/>。</summary>
     public const string CommandDomain = Name;
+
+    /// <summary>Vulcan 命令分类与 MCP 工具使用的短形根。</summary>
+    public const string CommandRoot = "minerva";
 
     /// <summary>映射停靠页标题（去 History 前缀的短形）。</summary>
     public const string WindowTitle = "Minerva";

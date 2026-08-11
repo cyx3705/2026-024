@@ -11,6 +11,8 @@ using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
 using HistoryVulcan.Core.Storage;
+using HistoryVulcan.Core.Mcp;
+using HistoryVulcan.Services.Modules;
 using System.Text.Json;
 using System.Windows.Threading;
 
@@ -20,6 +22,7 @@ try
 {
     TestSharedContractsAndVersion();
     TestCommandSurface(root);
+    TestVulcanModuleHostSurface(root);
     TestSwuseLifecycleAndApi();
     TestSwuseWorkspace(root);
     TestSwuseWorkerValidator(root);
@@ -124,6 +127,8 @@ static void TestSharedContractsAndVersion()
     Equal(HistoryMinervaIdentity.Name, new ModuleInfo().ModuleName, "模块名必须来自 HistoryMinervaIdentity 权威源");
     Equal(HistoryMinervaIdentity.Name, HistoryMinervaIdentity.CommandDomain, "命令域必须与模块名同根（宿主按 ModuleName 反射生成）");
     Equal("HistoryMinerva", HistoryMinervaIdentity.Name, "权威源模块名字面量必须为 HistoryMinerva");
+    Equal("minerva", HistoryMinervaIdentity.CommandRoot,
+        "command root must be minerva without the History prefix");
     Equal(
         HistoryMinervaIdentity.WorkerFileName,
         Path.GetFileName(SolidWorksPartImportIsolation.ResolveWorkerExecutable()),
@@ -458,14 +463,68 @@ static void TestExternalLegacyAndDirectoryCreation(string root)
 /// </summary>
 static void TestCommandSurface(string root)
 {
-    _ = root;
     var commands = new SWuseCommands();
+    var context = new RecordingModuleContext(
+        Path.Combine(root, "command-data"),
+        Path.Combine(root, "command-modules"));
+    commands.Attach(context);
+    foreach (var name in new[]
+             {
+                 "minerva.worker.show",
+                 "minerva.worker.hide",
+                 "minerva.worker.status",
+                 "minerva.worker.path",
+                 "minerva.worker.capabilities",
+             })
+    {
+        True(context.Registry.TryGet(name, out var descriptor), $"missing explicit command {name}");
+        True(descriptor.Readonly && descriptor.AllowMcpExecution,
+            $"{name} must be a read-only MCP-safe backend command");
+    }
+    True(!context.Registry.All().Any(command =>
+            command.Name.StartsWith("HistoryMinerva.", StringComparison.OrdinalIgnoreCase)),
+        "legacy HistoryMinerva command prefix must not be registered");
     True(commands.Show().Contains("已在 4.2.0 移除", StringComparison.Ordinal),
         "show 必须如实告知 SWuse 独立窗口已移除");
     True(commands.Hide().Contains("已在 4.2.0 移除", StringComparison.Ordinal),
         "hide 必须如实告知无独立窗口可隐藏");
     True(commands.Status().Contains(HistoryMinervaIdentity.Name, StringComparison.Ordinal),
         "status 必须以 HistoryMinerva 身份报告 Worker 状态");
+}
+
+static void TestVulcanModuleHostSurface(string root)
+{
+    var moduleAssembly = LocateRepoFile(Path.Combine(
+        "b-Code-HistoryMinerva", "src", "HistoryMinerva", "bin", "Release",
+        "net8.0-windows", "HistoryMinerva.dll"));
+    var registry = new CommandRegistry();
+    var log = new RecordingShellLog();
+    var bus = new CommandBus(registry, log);
+    var settings = new RecordingSettingsService(Path.GetDirectoryName(moduleAssembly)!);
+    using var host = new ModuleHost(Path.GetDirectoryName(moduleAssembly)!, log)
+    {
+        EnableUiModules = false,
+        EnableFileWatching = false,
+    };
+    host.Attach(registry, bus, settings, Path.Combine(root, "module-host-data"));
+    host.Start();
+
+    var commandNames = registry.All().Select(command => command.Name).ToArray();
+    Equal(5, commandNames.Count(name => name.StartsWith("minerva.worker.", StringComparison.OrdinalIgnoreCase)),
+        "the real Vulcan ModuleHost must register all five Minerva worker commands");
+    True(!commandNames.Any(name => name.StartsWith("HistoryMinerva.", StringComparison.OrdinalIgnoreCase)),
+        "the real Vulcan ModuleHost must not synthesize the legacy HistoryMinerva command surface");
+
+    var tools = new CommandSchemaExporter(registry).ExportTools();
+    foreach (var name in commandNames.Where(name => name.StartsWith("minerva.worker.", StringComparison.OrdinalIgnoreCase)))
+    {
+        True(tools.Any(tool => tool.CommandName.Equals(name, StringComparison.OrdinalIgnoreCase)),
+            $"MCP schema must include {name}");
+    }
+
+    var result = bus.ExecuteAsync("minerva.worker.status", "Smoke").GetAwaiter().GetResult();
+    True(result.Success && result.Message.Contains(HistoryMinervaIdentity.Name, StringComparison.Ordinal),
+        "the real Vulcan command bus must execute minerva.worker.status");
 }
 
 static void TestCustomOutputDirectories(string root)
@@ -1724,10 +1783,14 @@ static void TestUiModuleRegistration(string root)
     ((IShellUiAware)module).ShellUi = registrar;
     module.Attach(context);
 
-    True(context.Registry.TryGet("HistoryMinerva.convert", out var convert),
-        "HistoryVulcan 前端必须注册 HistoryMinerva.convert");
-    True(context.Registry.TryGet("HistoryMinerva.cancel", out var cancel),
-        "HistoryVulcan 前端必须注册 HistoryMinerva.cancel");
+    True(context.Registry.TryGet("minerva.conversion.run", out var convert),
+        "HistoryVulcan 前端必须注册 minerva.conversion.run");
+    True(context.Registry.TryGet("minerva.conversion.cancel", out var cancel),
+        "HistoryVulcan 前端必须注册 minerva.conversion.cancel");
+    True(context.Registry.TryGet("minerva.conversion.probe", out var probe),
+        "HistoryVulcan frontend must register minerva.conversion.probe");
+    True(probe.Readonly && probe.RequiresUiThread && !probe.AllowMcpExecution,
+        "minerva.conversion.probe must be a frontend-only read command");
     foreach (var registeredCommand in new[] { convert, cancel })
     {
         True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
@@ -1754,11 +1817,11 @@ static void TestUiModuleRegistration(string root)
             Equal(0.75, descriptor.DefaultRatio, "HistoryMinerva 中央页必须保留 0.75 描述比例");
             True(descriptor.IsSingleton, "HistoryMinerva 中央页必须是单例");
 
-            var result = context.Bus.ExecuteAsync("HistoryMinerva.convert", "Smoke").GetAwaiter().GetResult();
+            var result = context.Bus.ExecuteAsync("minerva.conversion.run", "Smoke").GetAwaiter().GetResult();
             True(!result.Success && result.Message.Contains("请选择", StringComparison.Ordinal),
-                "未选择来源时 HistoryMinerva.convert 必须通过总线返回可读失败原因");
+                "未选择来源时 minerva.conversion.run 必须通过总线返回可读失败原因");
             True(context.Log.Entries.Any(entry =>
-                    entry.Category.Equals("cmd:result:historyminerva:conversion", StringComparison.OrdinalIgnoreCase)),
+                    entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)),
                 "historyminerva 命令结果必须进入 HistoryVulcan 控制台日志并携带命令类");
 
             module.DestroyUi();
@@ -1779,8 +1842,8 @@ static void TestUiModuleRegistration(string root)
     var serviceModule = new HistoryMinervaUiModule();
     serviceModule.Attach(serviceContext);
     serviceModule.CreateUi();
-    True(!serviceContext.Registry.TryGet("HistoryMinerva.convert", out _)
-         && !serviceContext.Registry.TryGet("HistoryMinerva.cancel", out _),
+    True(!serviceContext.Registry.TryGet("minerva.conversion.run", out _)
+         && !serviceContext.Registry.TryGet("minerva.conversion.cancel", out _),
         "无 ShellUi 的服务宿主不得重复注册页面状态命令");
 
     var runtimePaths = new MappingRuntimePaths(dataRoot, moduleRoot);

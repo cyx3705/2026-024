@@ -61,7 +61,8 @@ public partial class AssemblyView : UserControl, IDisposable
         if (dialog.ShowDialog(Window.GetWindow(this)) == true)
         {
             _viewModel.SetSourceFile(dialog.FileName);
-            await _viewModel.ProbeAsync();
+            if (_commandBus is not null)
+                await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.probe", HistoryMinervaIdentity.Name + ":UI");
         }
     }
 
@@ -97,33 +98,14 @@ public partial class AssemblyView : UserControl, IDisposable
 
     private async void OnConvertClick(object sender, RoutedEventArgs e)
     {
-        // 页面按钮必须有反应：旧宿主前端 EnableCommands=false 时
-        // HistoryMinerva.convert 未入本机总线表，ExecuteAsync 会被 RemoteExecutor
-        // 转到服务进程（无页面实例）后静默失败。总线成功则沿用；失败且仍可转换时回退本页。
         if (_commandBus is not null)
-        {
-            var result = await _commandBus.ExecuteAsync(
-                HistoryMinervaIdentity.CommandDomain + ".convert",
-                HistoryMinervaIdentity.Name + ":UI");
-            if (result.Success || !_viewModel.CanConvert)
-                return;
-        }
-
-        await _viewModel.ConvertAsync();
+            await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.run", HistoryMinervaIdentity.Name + ":UI");
     }
 
     private async void OnCancelClick(object sender, RoutedEventArgs e)
     {
         if (_commandBus is not null)
-        {
-            var result = await _commandBus.ExecuteAsync(
-                HistoryMinervaIdentity.CommandDomain + ".cancel",
-                HistoryMinervaIdentity.Name + ":UI");
-            if (result.Success)
-                return;
-        }
-
-        _viewModel.Cancel();
+            await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.cancel", HistoryMinervaIdentity.Name + ":UI");
     }
 
     public void Dispose()

@@ -2,18 +2,21 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using HistoryMinerva.Contracts;
+using HistoryMinerva;
 using SWuse.Contracts;
 
 namespace SWuse;
 
 internal static class SWuseWorkerClient
 {
-    public static string WorkerPath => Path.Combine(AppContext.BaseDirectory, HistoryMinervaIdentity.WorkerFileName);
+    public static string ResolveWorkerPath(MappingRuntimePaths? runtimePaths = null)
+        => WorkerLocator.Locate(runtimePaths ?? MappingRuntimePaths.CreateAppShellFallback());
 
     public static async Task<SWuseBuildResult> RunAsync(SWuseBuildRequest request, CancellationToken cancellationToken)
     {
-        if (!File.Exists(WorkerPath))
-            throw new FileNotFoundException("未找到 HistoryMinerva Worker，请重新构建或同步模块。", WorkerPath);
+        var workerPath = ResolveWorkerPath();
+        if (!File.Exists(workerPath))
+            throw new FileNotFoundException("未找到 HistoryMinerva Worker，请重新构建或同步模块。", workerPath);
 
         var requestDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -32,7 +35,7 @@ internal static class SWuseWorkerClient
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = WorkerPath,
+                    FileName = workerPath,
                     Arguments = "--request " + Quote(requestPath),
                     UseShellExecute = false,
                     CreateNoWindow = true,

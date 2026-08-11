@@ -23,39 +23,45 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
     {
         ArgumentNullException.ThrowIfNull(context);
         if (_context is not null)
-            throw new InvalidOperationException("Mapping UI 宿主上下文已注入。");
+            throw new InvalidOperationException("Minerva UI 宿主上下文已注入。");
 
         _context = context;
-        _runtimePaths = new MappingRuntimePaths(
-            context.DataDirectory,
-            context.Settings.Get("module.dir"));
-        context.Log.Info(HistoryMinervaIdentity.WindowId, $"UI 运行目录已接入 AppShell：{_runtimePaths.ModuleDataDirectory}");
+        _runtimePaths = new MappingRuntimePaths(context.DataDirectory, context.Settings.Get("module.dir"));
+        context.Log.Info(HistoryMinervaIdentity.WindowId, $"Minerva UI 数据根：{_runtimePaths.ModuleDataDirectory}");
 
-        // 无窗服务宿主不会注入 ShellUi，因此只在前端注册依赖当前页面状态的命令。
+        // These are frontend commands. They are deliberately not MCP-callable;
+        // the backend worker/status surface is registered by SWuseCommands.
         if (_shellUi is not null)
         {
             context.RegisterCommands(registry =>
             {
                 registry.Register(new CommandDescriptor
                 {
-                    Name = HistoryMinervaIdentity.CommandDomain + ".convert",
+                    Name = HistoryMinervaIdentity.CommandRoot + ".conversion.probe",
                     CommandClass = "conversion",
-                    Summary = $"转换 {HistoryMinervaIdentity.WindowTitle} 页面当前选择的来源",
-                    Example = HistoryMinervaIdentity.CommandDomain + ".convert",
-                    Readonly = false,
-                    Dangerous = false,
+                    Summary = "通过命令总线探查当前选择的 Minerva 装配体",
+                    Example = "minerva.conversion.probe",
+                    Readonly = true,
+                    RequiresUiThread = true,
+                    AllowMcpExecution = false,
+                    Handler = ProbeCurrentAsync,
+                });
+                registry.Register(new CommandDescriptor
+                {
+                    Name = HistoryMinervaIdentity.CommandRoot + ".conversion.run",
+                    CommandClass = "conversion",
+                    Summary = "通过命令总线执行当前选择的 Minerva 转换",
+                    Example = "minerva.conversion.run",
                     RequiresUiThread = true,
                     AllowMcpExecution = false,
                     Handler = ConvertCurrentAsync,
                 });
                 registry.Register(new CommandDescriptor
                 {
-                    Name = HistoryMinervaIdentity.CommandDomain + ".cancel",
+                    Name = HistoryMinervaIdentity.CommandRoot + ".conversion.cancel",
                     CommandClass = "conversion",
-                    Summary = $"取消 {HistoryMinervaIdentity.WindowTitle} 页面当前转换或探查",
-                    Example = HistoryMinervaIdentity.CommandDomain + ".cancel",
-                    Readonly = false,
-                    Dangerous = false,
+                    Summary = "取消当前 Minerva 转换或探查",
+                    Example = "minerva.conversion.cancel",
                     RequiresUiThread = true,
                     AllowMcpExecution = false,
                     Handler = CommandDescriptor.Sync(CancelCurrent),
@@ -90,11 +96,25 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
         _workspace = null;
     }
 
+    private async Task<CommandResult> ProbeCurrentAsync(CommandContext command)
+    {
+        var viewModel = _workspace?.UnifiedPage.ViewModel;
+        if (viewModel is null)
+            return CommandResult.Fail("Minerva 页面尚未创建。");
+        if (!viewModel.CanProbe)
+            return CommandResult.Fail(viewModel.StatusText);
+
+        command.Progress?.Report(viewModel.OperationText);
+        await viewModel.ProbeAsync(command.Progress);
+        _context?.Log.Info(HistoryMinervaIdentity.WindowId, viewModel.StatusText);
+        return CommandResult.Ok(viewModel.StatusText);
+    }
+
     private async Task<CommandResult> ConvertCurrentAsync(CommandContext command)
     {
         var viewModel = _workspace?.UnifiedPage.ViewModel;
         if (viewModel is null)
-            return CommandResult.Fail("Mapping 页面尚未创建。");
+            return CommandResult.Fail("Minerva 页面尚未创建。");
         if (!viewModel.CanConvert)
             return CommandResult.Fail(viewModel.StatusText);
 
@@ -109,9 +129,9 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
     {
         var viewModel = _workspace?.UnifiedPage.ViewModel;
         if (viewModel is null)
-            return CommandResult.Fail("Mapping 页面尚未创建。");
+            return CommandResult.Fail("Minerva 页面尚未创建。");
         return viewModel.Cancel()
-            ? CommandResult.Ok("已请求取消 Mapping 当前操作。")
-            : CommandResult.Fail("Mapping 当前没有可取消的操作。");
+            ? CommandResult.Ok("已请求取消 Minerva 当前操作。")
+            : CommandResult.Fail("Minerva 当前没有可取消的操作。");
     }
 }

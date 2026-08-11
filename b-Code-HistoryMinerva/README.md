@@ -2,7 +2,7 @@
 
 > 对外模块：`HistoryMinerva` / `historyminerva`
 >
-> 当前源码、候选与正式 `z-HistoryMinerva` 版本：`4.2.3`
+> 当前源码与候选版本：`4.3.1`；正式 `z-HistoryMinerva` 版本：`4.3.0`
 >
 > 最新正式清单：`../z-HistoryMinerva/module.manifest.json`
 

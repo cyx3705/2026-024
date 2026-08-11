@@ -1,8 +1,8 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva `4.3.0` 源码对外消费面的唯一合同。当前正式 `z-HistoryMinerva` 仍是
-`4.2.3`（没有 SolidWorks 自整备管线），其消费面按本文件去掉 `sourceFormat` 字段理解；
-旧 `4.2.2` 三命令快照只属于发布历史，不适用本合同。
+本文件是 HistoryMinerva `4.3.1` 源码对外消费面的唯一合同。当前正式 `z-HistoryMinerva` 为
+`4.3.0`，已经包含 SolidWorks 自整备管线，但仍使用上一版 `HistoryMinerva.*` 命令面；
+新 `minerva.*` 命令面只有 4.3.1 正式发布后才对正式消费者生效。
 构建与部署验收命令见 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用。
 
 ## 模块身份
@@ -11,7 +11,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 模块名 / 命令域 / 部署槽 / 数据目录 | `HistoryMinerva` |
+| 模块名 / 部署槽 / 数据目录 | `HistoryMinerva` |
+| 命令域 / MCP 工具前缀 | `minerva` / `minerva_` |
 | 停靠页标题 | `Minerva` |
 | 窗口内部标识 / 日志类别 | `historyminerva` |
 | Worker 可执行文件 | `HistoryMinerva.Worker.exe` |
@@ -23,11 +24,15 @@
 
 | 命令 | 位置 | 说明 |
 | --- | --- | --- |
-| `HistoryMinerva.convert` | 仅前端 | 转换当前选择来源；UI 线程、`Readonly=false`、`AllowMcpExecution=false` |
-| `HistoryMinerva.cancel` | 仅前端 | 取消当前转换或探查；元数据同上 |
-| `HistoryMinerva.show` | 双槽 | 占位：SWuse 独立窗口已于 4.2.1 移除，如实说明现状 |
-| `HistoryMinerva.hide` | 双槽 | 占位：无独立窗口可隐藏 |
-| `HistoryMinerva.status` | 双槽 | 报告 `HistoryMinerva.Worker.exe` 是否就绪 |
+| `minerva.conversion.probe` | 仅前端 | 解析当前装配来源；UI 线程、`Readonly=true`、`AllowMcpExecution=false` |
+| `minerva.conversion.run` | 仅前端 | 转换当前选择来源；UI 线程、`Readonly=false`、`AllowMcpExecution=false` |
+| `minerva.conversion.cancel` | 仅前端 | 取消当前转换或探查；UI 线程、禁止 MCP |
+| `minerva.worker.show/hide` | 后台 | 只读报告中央工作区状态，不创建或操作独立窗口 |
+| `minerva.worker.status/path` | 后台/MCP | 报告 Worker 就绪状态与宿主上下文解析出的实际路径 |
+| `minerva.worker.capabilities` | 后台/MCP | 报告合并 Worker 支持的协议能力 |
+
+页面探查、转换和取消不再直接调用 ViewModel 作为失败回退。Worker 事件通过命令上下文的
+`Progress` 进入 Vulcan `cmd:progress:minerva:conversion` 日志与控制台；最终结果由同一命令总线回显。
 
 ## Worker 协议
 

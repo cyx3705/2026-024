@@ -14,5 +14,7 @@ public sealed class ModuleInfo : ModuleInfoBase
     public override string Author => "OneHistory";
     public override string Version => typeof(ModuleInfo).Assembly.GetName().Version?.ToString(3)
         ?? throw new InvalidOperationException("HistoryMinerva 主程序集未携带版本信息。");
-    public override Type? MainClassType => typeof(SWuseCommands);
+    // Command registration is explicit in SWuseCommands.Attach. Keeping the
+    // legacy reflection entry point disabled prevents a second command surface.
+    public override Type? MainClassType => null;
 }

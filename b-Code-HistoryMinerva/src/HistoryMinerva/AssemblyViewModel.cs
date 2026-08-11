@@ -329,8 +329,19 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         NotifySourceChanged();
     }
 
-    public Task ProbeAsync()
-        => StartOperationAsync(isProbe: true, ProbeCoreAsync);
+    public async Task ProbeAsync(IProgress<string>? progress = null)
+    {
+        _operationProgress = progress;
+        try
+        {
+            await StartOperationAsync(isProbe: true, ProbeCoreAsync);
+        }
+        finally
+        {
+            if (ReferenceEquals(_operationProgress, progress))
+                _operationProgress = null;
+        }
+    }
 
     public async Task ConvertAsync(IProgress<string>? progress = null)
     {
