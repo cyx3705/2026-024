@@ -27,6 +27,10 @@ internal sealed class SolidWorksInteropBridge : IDisposable
     private readonly Type _componentInterface;
     private readonly Type _mathUtilityInterface;
     private readonly Type _mathTransformInterface;
+    private readonly Type _mateInterface;
+    private readonly Type _mateEntityInterface;
+    private readonly Type _displayDimensionInterface;
+    private readonly Type _dimensionInterface;
     private readonly string _installDirectory;
     private Type? _featureWorksInterface;
 
@@ -51,6 +55,10 @@ internal sealed class SolidWorksInteropBridge : IDisposable
         _componentInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IComponent2");
         _mathUtilityInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IMathUtility");
         _mathTransformInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IMathTransform");
+        _mateInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IMate2");
+        _mateEntityInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IMateEntity2");
+        _displayDimensionInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IDisplayDimension");
+        _dimensionInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IDimension");
 
         var unknown = Marshal.GetIUnknownForObject(application);
         try
@@ -278,13 +286,126 @@ internal sealed class SolidWorksInteropBridge : IDisposable
     }
 
     private object? OpenDocument(string path, int documentType, out int errors, out int warnings)
+        => OpenDocument(path, documentType, OpenSilent, out errors, out warnings);
+
+    private object? OpenDocument(string path, int documentType, int options, out int errors, out int warnings)
     {
-        object?[] parameters = [path, documentType, 1, string.Empty, 0, 0];
+        object?[] parameters = [path, documentType, options, string.Empty, 0, 0];
         var model = Invoke(_applicationInterface, _application, "OpenDoc6", parameters);
         errors = Convert.ToInt32(parameters[4]);
         warnings = Convert.ToInt32(parameters[5]);
         return model;
     }
+
+    // ---------------- V4.3：读 SolidWorks 源装配 ----------------
+
+    // swOpenDocOptions_e
+    private const int OpenSilent = 1;
+    private const int OpenReadOnly = 2;
+
+    /// <summary>
+    /// 以只读方式打开一个源 <c>.SLDASM</c>。
+    ///
+    /// 只读不是礼貌，是硬性要求：源装配是用户的原始文件，探查绝不能改动它。
+    /// 调用方仍会在关闭后比对 SHA256，把"没改"变成可核验的事实而不是承诺。
+    /// </summary>
+    public object? OpenAssemblyReadOnly(string path, out int errors, out int warnings)
+        => OpenDocument(path, DocumentTypeAssembly, OpenSilent | OpenReadOnly, out errors, out warnings);
+
+    /// <summary>轻化组件不解析就读不到面几何，配合采集会整批落空。返回值只作诊断。</summary>
+    public int ResolveLightweightComponents(object assembly)
+        => Convert.ToInt32(Invoke(_assemblyInterface, assembly, "ResolveAllLightWeightComponents", false));
+
+    /// <summary>
+    /// <paramref name="topLevelOnly"/> = true 只返回本文档的直接子项，
+    /// 它们的 <c>Transform2</c> 就是本文档坐标系下的局部矩阵；
+    /// false 返回全部后代，<c>Transform2</c> 一律相对**当前顶层文档**（即世界矩阵）。
+    /// 两者的 <c>Name2</c> 分别是 "件-1" 和 "父-1/件-1"，与既有 OccurrenceId 约定同形。
+    /// </summary>
+    public IReadOnlyList<object> GetAssemblyComponents(object assembly, bool topLevelOnly)
+    {
+        var raw = Invoke(_assemblyInterface, assembly, "GetComponents", topLevelOnly) as Array;
+        return raw is null ? [] : raw.Cast<object>().Where(item => item is not null).ToArray()!;
+    }
+
+    public string GetComponentName(object component)
+        => Convert.ToString(Invoke(_componentInterface, component, "get_Name2")) ?? string.Empty;
+
+    public string GetComponentPath(object component)
+        => Convert.ToString(Invoke(_componentInterface, component, "GetPathName")) ?? string.Empty;
+
+    public bool IsComponentSuppressed(object component)
+        => Convert.ToBoolean(Invoke(_componentInterface, component, "IsSuppressed"));
+
+    /// <summary>swComponentVisibilityState_e：1 = 可见，其余按隐藏处理。</summary>
+    public int GetComponentVisibility(object component)
+        => Convert.ToInt32(Invoke(_componentInterface, component, "get_Visible"));
+
+    public object? GetFirstSubFeature(object feature)
+        => Invoke(_featureInterface, feature, "GetFirstSubFeature");
+
+    public object? GetNextSubFeature(object feature)
+        => Invoke(_featureInterface, feature, "GetNextSubFeature");
+
+    public bool IsFeatureSuppressed(object feature)
+        => Convert.ToBoolean(Invoke(_featureInterface, feature, "IsSuppressed"));
+
+    /// <summary>swMateType_e。</summary>
+    public int GetMateType(object mate)
+        => Convert.ToInt32(Invoke(_mateInterface, mate, "get_Type"));
+
+    /// <summary>swMateAlign_e。</summary>
+    public int GetMateAlignment(object mate)
+        => Convert.ToInt32(Invoke(_mateInterface, mate, "get_Alignment"));
+
+    public int GetMateEntityCount(object mate)
+        => Convert.ToInt32(Invoke(_mateInterface, mate, "GetMateEntityCount"));
+
+    public object? GetMateEntity(object mate, int index)
+        => Invoke(_mateInterface, mate, "MateEntity", index);
+
+    /// <summary>
+    /// 距离/角度配合的数值。<c>IMate2</c> 自己没有 Distance 属性——实测（2026-08-11）
+    /// 它的成员表里只有对齐、翻转、变化范围，数值挂在显示尺寸上。
+    /// 取不到时返回 null，调用方按"无偏移"处理并记入诊断，绝不拿 0 冒充。
+    /// </summary>
+    public double? GetMateDimensionValue(object mate)
+    {
+        object? display = null;
+        object? dimension = null;
+        try
+        {
+            display = Invoke(_mateInterface, mate, "get_DisplayDimension2", 0);
+            if (display is null)
+                return null;
+            dimension = Invoke(_displayDimensionInterface, display, "GetDimension2", 0);
+            if (dimension is null)
+                return null;
+            var value = Convert.ToDouble(Invoke(_dimensionInterface, dimension, "get_SystemValue"));
+            return double.IsFinite(value) ? value : null;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            ComRelease.One(dimension);
+            ComRelease.One(display);
+        }
+    }
+
+    /// <summary>swMateEntity2ReferenceType_e。</summary>
+    public int GetMateEntityReferenceType(object entity)
+        => Convert.ToInt32(Invoke(_mateEntityInterface, entity, "get_ReferenceType"));
+
+    /// <summary>被配合引用的实体本身（面 / 基准面 / 边 …）。只有面能进几何匹配。</summary>
+    public object? GetMateEntityReference(object entity)
+        => Invoke(_mateEntityInterface, entity, "get_Reference");
+
+    /// <summary>实体所属组件。返回值绝不 final 释放：它与组件表里的是同一个 RCW。</summary>
+    public object? GetMateEntityComponent(object entity)
+        => Invoke(_mateEntityInterface, entity, "get_ReferenceComponent");
 
     public object GetMathUtility()
         => Invoke(_applicationInterface, _application, "GetMathUtility")

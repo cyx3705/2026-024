@@ -6,6 +6,22 @@ public enum ConversionMode
     External,
 }
 
+/// <summary>
+/// 源 CAD 格式。决定读装配、取零件的那一段走哪条实现，之后的
+/// 特征识别、草图完全定义、嵌套装配生成与配合重建对两种源完全相同。
+///
+/// 枚举按数值序列化，新值只能追加在末尾；缺省值 <see cref="SolidEdge"/> = 0
+/// 保证旧 JSON 请求（没有这个字段）仍按 V3.x 的 Solid Edge 语义执行。
+/// </summary>
+public enum ConversionSourceFormat
+{
+    /// <summary>Solid Edge `.par` / `.asm`：导出 Parasolid 后导入 SolidWorks。</summary>
+    SolidEdge,
+
+    /// <summary>SolidWorks `.SLDPRT` / `.SLDASM`：零件就地整备，不经过 XT 往返。</summary>
+    SolidWorks,
+}
+
 public enum ConversionStage
 {
     Queued,
@@ -77,6 +93,10 @@ public static class FeatureRecognitionPolicy
         => value <= 0 ? DefaultTimeoutSeconds : Math.Min(value, MaximumTimeoutSeconds);
 }
 
+/// <param name="XtPath">
+/// Parasolid 中转件。只有 <see cref="ConversionSourceFormat.SolidEdge"/> 会用到它；
+/// SW 自整备管线没有中转件，该字段留空字符串，由校验与复用判定按源格式跳过。
+/// </param>
 public sealed record ConversionJob(
     string Id,
     string SourcePath,
@@ -93,7 +113,9 @@ public sealed record BatchRequest(
     // V2.0：对识别出的每个草图执行"完全定义草图"。依赖 RecognizeFeatures。
     bool FullyDefineSketches = true,
     int FeatureRecognitionTimeoutSeconds = FeatureRecognitionPolicy.DefaultTimeoutSeconds,
-    bool ContinueWhenRecognitionFails = true);
+    bool ContinueWhenRecognitionFails = true,
+    // V4.3：源格式。缺省保持 Solid Edge，旧请求 JSON 语义不变。
+    ConversionSourceFormat SourceFormat = ConversionSourceFormat.SolidEdge);
 
 /// <summary>
 /// V3.5.2：父 Worker 向单零件导入子 Worker 发送的内部请求。
@@ -110,7 +132,9 @@ public sealed record PartImportRequest(
     bool ContinueWhenRecognitionFails = true,
     // V3.6.5：上一次尝试里 FeatureWorks 崩了就置为 true，子 Worker 会自己启动一个
     // 专属 SolidWorks 进程，而不是再附着回那个已经损坏的会话。
-    bool UseDedicatedSession = false);
+    bool UseDedicatedSession = false,
+    // V4.3：源格式。SolidWorks 时子 Worker 走"复制 SLDPRT 再就地识别"，不读 XT。
+    ConversionSourceFormat SourceFormat = ConversionSourceFormat.SolidEdge);
 
 /// <summary>V2.0 单个零件的特征识别与草图定义结果，随 Completed 事件回传。</summary>
 public sealed record FeatureOutcome(
@@ -264,7 +288,9 @@ public sealed record AssemblyNode(
 public sealed record AssemblyProbeRequest(
     string BatchId,
     string SourceAssemblyPath,
-    string ResultPath);
+    string ResultPath,
+    // V4.3：源格式。SolidWorks 时读 .SLDASM，产出与 Solid Edge 完全同形的探查结果。
+    ConversionSourceFormat SourceFormat = ConversionSourceFormat.SolidEdge);
 
 public sealed record AssemblyProbeResult(
     string SourceAssemblyPath,
@@ -298,7 +324,9 @@ public sealed record AssemblyBatchRequest(
     // V3.3：拓扑序的装配节点。为 null 时退化为 V3.0 的展平行为。
     IReadOnlyList<AssemblyNode>? Nodes = null,
     // V3.5：全部层的装配关系，按 SourceAssemblyPath 分派到各层。
-    IReadOnlyList<AssemblyRelation>? Relations = null);
+    IReadOnlyList<AssemblyRelation>? Relations = null,
+    // V4.3：源格式。SolidWorks 时零件阶段走就地整备，装配阶段与 Solid Edge 共用同一条实现。
+    ConversionSourceFormat SourceFormat = ConversionSourceFormat.SolidEdge);
 
 /// <summary>
 /// 装配转换结果。

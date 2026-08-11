@@ -1,25 +1,52 @@
+using HistoryMinerva.Contracts;
+
 namespace HistoryMinerva;
 
 public enum MappingContent
 {
     SolidEdgePartToSolidWorksPart,
     SolidEdgeAssemblyToSolidWorksAssembly,
+    // V4.3：SolidWorks 自整备。源与产物都是 SolidWorks，做的是"补上特征树"，不是格式转换。
+    SolidWorksAssemblyToSolidWorksAssembly,
 }
 
+/// <param name="Kind">转换内容枚举值。</param>
+/// <param name="DisplayName">下拉列表里显示的文字。</param>
+/// <param name="SourceHint">选择来源时给用户的提示。</param>
+/// <param name="SourceFormat">该项的源 CAD 格式，是界面到 Worker 之间唯一的格式真值来源。</param>
+/// <param name="IsAssemblySource">源是单个装配体文件（而不是零件文件夹）。</param>
 public sealed record MappingContentOption(
     MappingContent Kind,
     string DisplayName,
-    string SourceHint)
+    string SourceHint,
+    ConversionSourceFormat SourceFormat,
+    bool IsAssemblySource)
 {
     public static IReadOnlyList<MappingContentOption> Available { get; } =
     [
         new(
             MappingContent.SolidEdgePartToSolidWorksPart,
             "Solid Edge .par → SolidWorks .SLDPRT",
-            "选择包含顶层 .par 文件的文件夹"),
+            "选择包含顶层 .par 文件的文件夹",
+            ConversionSourceFormat.SolidEdge,
+            IsAssemblySource: false),
         new(
             MappingContent.SolidEdgeAssemblyToSolidWorksAssembly,
             "Solid Edge .asm → SolidWorks .SLDASM",
-            "选择单个 .asm 装配体文件"),
+            "选择单个 .asm 装配体文件",
+            ConversionSourceFormat.SolidEdge,
+            IsAssemblySource: true),
+        new(
+            MappingContent.SolidWorksAssemblyToSolidWorksAssembly,
+            "SolidWorks .SLDASM → SolidWorks .SLDASM（特征整备）",
+            "选择单个 .SLDASM 装配体文件",
+            ConversionSourceFormat.SolidWorks,
+            IsAssemblySource: true),
     ];
+
+    /// <summary>按源装配文件的扩展名选出对应的转换内容。识别不出时返回 null。</summary>
+    public static MappingContentOption? ForAssemblyFile(string path)
+        => Available.FirstOrDefault(option => option.IsAssemblySource
+            && ConversionPathLayout.HasExtension(
+                path, ConversionPathLayout.GetSourceAssemblyExtension(option.SourceFormat)));
 }

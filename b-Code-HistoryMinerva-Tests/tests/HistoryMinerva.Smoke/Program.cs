@@ -56,6 +56,8 @@ try
     TestAssemblyNodeReuse(root);
     TestMateGeometryMatching();
     TestMateTypeMapping();
+    TestSolidWorksSelfPipelineContracts();
+    TestSolidWorksSelfPipelinePlanning(root);
     TestMateOutcomeSelfConsistency();
     TestMateCandidateEquivalence();
     TestNestedAssemblyMetrics();
@@ -1472,7 +1474,148 @@ static void TestMateTypeMapping()
 
     Equal(MatePlanKind.SkipSuppressed,
         MateTypeMapper.Map(R(MateTypeMapper.Planar) with { IsSuppressed = true }).Kind,
-        "被抑制的关系在 SE 里没生效，不翻译");
+        "被抑制的关系在源里没生效，不翻译");
+
+    // ---- V4.3：SolidWorks 源的原生配合 ----
+    Equal(MatePlanKind.Fix, MateTypeMapper.Map(R(MateTypeMapper.SolidWorksFixed)).Kind,
+        "源里被固定的组件映射为固定");
+    Equal(SolidWorksMateType.Coincident,
+        MateTypeMapper.Map(R(MateTypeMapper.SolidWorksCoincident)).MateType,
+        "SW 重合配合映射为重合");
+    Equal(SolidWorksMateType.Distance,
+        MateTypeMapper.Map(R(MateTypeMapper.SolidWorksCoincident) with { Offset = 0.004 }).MateType,
+        "带偏移的 SW 重合按距离处理");
+    Equal(SolidWorksMateType.Concentric,
+        MateTypeMapper.Map(R(MateTypeMapper.SolidWorksConcentric)).MateType,
+        "SW 同心配合映射为同轴");
+    var swDistance = MateTypeMapper.Map(R(MateTypeMapper.SolidWorksDistance) with { Offset = -0.02 });
+    Equal(SolidWorksMateType.Distance, swDistance.MateType, "SW 距离配合映射为距离");
+    True(Math.Abs(swDistance.Distance - 0.02) < 1e-12, "距离取绝对值");
+    Equal(MatePlanKind.Unsupported, MateTypeMapper.Map(R("SwMateType4")).Kind,
+        "未实测的 SW 配合类型不翻译，类型号带进报告");
+
+    // 两族接地必须走同一条判定。写死某一个接口名字面量时，另一族会整批落进
+    // "该层没有接地关系"的兜底分支——真机上就是这么错过 29 条固定关系的。
+    foreach (var ground in new[] { MateTypeMapper.Ground, MateTypeMapper.SolidWorksFixed })
+    {
+        Equal(MatePlanKind.Fix, MateTypeMapper.Map(R(ground)).Kind,
+            $"接地判定必须问映射表：{ground}");
+    }
+}
+
+/// <summary>V4.3：源格式决定读哪一端；旧 JSON 请求必须仍按 Solid Edge 解释。</summary>
+static void TestSolidWorksSelfPipelineContracts()
+{
+    Equal(ConversionPathLayout.SolidEdgePartExtension,
+        ConversionPathLayout.GetSourcePartExtension(ConversionSourceFormat.SolidEdge), "SE 源零件是 .par");
+    Equal(ConversionPathLayout.SolidWorksPartExtension,
+        ConversionPathLayout.GetSourcePartExtension(ConversionSourceFormat.SolidWorks), "SW 源零件是 .SLDPRT");
+    Equal(ConversionPathLayout.SolidEdgeAssemblyExtension,
+        ConversionPathLayout.GetSourceAssemblyExtension(ConversionSourceFormat.SolidEdge), "SE 源装配是 .asm");
+    Equal(ConversionPathLayout.SolidWorksAssemblyExtension,
+        ConversionPathLayout.GetSourceAssemblyExtension(ConversionSourceFormat.SolidWorks), "SW 源装配是 .SLDASM");
+    True(ConversionPathLayout.UsesParasolidHandoff(ConversionSourceFormat.SolidEdge), "SE 经 XT 中转");
+    True(!ConversionPathLayout.UsesParasolidHandoff(ConversionSourceFormat.SolidWorks), "SW 自整备没有中转件");
+
+    // 缺省值是兼容性的全部依据：V3.x 写下的请求 JSON 没有 sourceFormat 字段，
+    // 反序列化后必须仍是 Solid Edge，否则历史请求会被当成 SW 源执行。
+    var jsonOptions = WorkerProtocol.CreateJsonOptions();
+    var legacyProbe = JsonSerializer.Deserialize<AssemblyProbeRequest>(
+        """{"batchId":"b","sourceAssemblyPath":"C:\\T.asm","resultPath":"C:\\T.json"}""", jsonOptions)!;
+    Equal(ConversionSourceFormat.SolidEdge, legacyProbe.SourceFormat, "缺字段的旧探查请求必须仍是 Solid Edge");
+    var legacyBatch = JsonSerializer.Deserialize<BatchRequest>(
+        """{"batchId":"b","mode":1,"jobs":[]}""", jsonOptions)!;
+    Equal(ConversionSourceFormat.SolidEdge, legacyBatch.SourceFormat, "缺字段的旧批次必须仍是 Solid Edge");
+
+    // 组件变换在两套布局之间必须严格互逆：读进来的矩阵原样写回去。
+    // 这一步用错参考系不抛异常，只静默错位，所以必须在离线就锁死。
+    double[] solidWorks =
+    [
+        0, -1, 0,
+        1, 0, 0,
+        0, 0, 1,
+        0.0056494, -0.00322823, 0.076,
+        1, 0, 0, 0,
+    ];
+    var contract = SolidWorksAssemblyExplorer.FromSolidWorksTransform(solidWorks);
+    Equal(0d, contract[3], "契约布局第 4 列必须补零");
+    Equal(1d, contract[15], "契约布局末位必须是 1");
+    Equal(0.076, contract[14], "平移落在 12..14");
+    var roundTrip = SolidWorksAssemblyBuilder.ToSolidWorksTransform(contract);
+    for (var index = 0; index < 16; index++)
+        Equal(solidWorks[index], roundTrip[index], $"变换往返第 {index} 位必须逐位相同");
+
+    // 带缩放的组件不能静默丢掉缩放。
+    var scaled = solidWorks.ToArray();
+    scaled[12] = 2;
+    Throws<InvalidDataException>(() => SolidWorksAssemblyExplorer.FromSolidWorksTransform(scaled));
+
+    // 界面到 Worker 的格式真值只有一处：转换内容。
+    var swContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly);
+    Equal(ConversionSourceFormat.SolidWorks, swContent.SourceFormat, "SW 自整备项的源格式必须是 SolidWorks");
+    True(swContent.IsAssemblySource, "SW 自整备的来源是单个装配体文件");
+    Equal(MappingContent.SolidWorksAssemblyToSolidWorksAssembly,
+        MappingContentOption.ForAssemblyFile(@"C:\T\A.SLDASM")!.Kind,
+        ".SLDASM 必须选到 SW 自整备");
+    Equal(MappingContent.SolidEdgeAssemblyToSolidWorksAssembly,
+        MappingContentOption.ForAssemblyFile(@"C:\T\A.asm")!.Kind,
+        ".asm 必须选到 Solid Edge 装配转换");
+    True(MappingContentOption.ForAssemblyFile(@"C:\T\A.step") is null, "不支持的扩展名不得猜一个格式出来");
+}
+
+/// <summary>V4.3：SW 源的整备计划与校验。产物绝不能落回源文件本身。</summary>
+static void TestSolidWorksSelfPipelinePlanning(string root)
+{
+    var source = Path.Combine(root, "sw-self");
+    var output = Path.Combine(source, "SW");
+    Directory.CreateDirectory(output);
+    var partPath = Path.Combine(source, "件A.SLDPRT");
+    File.WriteAllText(partPath, "part");
+    var assemblyPath = Path.Combine(source, "顶层.SLDASM");
+    File.WriteAllText(assemblyPath, "assembly");
+
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var probe = new AssemblyProbeResult(
+        assemblyPath,
+        [new AssemblyOccurrence("件A-1", null, partPath, false, false, false, identity, null)],
+        [partPath],
+        0, 0, 0, 0,
+        [],
+        [new AssemblyDocumentReading(
+            assemblyPath,
+            [new AssemblyChild("件A-1", partPath, false, false, identity)],
+            [],
+            [new AssemblyRelation(assemblyPath, 0, MateTypeMapper.SolidWorksFixed, "件A-1", null, null, null)])]);
+
+    var plan = AssemblyPlanner.Create(probe, null, output, ConversionSourceFormat.SolidWorks);
+    True(plan.CanConvert, "SW 源装配应当可以转换");
+    Equal(1, plan.Parts.Count, "唯一零件应当有一个");
+    Equal(1, plan.RelationCount, "固定组件关系要带进计划");
+    Equal(Path.Combine(output, "件A.SLDPRT"), plan.Parts[0].SolidWorksPath, "产物落在输出目录，与源同名不同目录");
+    Equal(Path.Combine(output, "顶层.SLDASM"), plan.AssemblyOutputPath, "装配产物落在输出目录");
+
+    // 输出目录指回源目录时，产物就是源文件本身——必须在计划阶段拦住，绝不动用户的原件。
+    var selfOverwrite = AssemblyPlanner.Create(probe, null, source, ConversionSourceFormat.SolidWorks);
+    True(!selfOverwrite.CanConvert, "产物会覆盖源零件时必须阻断");
+    True(selfOverwrite.BlockingIssues.Any(issue => issue.Message.Contains("覆盖源零件", StringComparison.Ordinal)),
+        "阻断原因要说清是产物会覆盖源零件");
+
+    // 校验器也要独立拦一次：Worker 不能依赖界面已经拦过。
+    var selfJob = new ConversionJob("件A", partPath, string.Empty, partPath);
+    Throws<InvalidDataException>(() => WorkerRequestValidator.Validate(new BatchRequest(
+        "b", ConversionMode.External, [selfJob], Overwrite: true,
+        SourceFormat: ConversionSourceFormat.SolidWorks)));
+
+    // SW 源没有 XT：XtPath 留空也必须能通过校验。
+    var validJob = new ConversionJob("件A", partPath, string.Empty, Path.Combine(output, "件A.SLDPRT"));
+    WorkerRequestValidator.Validate(new BatchRequest(
+        "b", ConversionMode.External, [validJob], Overwrite: true,
+        SourceFormat: ConversionSourceFormat.SolidWorks));
+
+    // 反过来，Solid Edge 源仍必须是 .par，不能因为放宽而混入 SLDPRT。
+    Throws<InvalidDataException>(() => WorkerRequestValidator.Validate(new BatchRequest(
+        "b", ConversionMode.External, [validJob], Overwrite: true)));
 }
 
 /// <summary>§6.1 判据 3：每条关系都要有确定去向，不允许凭空消失。</summary>
@@ -1672,11 +1815,13 @@ static void TestUnifiedSourceWorkspace()
                 "单页工作区默认必须等待用户选择来源");
             True(workspace.UnifiedPage.ViewModel.SourcePath.Length == 0,
                 "未选择来源时不能残留旧路径");
-            Equal(2, workspace.UnifiedPage.ViewModel.MappingContents.Count,
-                "通用 Mapping 页面必须只提供当前支持的两种转换内容");
+            Equal(3, workspace.UnifiedPage.ViewModel.MappingContents.Count,
+                "通用 Mapping 页面必须只提供当前支持的三种转换内容");
             Equal(MappingContent.SolidEdgePartToSolidWorksPart,
                 workspace.UnifiedPage.ViewModel.SelectedMappingContent.Kind,
                 "默认转换内容必须是 .par → .SLDPRT");
+            Equal(ConversionSourceFormat.SolidEdge, workspace.UnifiedPage.ViewModel.SourceFormat,
+                "默认源格式必须仍是 Solid Edge");
             Equal("转换全部零件", workspace.UnifiedPage.ViewModel.PrimaryActionText,
                 "未选择来源时主按钮必须遵循当前转换内容");
         }

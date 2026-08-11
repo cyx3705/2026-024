@@ -51,6 +51,18 @@ public static class MateTypeMapper
     public const string Axial = "AxialRelation3d";
     public const string Planar = "PlanarRelation3d";
 
+    // ---- V4.3：SolidWorks 源的原生配合名 ----
+    //
+    // SW 自转换的关系来自源 .SLDASM 自己的配合，不是 SE 关系，所以不复用 SE 的接口名——
+    // 同一个字符串代表两种来源会让报告没法归因。前缀 Sw 使两族名字在诊断里一眼可分。
+    // 只列本版实现的类型，其余一律 Unsupported 并把 SW 类型号带进报告。
+
+    /// <summary>源组件被"固定"。不是配合，落为固定该组件，与 SE 的接地同处理。</summary>
+    public const string SolidWorksFixed = "SwFixedComponent";
+    public const string SolidWorksCoincident = "SwCoincident";
+    public const string SolidWorksConcentric = "SwConcentric";
+    public const string SolidWorksDistance = "SwDistance";
+
     /// <summary>偏移量小于这个值就当作重合，而不是零距离的距离配合。</summary>
     public const double OffsetEpsilon = 1e-9;
 
@@ -58,18 +70,36 @@ public static class MateTypeMapper
     {
         ArgumentNullException.ThrowIfNull(relation);
         if (relation.IsSuppressed)
-            return new MatePlan(MatePlanKind.SkipSuppressed, Reason: "关系在 Solid Edge 中已被抑制");
+            return new MatePlan(MatePlanKind.SkipSuppressed, Reason: "关系在源装配中已被抑制");
 
         return relation.InterfaceName switch
         {
             Ground => new MatePlan(MatePlanKind.Fix, Reason: "接地关系，固定该组件"),
             Planar => MapPlanar(relation),
             Axial => MapAxial(relation),
+            SolidWorksFixed => new MatePlan(MatePlanKind.Fix, Reason: "源组件已固定，保持固定"),
+            SolidWorksCoincident => MapSolidWorksCoincident(relation),
+            SolidWorksConcentric => new MatePlan(
+                MatePlanKind.Mate, SolidWorksMateType.Concentric, SolidWorksMateAlign.Closest),
+            SolidWorksDistance => new MatePlan(
+                MatePlanKind.Mate, SolidWorksMateType.Distance, SolidWorksMateAlign.Closest,
+                Math.Abs(relation.Offset)),
             _ => new MatePlan(
                 MatePlanKind.Unsupported,
                 Reason: $"本版未实测过的关系类型：{relation.InterfaceName}"),
         };
     }
+
+    /// <summary>
+    /// SW 重合配合。带非零偏移的重合在 SW 里本来就该是距离配合——
+    /// 采集侧照实填 <see cref="AssemblyRelation.Offset"/>，这里按值分流，与 SE 的平面关系同口径。
+    /// </summary>
+    private static MatePlan MapSolidWorksCoincident(AssemblyRelation relation)
+        => Math.Abs(relation.Offset) <= OffsetEpsilon
+            ? new MatePlan(MatePlanKind.Mate, SolidWorksMateType.Coincident, SolidWorksMateAlign.Closest)
+            : new MatePlan(
+                MatePlanKind.Mate, SolidWorksMateType.Distance, SolidWorksMateAlign.Closest,
+                Math.Abs(relation.Offset));
 
     // ---- 对齐策略（2026-08-03 真机定案）----
     //

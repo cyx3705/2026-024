@@ -39,13 +39,16 @@ public static class AssemblyPlanner
     public static AssemblyConversionPlan Create(
         AssemblyProbeResult probe,
         string? customXtDirectory = null,
-        string? customSolidWorksDirectory = null)
+        string? customSolidWorksDirectory = null,
+        ConversionSourceFormat sourceFormat = ConversionSourceFormat.SolidEdge)
     {
         ArgumentNullException.ThrowIfNull(probe);
+        var sourceAssemblyExtension = ConversionPathLayout.GetSourceAssemblyExtension(sourceFormat);
+        var sourcePartExtension = ConversionPathLayout.GetSourcePartExtension(sourceFormat);
         if (!Path.IsPathFullyQualified(probe.SourceAssemblyPath)
-            || !ConversionPathLayout.HasExtension(probe.SourceAssemblyPath, ConversionPathLayout.SolidEdgeAssemblyExtension))
+            || !ConversionPathLayout.HasExtension(probe.SourceAssemblyPath, sourceAssemblyExtension))
         {
-            throw new InvalidDataException("装配探查结果中的源路径不是绝对 .asm 路径。");
+            throw new InvalidDataException($"装配探查结果中的源路径不是绝对 {sourceAssemblyExtension} 路径。");
         }
 
         var sourceAssemblyPath = Path.GetFullPath(probe.SourceAssemblyPath);
@@ -76,7 +79,7 @@ public static class AssemblyPlanner
         var supportedParts = probe.Occurrences
             .Where(item => !item.IsSubAssembly && !item.IsSuppressed)
             .Select(item => Path.GetFullPath(item.SourcePath))
-            .Where(path => ConversionPathLayout.HasExtension(path, ConversionPathLayout.SolidEdgePartExtension))
+            .Where(path => ConversionPathLayout.HasExtension(path, sourcePartExtension))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(path => path, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
@@ -84,11 +87,11 @@ public static class AssemblyPlanner
         var unsupported = probe.Occurrences
             .Where(item => !item.IsSubAssembly && !item.IsSuppressed)
             .Select(item => item.SourcePath)
-            .Where(path => !ConversionPathLayout.HasExtension(path, ConversionPathLayout.SolidEdgePartExtension))
+            .Where(path => !ConversionPathLayout.HasExtension(path, sourcePartExtension))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         foreach (var path in unsupported)
-            warnings.Add($"跳过 V3.0 不支持的引用：{path}");
+            warnings.Add($"跳过不支持的引用：{path}");
 
         foreach (var group in supportedParts.GroupBy(
                      path => Path.GetFileNameWithoutExtension(path),
@@ -102,12 +105,15 @@ public static class AssemblyPlanner
                 $"同名不同路径零件会映射到同一输出“{group.Key}”：{string.Join("；", paths)}"));
         }
 
+        var usesParasolid = ConversionPathLayout.UsesParasolidHandoff(sourceFormat);
         var parts = supportedParts.Select(path =>
         {
             var paths = ConversionPathLayout.ResolvePartPaths(path, xtDirectory, swDirectory, sourceDirectory);
-            var exists = File.Exists(paths.XtPath) || File.Exists(paths.SolidWorksPath)
-                || !hasCustomXtDirectory && File.Exists(paths.LegacyXtPath)
-                || !hasCustomSolidWorksDirectory && File.Exists(paths.LegacySolidWorksPath);
+            // SW 自整备管线没有中转件：产物是否已存在只看 SLDPRT。
+            var exists = File.Exists(paths.SolidWorksPath)
+                || !hasCustomSolidWorksDirectory && File.Exists(paths.LegacySolidWorksPath)
+                || usesParasolid && (File.Exists(paths.XtPath)
+                    || !hasCustomXtDirectory && File.Exists(paths.LegacyXtPath));
             var reusableXt = File.Exists(paths.XtPath)
                 ? paths.XtPath
                 : !hasCustomXtDirectory && File.Exists(paths.LegacyXtPath) ? paths.LegacyXtPath : paths.XtPath;
@@ -119,10 +125,30 @@ public static class AssemblyPlanner
             return new ScanCandidate(path, reusableXt, reusableSw, exists);
         }).ToArray();
 
+        // 源零件与产物同名不同目录是 SW 自整备的常态；输出目录落在源目录里面时，
+        // 产物会反过来变成下一次扫描的源。这里当场拦住，不让它发生。
+        foreach (var part in parts.Where(item => string.Equals(
+                     Path.GetFullPath(item.SourcePath),
+                     Path.GetFullPath(item.SolidWorksPath),
+                     StringComparison.OrdinalIgnoreCase)))
+        {
+            issues.Add(new AssemblyPlanIssue(
+                ConversionErrorClass.OutputNotWritable,
+                $"产物会覆盖源零件本身：{part.SourcePath}；请把输出目录设到源目录之外。"));
+        }
+
         if (parts.Any(item => item.HasExistingOutput))
-            warnings.Add("检测到已有零件产物；转换时会校验时间与格式，安全复用有效的分层或旧平铺 XT/SLDPRT，不覆盖用户文件。");
+        {
+            warnings.Add(usesParasolid
+                ? "检测到已有零件产物；转换时会校验时间与格式，安全复用有效的分层或旧平铺 XT/SLDPRT，不覆盖用户文件。"
+                : "检测到已有零件产物；转换时会校验时间与格式，安全复用有效的 SLDPRT，不覆盖用户文件。");
+        }
         if (parts.Length == 0)
-            issues.Add(new AssemblyPlanIssue(ConversionErrorClass.InputInvalid, "装配体中没有可转换的 .par 零件。"));
+        {
+            issues.Add(new AssemblyPlanIssue(
+                ConversionErrorClass.InputInvalid,
+                $"装配体中没有可转换的 {sourcePartExtension} 零件。"));
+        }
 
         if (probe.SuppressedCount > 0)
             warnings.Add($"将跳过 {probe.SuppressedCount} 个抑制实例。");

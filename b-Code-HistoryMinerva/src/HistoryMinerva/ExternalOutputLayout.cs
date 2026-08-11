@@ -23,13 +23,16 @@ public static class ExternalOutputLayout
         EnsureDirectories(directories.XtDirectory, directories.SolidWorksDirectory);
     }
 
-    public static void EnsureDirectories(string xtDirectory, string solidWorksDirectory)
+    /// <summary>
+    /// <paramref name="xtDirectory"/> 传 null 表示本次没有 Parasolid 中转件
+    /// （SW 自整备管线），此时不创建空的 XT 目录。
+    /// </summary>
+    public static void EnsureDirectories(string? xtDirectory, string solidWorksDirectory)
     {
-        var directories = new[]
-        {
-            Path.GetFullPath(xtDirectory),
-            Path.GetFullPath(solidWorksDirectory),
-        }.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var directories = (string.IsNullOrWhiteSpace(xtDirectory)
+                ? new[] { Path.GetFullPath(solidWorksDirectory) }
+                : [Path.GetFullPath(xtDirectory), Path.GetFullPath(solidWorksDirectory)])
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var conflicts = directories.Where(File.Exists).ToArray();
         if (conflicts.Length > 0)
             throw new IOException($"输出目录被同名文件占用：{string.Join("；", conflicts)}");

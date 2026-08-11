@@ -14,9 +14,9 @@
   },
   "historyVulcanHost": {
     "packageRoot": "../2026-023-HistoryVulcan/z-HistoryVulcan",
-    "version": "3.4.0",
-    "manifestSha256": "788F4254604C32BFB75FABEE016AC3B0A11825C4B0A646BBEF005EB19B0237E9",
-    "coreSha256": "280CBBB96BFF4EEF5737F5C7B32C7B4C41917B1E97955F19AADAB73DE50D4EA6"
+    "version": "3.5.0",
+    "manifestSha256": "C288A4EFDFF696E87052FB03E887112D43EA8702A132B57B20FA284DC76032D4",
+    "coreSha256": "DC7372361E43DC7FAEA8D728D3ED3CDBEE346221761C10C3D55D1D05AC95A7C5"
   },
   "paths": {
     "activeRoots": [
@@ -45,7 +45,7 @@
     "technicalContract": "b-Office/current/技术合同.md",
     "decisions": "b-Office/current/有效决策.md",
     "verification": "b-Office/current/验证合同.md",
-    "roadmap": "b-Office/history/44-V4.2.0-前后端分离重构计划.md",
+    "roadmap": "b-Office/history/45-V4.3.0-SW自整备转换管线.md",
     "architectureDiagram": "b-Office/current/HistoryMinerva转换架构.drawio",
     "historyBoundary": "b-Office/history/历史资料说明.md"
   },
@@ -59,7 +59,7 @@
   },
   "externalDependencies": [
     ".NET 8 SDK and Windows Desktop Runtime",
-    "HistoryVulcan.Core 3.4.0 host snapshot (manifest SHA256 788F4254604C32BFB75FABEE016AC3B0A11825C4B0A646BBEF005EB19B0237E9)",
+    "HistoryVulcan.Core 3.5.0 host snapshot (manifest SHA256 C288A4EFDFF696E87052FB03E887112D43EA8702A132B57B20FA284DC76032D4)",
     "Solid Edge 2020 COM automation",
     "SolidWorks 2025 SP5 COM automation",
     "SolidWorks FeatureWorks"

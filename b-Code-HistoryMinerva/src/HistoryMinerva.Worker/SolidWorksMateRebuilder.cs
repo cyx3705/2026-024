@@ -56,9 +56,11 @@ internal static class SolidWorksMateRebuilder
             pair => interop.GetComponentTransform(pair.Value),
             StringComparer.Ordinal);
 
+        // 判"接地"只能问映射表，不能对着某一个接口名字面量比。
+        // V4.3 起接地有两族来源：Solid Edge 的 GroundRelation3d 与 SolidWorks 的固定组件，
+        // 写死其中一个的名字，另一族就会整批落进"没有接地关系"的兜底分支。
         var groundNames = relations
-            .Where(item => !item.IsSuppressed
-                && string.Equals(item.InterfaceName, MateTypeMapperNames.Ground, StringComparison.Ordinal))
+            .Where(item => !item.IsSuppressed && MateTypeMapper.Map(item).Kind == MatePlanKind.Fix)
             .Select(item => item.Occurrence1)
             .Where(name => name is not null)
             .Select(name => name!)

@@ -38,6 +38,18 @@ public static class ConversionPathLayout
     public const string SolidWorksPartExtension = ".SLDPRT";
     public const string SolidWorksAssemblyExtension = ".SLDASM";
 
+    /// <summary>源零件扩展名。SW 自整备管线的源就是 <c>.SLDPRT</c> 本身。</summary>
+    public static string GetSourcePartExtension(ConversionSourceFormat format)
+        => format == ConversionSourceFormat.SolidWorks ? SolidWorksPartExtension : SolidEdgePartExtension;
+
+    /// <summary>源装配扩展名。</summary>
+    public static string GetSourceAssemblyExtension(ConversionSourceFormat format)
+        => format == ConversionSourceFormat.SolidWorks ? SolidWorksAssemblyExtension : SolidEdgeAssemblyExtension;
+
+    /// <summary>该源格式是否经过 Parasolid 中转。SW 自整备管线不产生 XT。</summary>
+    public static bool UsesParasolidHandoff(ConversionSourceFormat format)
+        => format == ConversionSourceFormat.SolidEdge;
+
     public static ExternalOutputDirectories ResolveExternalDirectories(string sourceDirectory)
     {
         var root = Path.GetFullPath(sourceDirectory);

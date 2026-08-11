@@ -2,6 +2,10 @@ using HistoryMinerva.Contracts;
 
 namespace HistoryMinerva.Worker;
 
+/// <param name="NeedsExport">
+/// 需要从源零件重新生成的任务。Solid Edge 源要先导出 XT 再导入；
+/// SolidWorks 源没有中转件，这一批直接进整备管线。
+/// </param>
 internal sealed record AssemblyPartReusePlan(
     IReadOnlyList<ConversionJob> ReusableSolidWorksParts,
     IReadOnlyList<ConversionJob> ImportFromExistingXt,
@@ -19,8 +23,10 @@ internal static class AssemblyPartReusePlanner
     public static AssemblyPartReusePlan Create(
         IReadOnlyList<ConversionJob> jobs,
         CancellationToken cancellationToken,
-        bool recognizeFeatures = false)
+        bool recognizeFeatures = false,
+        ConversionSourceFormat sourceFormat = ConversionSourceFormat.SolidEdge)
     {
+        var usesParasolid = ConversionPathLayout.UsesParasolidHandoff(sourceFormat);
         var reusableParts = new List<ConversionJob>();
         var importFromXt = new List<ConversionJob>();
         var needsExport = new List<ConversionJob>();
@@ -54,7 +60,8 @@ internal static class AssemblyPartReusePlanner
                 }
             }
 
-            if (File.Exists(job.XtPath))
+            // SW 自整备管线没有中转件：源零件本身就是输入，直接进整备队列。
+            if (usesParasolid && File.Exists(job.XtPath))
             {
                 ValidateReusableFile(job.XtPath, source, "XT");
                 try

@@ -61,7 +61,10 @@ internal static class ConversionWorkerProgram
         var reporter = new WorkerReporter(request.BatchId, JsonOptions);
         try
         {
-            var exported = SolidEdgeExporter.Export(request, reporter, cancellationToken);
+            // SolidWorks 源没有导出这一步：源零件直接进整备管线。
+            var exported = request.SourceFormat == ConversionSourceFormat.SolidWorks
+                ? request.Jobs
+                : SolidEdgeExporter.Export(request, reporter, cancellationToken);
             var failed = request.Jobs.Count - exported.Count;
             failed += SolidWorksPartImportIsolation.Import(request, exported, reporter, cancellationToken);
             return failed == 0 ? 0 : 1;
@@ -93,7 +96,18 @@ internal static class ConversionWorkerProgram
                 request.RecognizeFeatures,
                 request.FullyDefineSketches,
                 request.FeatureRecognitionTimeoutSeconds,
-                request.ContinueWhenRecognitionFails);
+                request.ContinueWhenRecognitionFails,
+                request.SourceFormat);
+            if (request.SourceFormat == ConversionSourceFormat.SolidWorks)
+            {
+                return SolidWorksPartPreparer.Prepare(
+                    batchRequest,
+                    [request.Job],
+                    reporter,
+                    cancellationToken,
+                    useDedicatedSession: request.UseDedicatedSession) == 0 ? 0 : 1;
+            }
+
             return SolidWorksImporter.Import(
                 batchRequest,
                 [request.Job],
@@ -124,10 +138,16 @@ internal static class ConversionWorkerProgram
     {
         WorkerRequestValidator.Validate(request);
         var reporter = new WorkerReporter(request.BatchId, JsonOptions);
-        reporter.Report(null, ConversionStage.AssemblyProbe, "正在解析 Solid Edge 装配体。");
+        var isSolidWorksSource = request.SourceFormat == ConversionSourceFormat.SolidWorks;
+        reporter.Report(
+            null,
+            ConversionStage.AssemblyProbe,
+            isSolidWorksSource ? "正在解析 SolidWorks 装配体。" : "正在解析 Solid Edge 装配体。");
         try
         {
-            var result = SolidEdgeAssemblyExplorer.Probe(request.SourceAssemblyPath, cancellationToken);
+            var result = isSolidWorksSource
+                ? SolidWorksAssemblyExplorer.Probe(request.SourceAssemblyPath, cancellationToken)
+                : SolidEdgeAssemblyExplorer.Probe(request.SourceAssemblyPath, cancellationToken);
             var temporary = request.ResultPath + ".tmp";
             File.WriteAllText(temporary, JsonSerializer.Serialize(result, JsonOptions));
             File.Move(temporary, request.ResultPath, overwrite: true);

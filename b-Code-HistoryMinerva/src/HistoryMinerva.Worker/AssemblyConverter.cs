@@ -17,16 +17,18 @@ internal static class AssemblyConverter
             request.RecognizeFeatures,
             request.FullyDefineSketches,
             request.FeatureRecognitionTimeoutSeconds,
-            ContinueWhenRecognitionFails: true);
+            ContinueWhenRecognitionFails: true,
+            SourceFormat: request.SourceFormat);
+        var usesParasolid = ConversionPathLayout.UsesParasolidHandoff(request.SourceFormat);
 
         var reusePlan = AssemblyPartReusePlanner.Create(
-            request.PartJobs, cancellationToken, request.RecognizeFeatures);
+            request.PartJobs, cancellationToken, request.RecognizeFeatures, request.SourceFormat);
         foreach (var job in reusePlan.RegeneratedForRecognition)
         {
             reporter.Report(
                 job.Id,
                 ConversionStage.SolidWorksImport,
-                $"已开启特征识别，旧的 SLDPRT 不含特征也无法判别，将重新导入并识别：{job.SolidWorksPath}",
+                $"已开启特征识别，旧的 SLDPRT 不含特征也无法判别，将重新生成并识别：{job.SolidWorksPath}",
                 artifact: ConversionArtifactKind.SolidWorksPart);
         }
         foreach (var job in reusePlan.ReusableSolidWorksParts)
@@ -48,8 +50,9 @@ internal static class AssemblyConverter
                 reuseKind: ReuseKind.ExistingXt);
         }
 
-        var exported = reusePlan.NeedsExport.Count == 0
-            ? Array.Empty<ConversionJob>()
+        // SolidWorks 源没有导出这一步：源零件本身就能进整备管线。
+        var exported = !usesParasolid || reusePlan.NeedsExport.Count == 0
+            ? reusePlan.NeedsExport
             : SolidEdgeExporter.Export(
                 partRequest with { Jobs = reusePlan.NeedsExport },
                 reporter,

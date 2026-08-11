@@ -1,8 +1,8 @@
 <Project>
   <!-- 唯一可编辑的发布版本源。改这里，manifest 与程序集版本一起走。 -->
   <PropertyGroup>
-    <HistoryMinervaVersion>4.2.3</HistoryMinervaVersion>
-    <HistoryVulcanVersion>3.4.0</HistoryVulcanVersion>
+    <HistoryMinervaVersion>4.3.0</HistoryMinervaVersion>
+    <HistoryVulcanVersion>3.5.0</HistoryVulcanVersion>
     <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-HistoryVulcan</HistoryVulcanPackageRoot>
     <HistoryVulcanHostRoot Condition="'$(HistoryVulcanHostRoot)' == ''">$(HistoryVulcanPackageRoot)\host</HistoryVulcanHostRoot>
     <HistoryVulcanManifestPath>$(HistoryVulcanPackageRoot)\manifest.json</HistoryVulcanManifestPath>

@@ -215,23 +215,23 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         _ => string.Empty,
     };
     public string SourceLabel => "转换来源";
+    /// <summary>本次转换的源 CAD 格式。界面只从当前选中的转换内容取，不另设开关。</summary>
+    public ConversionSourceFormat SourceFormat => SelectedMappingContent.SourceFormat;
     public bool IsAssemblyMode => SourceKind == ConversionSourceKind.Assembly
-        || SourceKind == ConversionSourceKind.None
-        && SelectedMappingContent.Kind == MappingContent.SolidEdgeAssemblyToSolidWorksAssembly;
+        || SourceKind == ConversionSourceKind.None && SelectedMappingContent.IsAssemblySource;
     public bool IsPartDirectoryMode => SourceKind == ConversionSourceKind.PartDirectory
-        || SourceKind == ConversionSourceKind.None
-        && SelectedMappingContent.Kind == MappingContent.SolidEdgePartToSolidWorksPart;
+        || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource;
     public bool CanEdit => !IsBusy;
     public bool CanProbe => CanEdit && IsAssemblyMode && File.Exists(SourceAssemblyPath)
-        && ConversionPathLayout.HasExtension(SourceAssemblyPath, ConversionPathLayout.SolidEdgeAssemblyExtension);
+        && ConversionPathLayout.HasExtension(
+            SourceAssemblyPath, ConversionPathLayout.GetSourceAssemblyExtension(SourceFormat));
     public bool CanConvert => CanEdit && (IsAssemblyMode
         ? !_conversionCompleted && _plan?.CanConvert == true
         : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
     public bool CanFullyDefineSketches => CanEdit && RecognizeFeatures;
     public bool CanContinueWhenPartFails => CanEdit && IsAssemblyMode;
     public string PrimaryActionText => IsPartDirectoryMode
-        || SourceKind == ConversionSourceKind.None
-        && SelectedMappingContent.Kind == MappingContent.SolidEdgePartToSolidWorksPart
+        || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource
         ? "转换全部零件"
         : "转换装配体";
     public string PartsPanelTitle => IsPartDirectoryMode ? "零件" : "唯一零件";
@@ -291,10 +291,15 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         if (IsBusy)
             return;
 
-        SelectMappingContentForSource(MappingContent.SolidEdgeAssemblyToSolidWorksAssembly);
+        // 源格式由文件本身决定，不由界面当前的选择决定：
+        // 用户拖进来一个 .SLDASM，转换内容就必须跟着切到 SW 自整备那一项。
+        var trimmed = path.Trim();
+        var option = MappingContentOption.ForAssemblyFile(trimmed)
+            ?? throw new InvalidOperationException("只支持 Solid Edge .asm 或 SolidWorks .SLDASM 装配体。");
+        SelectMappingContentForSource(option.Kind);
         ClearSourceResults();
         ResetOutputDirectories();
-        _sourceAssemblyPath = Path.GetFullPath(path.Trim());
+        _sourceAssemblyPath = Path.GetFullPath(trimmed);
         _partDirectory = string.Empty;
         SetSourceKind(ConversionSourceKind.Assembly);
         RebuildMates = false;
@@ -453,9 +458,11 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private async Task ProbeCoreAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var sourceFormat = SourceFormat;
+        var sourceAssemblyExtension = ConversionPathLayout.GetSourceAssemblyExtension(sourceFormat);
         if (!File.Exists(SourceAssemblyPath)
-            || !ConversionPathLayout.HasExtension(SourceAssemblyPath, ConversionPathLayout.SolidEdgeAssemblyExtension))
-            throw new InvalidOperationException("请选择存在的 Solid Edge .asm 文件。");
+            || !ConversionPathLayout.HasExtension(SourceAssemblyPath, sourceAssemblyExtension))
+            throw new InvalidOperationException($"请选择存在的 {sourceAssemblyExtension} 装配体文件。");
         _validateEnvironment();
 
         var batchId = Guid.NewGuid().ToString("N");
@@ -464,13 +471,15 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         var resultPath = Path.Combine(resultDirectory, batchId + ".result.json");
         try
         {
-            var request = new AssemblyProbeRequest(batchId, Path.GetFullPath(SourceAssemblyPath), resultPath);
+            var request = new AssemblyProbeRequest(
+                batchId, Path.GetFullPath(SourceAssemblyPath), resultPath, sourceFormat);
             QueueUiUpdate(() => StatusText = "正在只读解析装配树");
             var result = await _probeWorker(
                 request,
                 ReportWorkerEvent,
                 cancellationToken).ConfigureAwait(false);
-            var plan = AssemblyPlanner.Create(result, customXtDirectory: null, customSolidWorksDirectory: null);
+            var plan = AssemblyPlanner.Create(
+                result, customXtDirectory: null, customSolidWorksDirectory: null, sourceFormat);
             var sourceHash = ComputeSha256(result.SourceAssemblyPath);
             QueueUiUpdate(() => ApplyProbeResult(result, plan, sourceHash));
         }
@@ -487,11 +496,15 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         var plan = _plan ?? throw new InvalidOperationException("请先成功解析装配体。");
         if (!plan.CanConvert)
             throw new InvalidOperationException("装配清单仍有前置错误，不能转换。");
+        var sourceFormat = SourceFormat;
         if (!string.Equals(_sourceHashAfterProbe, ComputeSha256(plan.SourceAssemblyPath), StringComparison.Ordinal))
-            throw new InvalidDataException("源 .asm 在解析后发生变化，请重新解析后再转换。");
+            throw new InvalidDataException("源装配体在解析后发生变化，请重新解析后再转换。");
 
         _validateEnvironment();
-        ExternalOutputLayout.EnsureDirectories(plan.XtDirectory, plan.SolidWorksDirectory);
+        // SW 自整备没有中转件，不建空的 XT 目录。
+        ExternalOutputLayout.EnsureDirectories(
+            ConversionPathLayout.UsesParasolidHandoff(sourceFormat) ? plan.XtDirectory : null,
+            plan.SolidWorksDirectory);
         var jobs = Parts.Select(row => new ConversionJob(
             row.Id,
             row.SourcePath,
@@ -510,7 +523,8 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             ContinueWhenPartFails: ContinueWhenPartFails,
             RebuildMates: RebuildMates && plan.RelationCount > 0,
             Nodes: plan.Nodes,
-            Relations: plan.Relations);
+            Relations: plan.Relations,
+            SourceFormat: sourceFormat);
         PreflightValidator.ValidateAssemblyRequest(request);
 
         foreach (var row in Parts)

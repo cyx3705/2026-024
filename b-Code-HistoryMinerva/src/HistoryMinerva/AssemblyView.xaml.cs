@@ -35,7 +35,7 @@ public partial class AssemblyView : UserControl, IDisposable
     {
         if (!_viewModel.CanEdit)
             return;
-        if (_viewModel.SelectedMappingContent.Kind == MappingContent.SolidEdgeAssemblyToSolidWorksAssembly)
+        if (_viewModel.SelectedMappingContent.IsAssemblySource)
             await ChooseAssemblyAsync();
         else
             ChoosePartDirectory();
@@ -43,10 +43,15 @@ public partial class AssemblyView : UserControl, IDisposable
 
     private async Task ChooseAssemblyAsync()
     {
+        // 过滤器跟着当前选中的转换内容走：选 SW 自整备时不该再让用户去挑 .asm。
+        var isSolidWorksSource =
+            _viewModel.SourceFormat == HistoryMinerva.Contracts.ConversionSourceFormat.SolidWorks;
         var dialog = new OpenFileDialog
         {
-            Title = "选择 Solid Edge 装配体来源",
-            Filter = "Solid Edge 装配体 (*.asm)|*.asm|所有文件 (*.*)|*.*",
+            Title = isSolidWorksSource ? "选择 SolidWorks 装配体来源" : "选择 Solid Edge 装配体来源",
+            Filter = isSolidWorksSource
+                ? "SolidWorks 装配体 (*.SLDASM)|*.SLDASM|所有文件 (*.*)|*.*"
+                : "Solid Edge 装配体 (*.asm)|*.asm|所有文件 (*.*)|*.*",
             CheckFileExists = true,
             Multiselect = false,
         };

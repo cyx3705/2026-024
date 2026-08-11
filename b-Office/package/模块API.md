@@ -1,7 +1,8 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva `4.2.3` 源码、候选与正式包对外消费面的唯一合同。当前正式
-`z-HistoryMinerva` 已发布为 `4.2.3`；旧 `4.2.2` 三命令快照只属于发布历史，不适用本合同。
+本文件是 HistoryMinerva `4.3.0` 源码对外消费面的唯一合同。当前正式 `z-HistoryMinerva` 仍是
+`4.2.3`（没有 SolidWorks 自整备管线），其消费面按本文件去掉 `sourceFormat` 字段理解；
+旧 `4.2.2` 三命令快照只属于发布历史，不适用本合同。
 构建与部署验收命令见 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用。
 
 ## 模块身份
@@ -14,7 +15,7 @@
 | 停靠页标题 | `Minerva` |
 | 窗口内部标识 / 日志类别 | `historyminerva` |
 | Worker 可执行文件 | `HistoryMinerva.Worker.exe` |
-| HistoryVulcan 宿主基线 | `3.4.0` 正式快照 |
+| HistoryVulcan 宿主基线 | `3.5.0` 正式快照 |
 
 ## HistoryVulcan 命令面
 
@@ -36,6 +37,17 @@
 | --- | --- | --- |
 | HistoryMinerva 转换 | `<verb> <json> --cancel <signal>` | `--request` 零件批次 / `--import-part` 单件导入 / `--probe-assembly` 装配探查 / `--assembly` 装配构建 |
 | SWuse 构建 | `--request <json>` | Roslyn dry-run 编译 + SolidWorks 零件构建，结果 JSON 写 stdout |
+
+### 源格式（4.3.0 新增）
+
+四个转换请求（`BatchRequest` / `PartImportRequest` / `AssemblyProbeRequest` / `AssemblyBatchRequest`）
+末尾追加可选字段 `sourceFormat`：`0 = SolidEdge`（缺省）、`1 = SolidWorks`。动词、事件与结果
+JSON 形态、退出码语义都不变；**不带该字段的历史请求仍按 Solid Edge 执行**。
+
+取 `SolidWorks` 时：源为 `.SLDASM` / `.SLDPRT`，不产生 `.x_t`，`ConversionJob.xtPath` 不被读取
+（可留空字符串），产物落在输出目录且不得与源文件同路径。装配关系新增 SolidWorks 侧接口名
+`SwFixedComponent` / `SwCoincident` / `SwConcentric` / `SwDistance`，未实测的类型以
+`SwMateType<n>` 形式如实带进报告。
 
 ## SWuse.Api 建模表面
 
