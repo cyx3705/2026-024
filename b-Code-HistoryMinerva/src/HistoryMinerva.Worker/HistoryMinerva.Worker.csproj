@@ -8,8 +8,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
-    <NoWarn>$(NoWarn);NU1801</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\HistoryMinerva.Contracts\HistoryMinerva.Contracts.csproj" />

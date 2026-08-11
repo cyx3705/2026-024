@@ -25,8 +25,18 @@
     <GetAssemblyIdentity AssemblyFiles="$(HistoryVulcanCorePath)">
       <Output TaskParameter="Assemblies" ItemName="_HistoryVulcanCoreIdentity" />
     </GetAssemblyIdentity>
+    <GetFileHash Files="$(HistoryVulcanManifestPath)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_HistoryVulcanManifestHash" />
+    </GetFileHash>
+    <GetFileHash Files="$(HistoryVulcanCorePath)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_HistoryVulcanCoreHash" />
+    </GetFileHash>
     <Error Condition="'%(_HistoryVulcanCoreIdentity.Version)' != '$(HistoryVulcanVersion).0'"
            Text="HistoryVulcan.Core version mismatch. Expected=$(HistoryVulcanVersion).0 Actual=%(_HistoryVulcanCoreIdentity.Version)" />
+    <Error Condition="'%(_HistoryVulcanManifestHash.FileHash)' != '$(HistoryVulcanManifestSha256)'"
+           Text="HistoryVulcan manifest SHA256 mismatch. Expected=$(HistoryVulcanManifestSha256) Actual=%(_HistoryVulcanManifestHash.FileHash)" />
+    <Error Condition="'%(_HistoryVulcanCoreHash.FileHash)' != '$(HistoryVulcanCoreSha256)'"
+           Text="HistoryVulcan.Core SHA256 mismatch. Expected=$(HistoryVulcanCoreSha256) Actual=%(_HistoryVulcanCoreHash.FileHash)" />
   </Target>
   <Target Name="CopyWorkerArtifacts" AfterTargets="Build">
     <ItemGroup>

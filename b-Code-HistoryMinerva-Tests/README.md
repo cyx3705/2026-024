@@ -13,13 +13,17 @@ tools/                        真实 CAD COM 探针与生产门禁（含 SWuse.C
 从项目根目录执行离线验证：
 
 ```powershell
-dotnet build .\b-Code-HistoryMinerva\src\HistoryMinerva\HistoryMinerva.csproj -c Release -p:NuGetAudit=false
+dotnet restore .\HistoryMinerva.sln --locked-mode -p:NuGetAudit=false
+.\b-Code-HistoryMinerva\eng\Test-QualityGate.ps1
+dotnet build .\HistoryMinerva.sln -c Release --no-restore -warnaserror -p:NuGetAudit=false
 dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.Smoke\HistoryMinerva.Smoke.csproj -c Release -p:NuGetAudit=false
 dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.UiSmoke\HistoryMinerva.UiSmoke.csproj -c Release -p:NuGetAudit=false -- --compact --capture .\artifacts\historyminerva-ui.png
 
 # 主题与尺寸覆盖
 dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.UiSmoke\HistoryMinerva.UiSmoke.csproj -c Release -p:NuGetAudit=false -- --width 320 --height 680 --dark --dpi 150 --capture .\artifacts\historyminerva-320-dark.png
 ```
+
+上述解决方案只纳入生产工程、Smoke 与 UI Smoke；`tools/` 下需要 CAD 授权和桌面会话的真机门禁保持独立运行。
 
 真实 CAD 门禁只在专用样件和受控 CAD 会话中执行；本次结构重构不替代或重跑该门禁。
 注意 `tools/SolidEdgeExportProbe` 使用 COM 引用，需用 .NET Framework 版 MSBuild 构建（既有特性）。

@@ -3,6 +3,8 @@
   <PropertyGroup>
     <HistoryMinervaVersion>4.3.1</HistoryMinervaVersion>
     <HistoryVulcanVersion>3.5.0</HistoryVulcanVersion>
+    <HistoryVulcanManifestSha256>278D81B8FED646434B9F57D1A1AB9EE1DFC0660BCC25255B66B74DE9F6ED1F4F</HistoryVulcanManifestSha256>
+    <HistoryVulcanCoreSha256>91F1739FA1014980AB5969297DBB1C27EFA2BF5E6DA605FE59529F1967C1BD50</HistoryVulcanCoreSha256>
     <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-HistoryVulcan</HistoryVulcanPackageRoot>
     <HistoryVulcanHostRoot Condition="'$(HistoryVulcanHostRoot)' == ''">$(HistoryVulcanPackageRoot)\host</HistoryVulcanHostRoot>
     <HistoryVulcanManifestPath>$(HistoryVulcanPackageRoot)\manifest.json</HistoryVulcanManifestPath>

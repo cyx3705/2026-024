@@ -25,7 +25,9 @@ foreach ($required in @($historyVulcanManifestPath, $historyVulcanCorePath, $mod
 
 [xml]$versionProps = Get-Content -LiteralPath $versionPropsPath -Raw -Encoding UTF8
 $moduleVersion = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryMinervaVersion } | Where-Object { $_ })[0]
- $expectedHostVersion = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryVulcanVersion } | Where-Object { $_ })[0]
+$expectedHostVersion = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryVulcanVersion } | Where-Object { $_ })[0]
+$expectedHostManifestHash = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryVulcanManifestSha256 } | Where-Object { $_ })[0]
+$expectedHostCoreHash = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryVulcanCoreSha256 } | Where-Object { $_ })[0]
 if ($moduleVersion -notmatch '^\d+\.\d+\.\d+$' -or $expectedHostVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw "Invalid HistoryMinerva/HistoryVulcan snapshot declaration: HistoryMinerva=$moduleVersion HistoryVulcan=$expectedHostVersion"
 }
@@ -37,6 +39,14 @@ if ($hostManifest.product -ne 'HistoryVulcan' -or $hostManifest.version -ne $exp
 $coreVersion = (Get-Item -LiteralPath $historyVulcanCorePath).VersionInfo.FileVersion
 if ($coreVersion -ne "$expectedHostVersion.0") {
     throw "HistoryVulcan.Core file version must be ${expectedHostVersion}.0: $coreVersion"
+}
+$actualHostManifestHash = (Get-FileHash -LiteralPath $historyVulcanManifestPath -Algorithm SHA256).Hash
+$actualHostCoreHash = (Get-FileHash -LiteralPath $historyVulcanCorePath -Algorithm SHA256).Hash
+if ($actualHostManifestHash -ne $expectedHostManifestHash) {
+    throw "HistoryVulcan manifest SHA256 mismatch. Expected=$expectedHostManifestHash Actual=$actualHostManifestHash"
+}
+if ($actualHostCoreHash -ne $expectedHostCoreHash) {
+    throw "HistoryVulcan.Core SHA256 mismatch. Expected=$expectedHostCoreHash Actual=$actualHostCoreHash"
 }
 
 if (-not $SkipBuild) {
@@ -66,6 +76,11 @@ $runtimeFiles = @(
     'Microsoft.CodeAnalysis.dll',
     'Microsoft.CodeAnalysis.CSharp.dll'
 )
+$manifestRuntimeFiles = @([string]$moduleManifest.artifact, [string]$moduleManifest.docs) +
+    @($moduleManifest.deps | ForEach-Object { [string]$_ })
+if ((($runtimeFiles | Sort-Object) -join "`n") -cne (($manifestRuntimeFiles | Sort-Object) -join "`n")) {
+    throw "Module manifest runtime file set differs from the package contract."
+}
 foreach ($file in $runtimeFiles) {
     $source = Join-Path $buildOutput $file
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
@@ -133,5 +148,35 @@ $hashLines = Get-ChildItem -LiteralPath $OutputRoot -File |
     $hashLines,
     [System.Text.UTF8Encoding]::new($false))
 
+$expectedPackageFiles = @($runtimeFiles + @(
+    'module.manifest.json',
+    'historyvulcan.snapshot.json',
+    'SHA256SUMS'
+) | Sort-Object)
+$actualPackageFiles = @(Get-ChildItem -LiteralPath $OutputRoot -File | ForEach-Object Name | Sort-Object)
+if ((($expectedPackageFiles | Sort-Object) -join "`n") -cne (($actualPackageFiles | Sort-Object) -join "`n")) {
+    throw "Candidate package file boundary mismatch. Expected=[$($expectedPackageFiles -join ', ')] Actual=[$($actualPackageFiles -join ', ')]"
+}
+
+$declaredHashes = @{}
+foreach ($line in [IO.File]::ReadAllLines((Join-Path $OutputRoot 'SHA256SUMS'))) {
+    $match = [regex]::Match($line, '^(?<hash>[A-Fa-f0-9]{64}) \*(?<file>.+)$')
+    if (-not $match.Success) {
+        throw "Invalid SHA256SUMS line: $line"
+    }
+    $declaredHashes[$match.Groups['file'].Value] = $match.Groups['hash'].Value.ToUpperInvariant()
+}
+$hashTargets = @($actualPackageFiles | Where-Object { $_ -ne 'SHA256SUMS' })
+if ((($hashTargets | Sort-Object) -join "`n") -cne ((@($declaredHashes.Keys) | Sort-Object) -join "`n")) {
+    throw "Candidate SHA256SUMS coverage differs from the package file set."
+}
+foreach ($file in $hashTargets) {
+    $actualHash = (Get-FileHash -LiteralPath (Join-Path $OutputRoot $file) -Algorithm SHA256).Hash
+    if ($declaredHashes[$file] -ne $actualHash) {
+        throw "Candidate SHA256 mismatch: $file"
+    }
+}
+
 Write-Host "HistoryMinerva $moduleVersion package created: $OutputRoot"
 Write-Host "HistoryVulcan $expectedHostVersion formal snapshot verified."
+Write-Host "Candidate file boundary and $($hashTargets.Count) SHA256 entries verified."

@@ -2,7 +2,7 @@
 
 > 对外模块：`HistoryMinerva` / `historyminerva`
 >
-> 当前源码与候选版本：`4.3.1`；正式 `z-HistoryMinerva` 版本：`4.3.0`
+> 当前源码、候选与正式 `z-HistoryMinerva` 版本：`4.3.1`
 >
 > 最新正式清单：`../z-HistoryMinerva/module.manifest.json`
 
@@ -27,7 +27,9 @@ eng/                          清单同步、正式包和Z 快照部署脚本
 从项目根目录执行：
 
 ```powershell
-dotnet build .\b-Code-HistoryMinerva\src\HistoryMinerva\HistoryMinerva.csproj -c Release -p:NuGetAudit=false
+dotnet restore .\HistoryMinerva.sln --locked-mode -p:NuGetAudit=false
+.\b-Code-HistoryMinerva\eng\Test-QualityGate.ps1
+dotnet build .\HistoryMinerva.sln -c Release --no-restore -warnaserror -p:NuGetAudit=false
 dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.Smoke\HistoryMinerva.Smoke.csproj -c Release -p:NuGetAudit=false
 ```
 

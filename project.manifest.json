@@ -10,13 +10,15 @@
     "name": "HistoryMinerva",
     "title": "HistoryMinerva CAD 模块（Mapping 前端 + 合并 Worker 后端）",
     "kind": ["software", "cad-automation", "appshell-module"],
-    "status": "active"
+    "status": "active",
+    "version": "4.3.1",
+    "branch": "2026-024-HistoryMinerva"
   },
   "historyVulcanHost": {
     "packageRoot": "../2026-023-HistoryVulcan/z-HistoryVulcan",
     "version": "3.5.0",
-    "manifestSha256": "C288A4EFDFF696E87052FB03E887112D43EA8702A132B57B20FA284DC76032D4",
-    "coreSha256": "DC7372361E43DC7FAEA8D728D3ED3CDBEE346221761C10C3D55D1D05AC95A7C5"
+    "manifestSha256": "278D81B8FED646434B9F57D1A1AB9EE1DFC0660BCC25255B66B74DE9F6ED1F4F",
+    "coreSha256": "91F1739FA1014980AB5969297DBB1C27EFA2BF5E6DA605FE59529F1967C1BD50"
   },
   "paths": {
     "activeRoots": [
@@ -50,16 +52,16 @@
     "historyBoundary": "b-Office/history/历史资料说明.md"
   },
   "commands": {
-    "setup": "dotnet restore .\\b-Code-HistoryMinerva\\src\\HistoryMinerva\\HistoryMinerva.csproj --configfile .\\nuget.config -p:NuGetAudit=false",
-    "build": "dotnet build .\\b-Code-HistoryMinerva\\src\\HistoryMinerva\\HistoryMinerva.csproj -c Release -p:NuGetAudit=false",
+    "setup": "dotnet restore .\\HistoryMinerva.sln --locked-mode -p:NuGetAudit=false",
+    "build": "dotnet build .\\HistoryMinerva.sln -c Release --no-restore -warnaserror -p:NuGetAudit=false",
     "test": "dotnet run --project .\\b-Code-HistoryMinerva-Tests\\tests\\HistoryMinerva.Smoke\\HistoryMinerva.Smoke.csproj -c Release -p:NuGetAudit=false",
-    "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code\\Test-ProjectContract.ps1 -Instantiation",
+    "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-HistoryMinerva\\eng\\Test-QualityGate.ps1",
     "run": null,
     "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-HistoryMinerva\\eng\\Build-HistoryMinervaPackage.ps1"
   },
   "externalDependencies": [
     ".NET 8 SDK and Windows Desktop Runtime",
-    "HistoryVulcan.Core 3.5.0 host snapshot (manifest SHA256 C288A4EFDFF696E87052FB03E887112D43EA8702A132B57B20FA284DC76032D4)",
+    "HistoryVulcan.Core 3.5.0 host snapshot (manifest SHA256 278D81B8FED646434B9F57D1A1AB9EE1DFC0660BCC25255B66B74DE9F6ED1F4F)",
     "Solid Edge 2020 COM automation",
     "SolidWorks 2025 SP5 COM automation",
     "SolidWorks FeatureWorks"

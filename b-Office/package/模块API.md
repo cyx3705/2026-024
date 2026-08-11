@@ -1,8 +1,7 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva `4.3.1` 源码对外消费面的唯一合同。当前正式 `z-HistoryMinerva` 为
-`4.3.0`，已经包含 SolidWorks 自整备管线，但仍使用上一版 `HistoryMinerva.*` 命令面；
-新 `minerva.*` 命令面只有 4.3.1 正式发布后才对正式消费者生效。
+本文件是 HistoryMinerva `4.3.1` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
+SolidWorks 自整备管线与 `minerva.*` 命令面均已正式生效。
 构建与部署验收命令见 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用。
 
 ## 模块身份
@@ -27,8 +26,10 @@
 | `minerva.conversion.probe` | 仅前端 | 解析当前装配来源；UI 线程、`Readonly=true`、`AllowMcpExecution=false` |
 | `minerva.conversion.run` | 仅前端 | 转换当前选择来源；UI 线程、`Readonly=false`、`AllowMcpExecution=false` |
 | `minerva.conversion.cancel` | 仅前端 | 取消当前转换或探查；UI 线程、禁止 MCP |
-| `minerva.worker.show/hide` | 后台 | 只读报告中央工作区状态，不创建或操作独立窗口 |
-| `minerva.worker.status/path` | 后台/MCP | 报告 Worker 就绪状态与宿主上下文解析出的实际路径 |
+| `minerva.worker.show` | 后台 | 只读报告中央工作区状态，不创建独立窗口 |
+| `minerva.worker.hide` | 后台 | 只读报告中央工作区没有可隐藏的独立窗口 |
+| `minerva.worker.status` | 后台/MCP | 报告 Worker 就绪状态 |
+| `minerva.worker.path` | 后台/MCP | 报告宿主上下文解析出的实际 Worker 路径 |
 | `minerva.worker.capabilities` | 后台/MCP | 报告合并 Worker 支持的协议能力 |
 
 页面探查、转换和取消不再直接调用 ViewModel 作为失败回退。Worker 事件通过命令上下文的
