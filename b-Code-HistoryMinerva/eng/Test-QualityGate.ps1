@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
@@ -85,13 +85,10 @@ foreach ($required in @($projectManifestPath, $agentsPath, $versionPropsPath, $s
 
 [xml]$versionProps = [IO.File]::ReadAllText($versionPropsPath)
 $sourceVersion = Read-XmlProperty $versionProps 'HistoryMinervaVersion'
-$requiredVulcan = Read-XmlProperty $versionProps 'HistoryVulcanVersion'
-$requiredManifestHash = (Read-XmlProperty $versionProps 'HistoryVulcanManifestSha256').ToUpperInvariant()
-$requiredCoreHash = (Read-XmlProperty $versionProps 'HistoryVulcanCoreSha256').ToUpperInvariant()
+# 宿主兼容性按下限判定，不再钉精确版本或构建哈希——见 Build-HistoryMinervaPackage.ps1 的说明。
+$requiredVulcan = Read-XmlProperty $versionProps 'MinimumHistoryVulcanVersion'
 if ($sourceVersion -notmatch '^\d+\.\d+\.\d+$') { Add-Violation "Invalid HistoryMinervaVersion: $sourceVersion" }
-if ($requiredVulcan -notmatch '^\d+\.\d+\.\d+$') { Add-Violation "Invalid HistoryVulcanVersion: $requiredVulcan" }
-if ($requiredManifestHash -notmatch '^[A-F0-9]{64}$') { Add-Violation 'Invalid HistoryVulcanManifestSha256' }
-if ($requiredCoreHash -notmatch '^[A-F0-9]{64}$') { Add-Violation 'Invalid HistoryVulcanCoreSha256' }
+if ($requiredVulcan -notmatch '^\d+\.\d+\.\d+$') { Add-Violation "Invalid MinimumHistoryVulcanVersion: $requiredVulcan" }
 
 $projectManifest = [IO.File]::ReadAllText($projectManifestPath) | ConvertFrom-Json
 if ([string]$projectManifest.project.id -ne '2026-024' -or [string]$projectManifest.project.name -ne 'HistoryMinerva') {
@@ -217,8 +214,8 @@ else {
     }
     $formalSnapshot = [IO.File]::ReadAllText((Join-Path $formalRoot 'historyvulcan.snapshot.json')) | ConvertFrom-Json
     if ([string]$formalSnapshot.moduleVersion -ne [string]$formalManifest.version -or
-        [string]$formalSnapshot.historyVulcanVersion -ne $requiredVulcan) {
-        Add-Violation 'z-HistoryMinerva snapshot metadata differs from its manifest or required host version'
+        [string]$formalSnapshot.historyVulcanVersion -notmatch '^\d+\.\d+\.\d+$') {
+        Add-Violation 'z-HistoryMinerva snapshot metadata is invalid or differs from its own manifest'
     }
 }
 

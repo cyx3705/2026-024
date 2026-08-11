@@ -2,9 +2,7 @@
   <!-- 唯一可编辑的发布版本源。改这里，manifest 与程序集版本一起走。 -->
   <PropertyGroup>
     <HistoryMinervaVersion>4.3.2</HistoryMinervaVersion>
-    <HistoryVulcanVersion>3.9.0</HistoryVulcanVersion>
-    <HistoryVulcanManifestSha256>2EFD55E23F6C101632DB8AEE1F001640DA9B1D9469512096B328842E09D87C9E</HistoryVulcanManifestSha256>
-    <HistoryVulcanCoreSha256>E84430F13413D5EC0F24564C8473A995C4A27425CAC922AEB98EFE2B32F31890</HistoryVulcanCoreSha256>
+    <MinimumHistoryVulcanVersion>3.9.0</MinimumHistoryVulcanVersion>
     <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-HistoryVulcan</HistoryVulcanPackageRoot>
     <HistoryVulcanHostRoot Condition="'$(HistoryVulcanHostRoot)' == ''">$(HistoryVulcanPackageRoot)\host</HistoryVulcanHostRoot>
     <HistoryVulcanManifestPath>$(HistoryVulcanPackageRoot)\manifest.json</HistoryVulcanManifestPath>

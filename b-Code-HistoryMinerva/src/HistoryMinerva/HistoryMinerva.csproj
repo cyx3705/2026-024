@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\HistoryMinerva.Version.props" />
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -25,18 +25,15 @@
     <GetAssemblyIdentity AssemblyFiles="$(HistoryVulcanCorePath)">
       <Output TaskParameter="Assemblies" ItemName="_HistoryVulcanCoreIdentity" />
     </GetAssemblyIdentity>
-    <GetFileHash Files="$(HistoryVulcanManifestPath)" Algorithm="SHA256">
-      <Output TaskParameter="Items" ItemName="_HistoryVulcanManifestHash" />
-    </GetFileHash>
-    <GetFileHash Files="$(HistoryVulcanCorePath)" Algorithm="SHA256">
-      <Output TaskParameter="Items" ItemName="_HistoryVulcanCoreHash" />
-    </GetFileHash>
-    <Error Condition="'%(_HistoryVulcanCoreIdentity.Version)' != '$(HistoryVulcanVersion).0'"
-           Text="HistoryVulcan.Core version mismatch. Expected=$(HistoryVulcanVersion).0 Actual=%(_HistoryVulcanCoreIdentity.Version)" />
-    <Error Condition="'%(_HistoryVulcanManifestHash.FileHash)' != '$(HistoryVulcanManifestSha256)'"
-           Text="HistoryVulcan manifest SHA256 mismatch. Expected=$(HistoryVulcanManifestSha256) Actual=%(_HistoryVulcanManifestHash.FileHash)" />
-    <Error Condition="'%(_HistoryVulcanCoreHash.FileHash)' != '$(HistoryVulcanCoreSha256)'"
-           Text="HistoryVulcan.Core SHA256 mismatch. Expected=$(HistoryVulcanCoreSha256) Actual=%(_HistoryVulcanCoreHash.FileHash)" />
+    <!--
+      宿主兼容性按下限判定，不再钉精确版本或构建哈希。
+      Core 自 3.9.0 起冻结（见 HistoryVulcan 的 b-Office/current/冻结合同.md）：公开面只许降
+      不许升，变更须满足三条判据并显式声明。模块该信的是那份合同，不是一串哈希——实测宿主
+      源码零改动原地重建，Core.dll 的 SHA256 就会变，钉哈希等于把模块焊死在宿主的某一次构建上。
+      真正的兼容性由加载器 Smoke 验证：把模块装进 ALC 跑一遍才能发现「宿主删了我在用的 API」。
+    -->
+    <Error Condition="$([System.Version]::Parse('%(_HistoryVulcanCoreIdentity.Version)').CompareTo($([System.Version]::Parse('$(MinimumHistoryVulcanVersion).0')))) &lt; 0"
+           Text="HistoryVulcan.Core %(_HistoryVulcanCoreIdentity.Version) is older than the required minimum $(MinimumHistoryVulcanVersion).0" />
   </Target>
   <Target Name="CopyWorkerArtifacts" AfterTargets="Build">
     <ItemGroup>

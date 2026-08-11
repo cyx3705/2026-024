@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
@@ -25,29 +25,30 @@ foreach ($required in @($historyVulcanManifestPath, $historyVulcanCorePath, $mod
 
 [xml]$versionProps = Get-Content -LiteralPath $versionPropsPath -Raw -Encoding UTF8
 $moduleVersion = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryMinervaVersion } | Where-Object { $_ })[0]
-$expectedHostVersion = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryVulcanVersion } | Where-Object { $_ })[0]
-$expectedHostManifestHash = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryVulcanManifestSha256 } | Where-Object { $_ })[0]
-$expectedHostCoreHash = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.HistoryVulcanCoreSha256 } | Where-Object { $_ })[0]
-if ($moduleVersion -notmatch '^\d+\.\d+\.\d+$' -or $expectedHostVersion -notmatch '^\d+\.\d+\.\d+$') {
-    throw "Invalid HistoryMinerva/HistoryVulcan snapshot declaration: HistoryMinerva=$moduleVersion HistoryVulcan=$expectedHostVersion"
+# 宿主兼容性按**下限**而非精确相等判定。
+# 精确钉（含 SHA256）曾是 Core 会随每个消费方增长时的合理自保，但 3.9.0 起 Core 已冻结：
+# 公开面只许降不许升，变更须满足冻结合同的三条判据并显式声明。模块该信的是那份合同，
+# 不是一串哈希——而哈希更糟：实测宿主源码零改动原地重建，Core.dll 的 SHA256 就会变，
+# 它钉死的其实是「我当时看到的那一次构建」，不是「某个版本」。
+# 结果是宿主每发一版，N 个模块全部被迫改钉、重建、重发，功能上一行不需要动。
+# 真正的兼容性由加载器 Smoke 验证——把模块装进 ALC 跑一遍才能发现「宿主删了我在用的 API」，
+# 字节比对只能发现「宿主重新构建过」。
+$minimumHostVersion = @($versionProps.Project.PropertyGroup | ForEach-Object { $_.MinimumHistoryVulcanVersion } | Where-Object { $_ })[0]
+if ($moduleVersion -notmatch '^\d+\.\d+\.\d+$' -or $minimumHostVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Invalid HistoryMinerva/HistoryVulcan declaration: HistoryMinerva=$moduleVersion MinimumHistoryVulcan=$minimumHostVersion"
 }
 
 $hostManifest = Get-Content -LiteralPath $historyVulcanManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($hostManifest.product -ne 'HistoryVulcan' -or $hostManifest.version -ne $expectedHostVersion) {
-    throw "HistoryVulcan host snapshot must be ${expectedHostVersion}: $historyVulcanManifestPath"
+if ($hostManifest.product -ne 'HistoryVulcan') {
+    throw "Not a HistoryVulcan host snapshot: $historyVulcanManifestPath"
 }
-$coreVersion = (Get-Item -LiteralPath $historyVulcanCorePath).VersionInfo.FileVersion
-if ($coreVersion -ne "$expectedHostVersion.0") {
-    throw "HistoryVulcan.Core file version must be ${expectedHostVersion}.0: $coreVersion"
+$actualHostVersion = [string]$hostManifest.version
+if ([version]$actualHostVersion -lt [version]$minimumHostVersion) {
+    throw "HistoryVulcan host snapshot $actualHostVersion is older than the required minimum $minimumHostVersion"
 }
-$actualHostManifestHash = (Get-FileHash -LiteralPath $historyVulcanManifestPath -Algorithm SHA256).Hash
-$actualHostCoreHash = (Get-FileHash -LiteralPath $historyVulcanCorePath -Algorithm SHA256).Hash
-if ($actualHostManifestHash -ne $expectedHostManifestHash) {
-    throw "HistoryVulcan manifest SHA256 mismatch. Expected=$expectedHostManifestHash Actual=$actualHostManifestHash"
-}
-if ($actualHostCoreHash -ne $expectedHostCoreHash) {
-    throw "HistoryVulcan.Core SHA256 mismatch. Expected=$expectedHostCoreHash Actual=$actualHostCoreHash"
-}
+# 构建时看到的宿主版本记入快照作为溯源信息，但不参与门禁：它回答「我是对着哪一版验证的」，
+# 不回答「我只能跑在哪一版上」。两者混为一谈正是耦合的来源。
+Write-Host "HistoryVulcan host: $actualHostVersion (minimum $minimumHostVersion)"
 
 if (-not $SkipBuild) {
     & dotnet build $moduleProject -c $Configuration -p:NuGetAudit=false
