@@ -97,6 +97,9 @@
         <member name="P:HistoryMinerva.AssemblyViewModel.CanRebuildMates">
             <summary>只有解析出关系才允许勾选——没有关系可翻译时，这个开关是个空承诺。</summary>
         </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.SourceFormat">
+            <summary>本次转换的源 CAD 格式。界面只从当前选中的转换内容取，不另设开关。</summary>
+        </member>
         <member name="M:HistoryMinerva.AssemblyViewModel.FormatMateSummary">
             <summary>状态栏尾巴：一句话说清 56 条关系去了哪里。</summary>
         </member>
@@ -120,6 +123,12 @@
             将稳定的 Worker 进度合同映射为 UI 文本；不参与 ViewModel 生命周期或调度。
             </summary>
         </member>
+        <member name="M:HistoryMinerva.ExternalOutputLayout.EnsureDirectories(System.String,System.String)">
+            <summary>
+            <paramref name="xtDirectory"/> 传 null 表示本次没有 Parasolid 中转件
+            （SW 自整备管线），此时不创建空的 XT 目录。
+            </summary>
+        </member>
         <member name="T:HistoryMinerva.HistoryMinervaWorkspaceView">
             <summary>
             HistoryMinervaWorkspaceView
@@ -129,6 +138,38 @@
             <summary>
             InitializeComponent
             </summary>
+        </member>
+        <member name="T:HistoryMinerva.MappingContentOption">
+            <param name="Kind">转换内容枚举值。</param>
+            <param name="DisplayName">下拉列表里显示的文字。</param>
+            <param name="SourceHint">选择来源时给用户的提示。</param>
+            <param name="SourceFormat">该项的源 CAD 格式，是界面到 Worker 之间唯一的格式真值来源。</param>
+            <param name="IsAssemblySource">源是单个装配体文件（而不是零件文件夹）。</param>
+        </member>
+        <member name="M:HistoryMinerva.MappingContentOption.#ctor(HistoryMinerva.MappingContent,System.String,System.String,HistoryMinerva.Contracts.ConversionSourceFormat,System.Boolean)">
+            <param name="Kind">转换内容枚举值。</param>
+            <param name="DisplayName">下拉列表里显示的文字。</param>
+            <param name="SourceHint">选择来源时给用户的提示。</param>
+            <param name="SourceFormat">该项的源 CAD 格式，是界面到 Worker 之间唯一的格式真值来源。</param>
+            <param name="IsAssemblySource">源是单个装配体文件（而不是零件文件夹）。</param>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.Kind">
+            <summary>转换内容枚举值。</summary>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.DisplayName">
+            <summary>下拉列表里显示的文字。</summary>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.SourceHint">
+            <summary>选择来源时给用户的提示。</summary>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.SourceFormat">
+            <summary>该项的源 CAD 格式，是界面到 Worker 之间唯一的格式真值来源。</summary>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.IsAssemblySource">
+            <summary>源是单个装配体文件（而不是零件文件夹）。</summary>
+        </member>
+        <member name="M:HistoryMinerva.MappingContentOption.ForAssemblyFile(System.String)">
+            <summary>按源装配文件的扩展名选出对应的转换内容。识别不出时返回 null。</summary>
         </member>
         <member name="F:HistoryMinerva.WorkerClient.AssemblyInactivityTimeout">
              <summary>
