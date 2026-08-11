@@ -95,8 +95,8 @@ internal static class Program
             sourceButton.ContextMenu.IsOpen = false;
             var contentSelector = FindVisualChildren<ComboBox>(workspace).Single(comboBox =>
                 string.Equals(comboBox.Name, "MappingContentSelector", StringComparison.Ordinal));
-            if (contentSelector.Items.Count != 2)
-                throw new InvalidOperationException("顶栏必须只提供两种转换内容。");
+            if (contentSelector.Items.Count != 3)
+                throw new InvalidOperationException("顶栏必须只提供三种转换内容。");
             var sourceLabel = FindVisualChildren<TextBlock>(workspace).Single(textBlock =>
                 string.Equals(textBlock.Name, "SourceLabelText", StringComparison.Ordinal));
             var sourcePathText = FindVisualChildren<TextBlock>(workspace).Single(textBlock =>
