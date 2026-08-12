@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using HistoryVulcan.Core.Commands;
 using HistoryMinerva.Contracts;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,6 +24,16 @@ public partial class AssemblyView : UserControl, IDisposable
         _commandBus = commandBus;
         InitializeComponent();
         DataContext = _viewModel;
+        // DataGridColumn 不参与可视树，Binding 解析不到 DataContext（实测列头会变空白），
+        // 列头只能在这里跟着源格式更新。
+        SourcePartColumn.Header = _viewModel.SourcePartColumnHeader;
+        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(AssemblyViewModel.SourcePartColumnHeader) or null)
+            SourcePartColumn.Header = _viewModel.SourcePartColumnHeader;
     }
 
     internal AssemblyViewModel ViewModel => _viewModel;

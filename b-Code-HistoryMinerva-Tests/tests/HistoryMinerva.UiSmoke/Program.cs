@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -137,8 +137,10 @@ internal static class Program
             var optionsList = FindVisualChildren<WrapPanel>(optionsActionBar).Single(panel =>
                 string.Equals(panel.Name, "OptionsList", StringComparison.Ordinal));
             var optionBoxes = FindVisualChildren<CheckBox>(optionsList).ToArray();
-            if (optionBoxes.Length != 4)
-                throw new InvalidOperationException("转换选项必须保留四项配置。");
+            // 三项：识别特征与草图（识别与草图合并）、失败继续、重建装配关系。
+            // 合并的原因是横向空间——四项会把"重建装配关系"挤到第二行，用户拿不到那个开关。
+            if (optionBoxes.Length != 3)
+                throw new InvalidOperationException("转换选项必须保留三项配置。");
             var optionsLabel = FindVisualChildren<TextBlock>(optionsList).Single(textBlock =>
                 string.Equals(textBlock.Name, "OptionsLabelText", StringComparison.Ordinal));
             if (FindVisualChildren<TextBlock>(optionsActionBar).Any(textBlock =>
@@ -150,7 +152,7 @@ internal static class Program
             {
                 var actionItems = new FrameworkElement[]
                 {
-                    optionsLabel, optionBoxes[0], optionBoxes[1], optionBoxes[2], optionBoxes[3],
+                    optionsLabel, optionBoxes[0], optionBoxes[1], optionBoxes[2],
                     convertButton,
                 };
                 var firstActionPosition = actionItems[0].TranslatePoint(new Point(0, 0), workspace);
@@ -166,7 +168,7 @@ internal static class Program
             {
                 foreach (var item in new FrameworkElement[]
                 {
-                    optionsLabel, optionBoxes[0], optionBoxes[1], optionBoxes[2], optionBoxes[3],
+                    optionsLabel, optionBoxes[0], optionBoxes[1], optionBoxes[2],
                     convertButton,
                 })
                 {

@@ -77,6 +77,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(PartsPanelTitle));
             OnPropertyChanged(nameof(OperationText));
             OnPropertyChanged(nameof(IsAssemblyMode));
+            OnPropertyChanged(nameof(SourcePartColumnHeader));
             OnPropertyChanged(nameof(IsPartDirectoryMode));
             OnPropertyChanged(nameof(CanProbe));
             OnPropertyChanged(nameof(CanConvert));
@@ -136,7 +137,6 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(CanEdit));
             OnPropertyChanged(nameof(CanProbe));
             OnPropertyChanged(nameof(CanConvert));
-            OnPropertyChanged(nameof(CanFullyDefineSketches));
             OnPropertyChanged(nameof(CanRebuildMates));
             OnPropertyChanged(nameof(CanContinueWhenPartFails));
             OnPropertyChanged(nameof(CanCancel));
@@ -149,6 +149,13 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         private set => SetField(ref _isProbing, value);
     }
 
+    /// <summary>
+    /// 界面上的"识别特征与草图"——一个开关同时驱动识别与草图完全定义。
+    ///
+    /// 两者本就是主从关系（草图完全定义只对识别出的草图生效），拆成两个复选框只是
+    /// 白占横向空间，把后面的"重建装配关系"挤到第二行、让用户拿不到那个开关。
+    /// 协议层仍是两个独立字段，只有界面合并。
+    /// </summary>
     public bool RecognizeFeatures
     {
         get => _recognizeFeatures;
@@ -156,9 +163,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         {
             if (!SetField(ref _recognizeFeatures, value))
                 return;
-            if (!value)
-                FullyDefineSketches = false;
-            OnPropertyChanged(nameof(CanFullyDefineSketches));
+            FullyDefineSketches = value;
             ApplyRegenerationToRows();
         }
     }
@@ -249,8 +254,12 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     public bool CanConvert => CanEdit && (IsAssemblyMode
         ? !_conversionCompleted && _plan?.CanConvert == true
         : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
-    public bool CanFullyDefineSketches => CanEdit && RecognizeFeatures;
     public bool CanContinueWhenPartFails => CanEdit && IsAssemblyMode;
+
+    /// <summary>零件列的列头。写死"Solid Edge 零件"在 SW 自整备模式下是假话。</summary>
+    public string SourcePartColumnHeader => SourceFormat == ConversionSourceFormat.SolidWorks
+        ? "SolidWorks 零件"
+        : "Solid Edge 零件";
     public string PrimaryActionText => IsPartDirectoryMode
         || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource
         ? "转换全部零件"
@@ -857,6 +866,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         if (!SetField(ref _sourceKind, value, nameof(SourceKind)))
             return;
         OnPropertyChanged(nameof(IsAssemblyMode));
+        OnPropertyChanged(nameof(SourcePartColumnHeader));
         OnPropertyChanged(nameof(IsPartDirectoryMode));
         OnPropertyChanged(nameof(SourceLabel));
         OnPropertyChanged(nameof(PrimaryActionText));

@@ -1,7 +1,7 @@
 # HistoryMinerva
 
 HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块。当前源码、候选与正式
-`z-HistoryMinerva` 均为 `4.3.6`。前身 Mapping 与 SWuse
+`z-HistoryMinerva` 均为 `4.3.7`。前身 Mapping 与 SWuse
 两个模块经破坏性重构合并为一个发布单元：纯前端 + 纯后端。
 
 - **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（原 Mapping 页面原样保留：
@@ -31,7 +31,7 @@ CAD COM 自动化；源 CAD 文件保持只读，产物写入来源目录下的 
 | 验证方式 | [`b-Office/current/验证合同.md`](./b-Office/current/验证合同.md) |
 | 生产模块源码 | [`b-Code-HistoryMinerva/README.md`](./b-Code-HistoryMinerva/README.md) |
 | 独立测试与 CAD 门禁 | [`b-Code-HistoryMinerva-Tests/README.md`](./b-Code-HistoryMinerva-Tests/README.md) |
-| 最新正式模块清单（当前 4.3.6） | [`z-HistoryMinerva/module.manifest.json`](./z-HistoryMinerva/module.manifest.json) |
+| 最新正式模块清单（当前 4.3.7） | [`z-HistoryMinerva/module.manifest.json`](./z-HistoryMinerva/module.manifest.json) |
 | 模块对外 API | [`b-Office/package/模块API.md`](./b-Office/package/模块API.md) |
 | 模块合并计划（4.1.0） | [`b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md`](./b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md) |
 | SWuse V0.1 设计档案 | [`b-Office/history/swuse-v0.1/docs`](./b-Office/history/swuse-v0.1/docs) |

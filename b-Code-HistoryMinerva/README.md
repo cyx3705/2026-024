@@ -18,7 +18,7 @@ src/HistoryMinerva            前端：WPF 停靠页（原 Mapping 页）、模�
 src/HistoryMinerva.Contracts  后端协议：HistoryMinerva 转换协议 + SWuse 构建协议
 src/HistoryMinerva.Api        用户建模 API（原 SWuse.Api，供 Worker 编译的用户代码引用）
 src/HistoryMinerva.Worker     单一 x64 STA 工作进程：入口按参数形态路由 HistoryMinerva/SWuse 两条协议
-build/                        唯一版本源（HistoryMinervaVersion）与 HistoryVulcan 3.9.0 最低兼容版本
+build/                        唯一版本源（HistoryMinervaVersion）与 HistoryVulcan 3.11.1 最低兼容版本
 eng/                          清单同步、正式包和Z 快照部署脚本
 ```
 

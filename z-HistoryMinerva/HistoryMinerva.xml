@@ -87,6 +87,15 @@
             InitializeComponent
             </summary>
         </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.RecognizeFeatures">
+             <summary>
+             界面上的"识别特征与草图"——一个开关同时驱动识别与草图完全定义。
+            
+             两者本就是主从关系（草图完全定义只对识别出的草图生效），拆成两个复选框只是
+             白占横向空间，把后面的"重建装配关系"挤到第二行、让用户拿不到那个开关。
+             协议层仍是两个独立字段，只有界面合并。
+             </summary>
+        </member>
         <member name="P:HistoryMinerva.AssemblyViewModel.RegeneratesExistingOutputs">
             <summary>
             已有产物这一轮会不会被重做。装配转换把全部唯一零件都交给 Worker，而 Worker 在开启
@@ -107,6 +116,9 @@
         </member>
         <member name="P:HistoryMinerva.AssemblyViewModel.SourceFormat">
             <summary>本次转换的源 CAD 格式。界面只从当前选中的转换内容取，不另设开关。</summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.SourcePartColumnHeader">
+            <summary>零件列的列头。写死"Solid Edge 零件"在 SW 自整备模式下是假话。</summary>
         </member>
         <member name="M:HistoryMinerva.AssemblyViewModel.FormatMateSummary">
             <summary>状态栏尾巴：一句话说清 56 条关系去了哪里。</summary>

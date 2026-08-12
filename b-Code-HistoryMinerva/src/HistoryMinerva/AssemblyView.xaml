@@ -228,7 +228,11 @@
                           ColumnHeaderHeight="28"
                           ColumnHeaderStyle="{StaticResource Mapping.DataGridHeader}">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Solid Edge 零件" Binding="{Binding FileName}" Width="2*" MinWidth="120" />
+                        <!-- 列头跟着源格式走：SW 自整备模式下写死"Solid Edge 零件"是假话。
+                             DataGridColumn 不在可视树里，Binding 和 RelativeSource 都解析不到
+                             DataContext（试过，列头会变成空白），只能由代码后置赋值。 -->
+                        <DataGridTextColumn x:Name="SourcePartColumn"
+                                            Binding="{Binding FileName}" Width="2*" MinWidth="120" />
                         <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="72" />
                         <DataGridTextColumn Header="特征" Binding="{Binding FeatureText}" Width="58" />
                         <DataGridTextColumn Header="草图" Binding="{Binding SketchText}" Width="58" />
@@ -254,17 +258,17 @@
                            Margin="{DynamicResource Shell.Space.Gap}"
                            Text="转换选项"
                            VerticalAlignment="Center" />
-                <CheckBox Content="识别特征"
+                <!-- 识别与草图合并成一项：草图完全定义本就依赖识别，两个开关多占的横向空间
+                     会把"重建装配关系"挤到第二行——那等于用户根本拿不到这个开关。 -->
+                <CheckBox Content="识别特征与草图"
                           Margin="{DynamicResource Shell.Space.Gap}"
-                          IsChecked="{Binding RecognizeFeatures}" />
-                <CheckBox Content="完全定义草图"
-                          Margin="{DynamicResource Shell.Space.Gap}"
-                          IsChecked="{Binding FullyDefineSketches}"
-                          IsEnabled="{Binding CanFullyDefineSketches}" />
-                <CheckBox Content="零件失败时继续"
+                          IsChecked="{Binding RecognizeFeatures}"
+                          ToolTip="识别特征，并对识别出的草图执行完全定义。" />
+                <CheckBox Content="失败继续"
                           Margin="{DynamicResource Shell.Space.Gap}"
                           IsChecked="{Binding ContinueWhenPartFails}"
-                          IsEnabled="{Binding CanContinueWhenPartFails}" />
+                          IsEnabled="{Binding CanContinueWhenPartFails}"
+                          ToolTip="单个零件失败时继续转换其余零件。" />
                 <CheckBox Content="重建装配关系"
                           Margin="{DynamicResource Shell.Space.Gap}"
                           IsChecked="{Binding RebuildMates}"
