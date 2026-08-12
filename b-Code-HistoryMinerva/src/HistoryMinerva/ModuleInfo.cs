@@ -10,7 +10,7 @@ namespace SWuse;
 public sealed class ModuleInfo : ModuleInfoBase
 {
     public override string ModuleName => HistoryMinervaIdentity.Name;
-    public override string Description => "HistoryMinerva CAD 模块：Solid Edge → SolidWorks 映射转换与 SolidWorks 建模后端";
+    public override string Description => "CAD 装配转换与建模 Worker";
     public override string Author => "OneHistory";
     public override string Version => typeof(ModuleInfo).Assembly.GetName().Version?.ToString(3)
         ?? throw new InvalidOperationException("HistoryMinerva 主程序集未携带版本信息。");
