@@ -14,7 +14,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private readonly Func<AssemblyProbeRequest, Action<WorkerEvent>, CancellationToken, Task<AssemblyProbeResult>> _probeWorker;
     private readonly Func<AssemblyBatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _runWorker;
     private readonly Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _runPartWorker;
-    private readonly Action _validateEnvironment;
+    private readonly Action<ConversionSourceFormat> _validateEnvironment;
     private readonly Dispatcher _uiDispatcher;
     private readonly MappingRuntimePaths _runtimePaths;
     private readonly object _lifecycleGate = new();
@@ -159,7 +159,23 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             if (!value)
                 FullyDefineSketches = false;
             OnPropertyChanged(nameof(CanFullyDefineSketches));
+            ApplyRegenerationToRows();
         }
+    }
+
+    /// <summary>
+    /// 已有产物这一轮会不会被重做。装配转换把全部唯一零件都交给 Worker，而 Worker 在开启
+    /// 识别时对已有 SLDPRT 一律重做（<c>AssemblyPartReusePlanner</c>），所以此时"已存在"
+    /// 不该再挡住用户。零件文件夹模式不同：它按 <c>HasExistingOutput</c> 过滤作业，
+    /// 已有产物是真的会被跳过，那里的"已存在"依然成立。
+    /// </summary>
+    private bool RegeneratesExistingOutputs => IsAssemblyMode && RecognizeFeatures;
+
+    private void ApplyRegenerationToRows()
+    {
+        var regenerates = RegeneratesExistingOutputs;
+        foreach (var row in Parts)
+            row.RegeneratesExistingOutput = regenerates;
     }
 
     public bool FullyDefineSketches
@@ -263,7 +279,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         : this(
             workerClient.ProbeAssemblyAsync,
             workerClient.RunAssemblyAsync,
-            () => PreflightValidator.ValidateEnvironment(workerClient.WorkerPath),
+            sourceFormat => PreflightValidator.ValidateEnvironment(workerClient.WorkerPath, sourceFormat),
             uiDispatcher,
             workerClient.RunAsync,
             runtimePaths)
@@ -273,7 +289,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     internal AssemblyViewModel(
         Func<AssemblyProbeRequest, Action<WorkerEvent>, CancellationToken, Task<AssemblyProbeResult>> probeWorker,
         Func<AssemblyBatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> runWorker,
-        Action validateEnvironment,
+        Action<ConversionSourceFormat> validateEnvironment,
         Dispatcher uiDispatcher,
         Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? runPartWorker = null,
         MappingRuntimePaths? runtimePaths = null)
@@ -502,7 +518,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         if (!File.Exists(SourceAssemblyPath)
             || !ConversionPathLayout.HasExtension(SourceAssemblyPath, sourceAssemblyExtension))
             throw new InvalidOperationException($"请选择存在的 {sourceAssemblyExtension} 装配体文件。");
-        _validateEnvironment();
+        _validateEnvironment(sourceFormat);
 
         var batchId = Guid.NewGuid().ToString("N");
         var resultDirectory = _runtimePaths.ProbesDirectory;
@@ -540,7 +556,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         if (!string.Equals(_sourceHashAfterProbe, ComputeSha256(plan.SourceAssemblyPath), StringComparison.Ordinal))
             throw new InvalidDataException("源装配体在解析后发生变化，请重新解析后再转换。");
 
-        _validateEnvironment();
+        _validateEnvironment(sourceFormat);
         // SW 自整备没有中转件，不建空的 XT 目录。
         ExternalOutputLayout.EnsureDirectories(
             ConversionPathLayout.UsesParasolidHandoff(sourceFormat) ? plan.XtDirectory : null,
@@ -620,14 +636,17 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         if (pending.Length == 0)
             throw new InvalidOperationException("没有尚待转换的零件。");
 
-        _validateEnvironment();
+        // 零件文件夹模式目前只有 Solid Edge 源（SW 自整备的来源是单个 .SLDASM），
+        // 但格式仍从当前转换内容取，不再另写一份假设。
+        var sourceFormat = SourceFormat;
+        _validateEnvironment(sourceFormat);
         ExternalOutputLayout.EnsureDirectories(XtDirectory, SolidWorksDirectory);
         var jobs = pending.Select(row => new ConversionJob(
             row.Id,
             row.SourcePath,
             row.XtPath,
             row.SolidWorksPath)).ToArray();
-        PreflightValidator.ValidateJobs(jobs, overwrite: false);
+        PreflightValidator.ValidateJobs(jobs, overwrite: false, sourceFormat);
 
         foreach (var row in pending)
         {
@@ -647,7 +666,8 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             jobs,
             Overwrite: false,
             RecognizeFeatures: RecognizeFeatures,
-            FullyDefineSketches: RecognizeFeatures && FullyDefineSketches);
+            FullyDefineSketches: RecognizeFeatures && FullyDefineSketches,
+            SourceFormat: sourceFormat);
         QueueUiUpdate(() => StatusText = $"正在转换 {jobs.Length} 个零件");
         var exitCode = await _runPartWorker(
             request,
@@ -706,8 +726,9 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         SolidWorksDirectory = plan.SolidWorksDirectory;
         AssemblyOutputPath = plan.AssemblyOutputPath;
         AssemblyTree.Add(AssemblyTreeNode.Build(result, plan.Nodes));
+        var regeneratesExisting = RegeneratesExistingOutputs;
         foreach (var candidate in plan.Parts)
-            Parts.Add(new ConversionFileRow(candidate));
+            Parts.Add(new ConversionFileRow(candidate, regeneratesExisting));
 
         var issueText = plan.BlockingIssues.Count == 0
             ? string.Empty

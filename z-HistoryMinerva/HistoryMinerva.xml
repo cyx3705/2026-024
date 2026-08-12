@@ -87,6 +87,14 @@
             InitializeComponent
             </summary>
         </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.RegeneratesExistingOutputs">
+            <summary>
+            已有产物这一轮会不会被重做。装配转换把全部唯一零件都交给 Worker，而 Worker 在开启
+            识别时对已有 SLDPRT 一律重做（<c>AssemblyPartReusePlanner</c>），所以此时"已存在"
+            不该再挡住用户。零件文件夹模式不同：它按 <c>HasExistingOutput</c> 过滤作业，
+            已有产物是真的会被跳过，那里的"已存在"依然成立。
+            </summary>
+        </member>
         <member name="P:HistoryMinerva.AssemblyViewModel.RebuildMates">
              <summary>
              V3.5：把 SE 装配关系翻译成 SW 配合。发现关系时默认开启。
@@ -108,6 +116,22 @@
             把逐条诊断并进警告栏。V3.5 的承诺是"建不起来的如实报告"——
             报告只写进日志、用户看不见的话，这个承诺就没兑现。
             </summary>
+        </member>
+        <member name="F:HistoryMinerva.ConversionFileRow.ExistingStatus">
+            <summary>已有产物、且本轮不会重做时的状态文字。</summary>
+        </member>
+        <member name="F:HistoryMinerva.ConversionFileRow.PendingReworkStatus">
+            <summary>已有产物、但本轮会连同特征一起重做时的状态文字。</summary>
+        </member>
+        <member name="P:HistoryMinerva.ConversionFileRow.RegeneratesExistingOutput">
+             <summary>
+             本轮会把已有产物连同特征一起重做。开启特征识别的装配转换就是这种情形：
+             已有 SLDPRT 里有没有特征，不打开文档就判断不了，而打开的代价与重新导入相当，
+             所以 <c>AssemblyPartReusePlanner</c> 一律重做。
+            
+             此时再显示"已存在"并锁住复选框，说的就是假话——文件确实在，缺的正是这一轮要补的
+             特征树。现场事故：SW 自整备的整目录零件全被标成"已存在"，用户以为没法整备。
+             </summary>
         </member>
         <member name="P:HistoryMinerva.ConversionFileRow.FeatureText">
             <summary>V2.0：识别出的特征数。</summary>
@@ -170,6 +194,12 @@
         </member>
         <member name="M:HistoryMinerva.MappingContentOption.ForAssemblyFile(System.String)">
             <summary>按源装配文件的扩展名选出对应的转换内容。识别不出时返回 null。</summary>
+        </member>
+        <member name="M:HistoryMinerva.PreflightValidator.ValidateEnvironment(System.String,HistoryMinerva.Contracts.ConversionSourceFormat)">
+            <param name="workerPath">Worker 可执行文件路径。</param>
+            <param name="sourceFormat">
+            本次转换的源格式。SW 自整备全程只用 SolidWorks，机器上没装 Solid Edge 也应当能跑。
+            </param>
         </member>
         <member name="F:HistoryMinerva.WorkerClient.AssemblyInactivityTimeout">
              <summary>

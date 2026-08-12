@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Reflection;
 using HistoryMinerva;
 using HistoryMinerva.Contracts;
@@ -63,6 +63,9 @@ try
     TestMateTypeMapping();
     TestSolidWorksSelfPipelineContracts();
     TestSolidWorksSelfPipelinePlanning(root);
+    TestSolidWorksSelfPipelineDefaultDirectories(root);
+    TestPreflightValidatorAcceptsSolidWorksSource(root);
+    TestExistingOutputRowReflectsRecognition();
     TestMateOutcomeSelfConsistency();
     TestMateCandidateEquivalence();
     TestNestedAssemblyMetrics();
@@ -584,7 +587,7 @@ static void TestSingleShotCancellation(string root)
             throw new InvalidOperationException("不可达");
         },
         static (_, _, _) => Task.FromResult(0),
-        static () => { },
+        static _ => { },
         Dispatcher.CurrentDispatcher);
     viewModel.SetAssemblySource(assembly);
     var run = viewModel.ProbeAsync();
@@ -681,7 +684,7 @@ static void TestConversionCommandBusOutcomes(string root)
         => new(
             probeWorker,
             static (_, _, _) => Task.FromResult(0),
-            static () => { },
+            static _ => { },
             Dispatcher.CurrentDispatcher);
 
     static (CommandBus Bus, RecordingShellLog Log) CreateProbeBus(AssemblyViewModel viewModel)
@@ -1795,6 +1798,170 @@ static void TestSolidWorksSelfPipelinePlanning(string root)
         "b", ConversionMode.External, [validJob], Overwrite: true)));
 }
 
+/// <summary>
+/// 现场事故：SW 自整备的整目录零件全被标成"已存在"，转换按钮同时被"产物会覆盖源零件本身"
+/// 锁死，用户一个零件都整备不了。
+///
+/// 根因是旧平铺产物的回退路径——"源目录里的同名 SLDPRT"——对 SolidWorks 源按构造就是
+/// 源零件自己。上一版用例没抓到，是因为它传了 customSolidWorksDirectory，正好关掉了回退
+/// 分支；而 AssemblyViewModel 两个自定义目录传的都是 null。**本用例必须传 null**，
+/// 它复现的是界面真正产生的那一组参数。
+/// </summary>
+static void TestSolidWorksSelfPipelineDefaultDirectories(string root)
+{
+    var source = Path.Combine(root, "sw-self-default");
+    Directory.CreateDirectory(source);
+    var partPath = Path.Combine(source, "件A.SLDPRT");
+    File.WriteAllText(partPath, "part");
+    var assemblyPath = Path.Combine(source, "顶层.SLDASM");
+    File.WriteAllText(assemblyPath, "assembly");
+
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var probe = new AssemblyProbeResult(
+        assemblyPath,
+        [new AssemblyOccurrence("件A-1", null, partPath, false, false, false, identity, null)],
+        [partPath],
+        0, 0, 0, 0,
+        [],
+        [new AssemblyDocumentReading(
+            assemblyPath,
+            [new AssemblyChild("件A-1", partPath, false, false, identity)],
+            [],
+            [])]);
+
+    var plan = AssemblyPlanner.Create(
+        probe,
+        customXtDirectory: null,
+        customSolidWorksDirectory: null,
+        ConversionSourceFormat.SolidWorks);
+    True(plan.CanConvert, "默认输出目录下的 SW 自整备必须可以转换");
+    Equal(0, plan.BlockingIssues.Count, "默认输出目录下不得有任何前置错误");
+    True(!plan.Parts[0].HasExistingOutput, "源零件自己不得被当成上一轮的产物");
+    Equal(
+        Path.Combine(source, ConversionPathLayout.SolidWorksDirectoryName, "件A.SLDPRT"),
+        plan.Parts[0].SolidWorksPath,
+        "产物必须落在 SW 子目录，不能被回退路径改写回源零件");
+
+    // Solid Edge 源的旧平铺产物是真实存在的，放宽 SW 不能把它一并关掉。
+    var seSource = Path.Combine(root, "se-legacy-flat");
+    Directory.CreateDirectory(seSource);
+    var sePart = Path.Combine(seSource, "件A.par");
+    File.WriteAllText(sePart, "part");
+    var seAssembly = Path.Combine(seSource, "顶层.asm");
+    File.WriteAllText(seAssembly, "assembly");
+    var legacyOutput = Path.Combine(seSource, "件A.SLDPRT");
+    File.WriteAllText(legacyOutput, "旧平铺产物");
+    var sePlan = AssemblyPlanner.Create(
+        new AssemblyProbeResult(
+            seAssembly,
+            [new AssemblyOccurrence("件A-1", null, sePart, false, false, false, identity, null)],
+            [sePart],
+            0, 0, 0, 0,
+            [],
+            [new AssemblyDocumentReading(
+                seAssembly,
+                [new AssemblyChild("件A-1", sePart, false, false, identity)],
+                [],
+                [])]),
+        customXtDirectory: null,
+        customSolidWorksDirectory: null,
+        ConversionSourceFormat.SolidEdge);
+    True(sePlan.CanConvert, "Solid Edge 源仍可转换");
+    True(sePlan.Parts[0].HasExistingOutput, "Solid Edge 源的旧平铺 SLDPRT 仍必须认作已有产物");
+    Equal(legacyOutput, sePlan.Parts[0].SolidWorksPath, "Solid Edge 源仍要复用旧平铺产物");
+}
+
+/// <summary>
+/// 界面校验器必须与 Worker 校验器同口径。此前它写死 .par / .asm，SW 自整备在按下转换的
+/// 瞬间就被判死；XT 校验也一样——自整备没有中转件，XT 目录是故意不建的。
+/// </summary>
+static void TestPreflightValidatorAcceptsSolidWorksSource(string root)
+{
+    var source = Path.Combine(root, "preflight-sw");
+    var output = Path.Combine(source, "SW");
+    Directory.CreateDirectory(output);
+    var partPath = Path.Combine(source, "件A.SLDPRT");
+    File.WriteAllText(partPath, "part");
+    var assemblyPath = Path.Combine(source, "顶层.SLDASM");
+    File.WriteAllText(assemblyPath, "assembly");
+
+    // XtPath 留空、XT 目录根本不存在，这是自整备的正常形态。
+    var job = new ConversionJob("件A", partPath, string.Empty, Path.Combine(output, "件A.SLDPRT"));
+    PreflightValidator.ValidateJobs([job], overwrite: false, ConversionSourceFormat.SolidWorks);
+
+    // 产物真的指回源零件时，界面这一侧也要独立拦一次。
+    Throws<InvalidDataException>(() => PreflightValidator.ValidateJobs(
+        [new ConversionJob("件A", partPath, string.Empty, partPath)],
+        overwrite: true,
+        ConversionSourceFormat.SolidWorks));
+
+    // Solid Edge 源不得因为放宽而接受 SLDPRT 输入。
+    Throws<InvalidDataException>(() => PreflightValidator.ValidateJobs([job], overwrite: false));
+
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var assemblyOutputPath = Path.Combine(output, "顶层.SLDASM");
+    var request = new AssemblyBatchRequest(
+        "batch",
+        ConversionMode.External,
+        assemblyPath,
+        assemblyOutputPath,
+        [job],
+        [new AssemblyOccurrence("件A-1", null, partPath, false, false, false, identity, null)],
+        Overwrite: false,
+        RecognizeFeatures: true,
+        FullyDefineSketches: false,
+        ContinueWhenPartFails: false,
+        RebuildMates: false,
+        Nodes: [new AssemblyNode(
+            assemblyPath,
+            assemblyOutputPath,
+            true,
+            0,
+            [new AssemblyChild("件A-1", partPath, false, false, identity)],
+            [partPath])],
+        Relations: [],
+        SourceFormat: ConversionSourceFormat.SolidWorks);
+    PreflightValidator.ValidateAssemblyRequest(request);
+
+    // 同一个请求换回 Solid Edge 源格式必须被拒：扩展名口径不能两边都放过。
+    Throws<FileNotFoundException>(() => PreflightValidator.ValidateAssemblyRequest(
+        request with { SourceFormat = ConversionSourceFormat.SolidEdge }));
+}
+
+/// <summary>
+/// 开启特征识别时，Worker 对已有 SLDPRT 一律重做（AssemblyPartReusePlanner），
+/// 界面就不能再显示"已存在"——那正是让用户以为无法整备的那句话。
+/// </summary>
+static void TestExistingOutputRowReflectsRecognition()
+{
+    var candidate = new ScanCandidate(
+        @"C:\T\件A.SLDPRT", string.Empty, @"C:\T\SW\件A.SLDPRT", HasExistingOutput: true);
+
+    var reused = new ConversionFileRow(candidate);
+    Equal(ConversionFileRow.ExistingStatus, reused.Status, "不重做时仍应显示已存在");
+    True(!reused.IsSelected, "不重做的已有产物默认不勾选");
+
+    var reworked = new ConversionFileRow(candidate, regeneratesExistingOutput: true);
+    Equal(ConversionFileRow.PendingReworkStatus, reworked.Status, "开启识别时已有产物应显示待整备");
+    True(reworked.IsSelected, "会被重做的行必须可勾选并默认勾上");
+
+    // 识别开关在解析之后还能改，行状态要跟着回摆。
+    reworked.RegeneratesExistingOutput = false;
+    Equal(ConversionFileRow.ExistingStatus, reworked.Status, "关掉识别后应回到已存在");
+    reworked.RegeneratesExistingOutput = true;
+    Equal(ConversionFileRow.PendingReworkStatus, reworked.Status, "重新开启识别后应回到待整备");
+
+    // 已经跑起来的行不能被开关擦掉进度。
+    reworked.Status = "正在导入";
+    reworked.RegeneratesExistingOutput = false;
+    Equal("正在导入", reworked.Status, "开关不得覆盖转换过程中的状态");
+
+    // 没有已有产物的行不受影响。
+    var fresh = new ConversionFileRow(
+        candidate with { HasExistingOutput = false }, regeneratesExistingOutput: true);
+    Equal(ConversionFileRow.ReadyStatus, fresh.Status, "没有产物的行仍是就绪");
+}
+
 /// <summary>§6.1 判据 3：每条关系都要有确定去向，不允许凭空消失。</summary>
 static void TestMateOutcomeSelfConsistency()
 {
@@ -2124,7 +2291,7 @@ static void TestUnifiedPartDirectoryFlow(string root)
             return Task.FromResult(probe);
         },
         static (_, _, _) => Task.FromResult(0),
-        static () => { },
+        static _ => { },
         Dispatcher.CurrentDispatcher,
         (request, progress, _) =>
         {
@@ -2243,7 +2410,7 @@ static void TestAssemblyMateSwitchAndReport(string root)
     var withoutRelations = new AssemblyViewModel(
         (_, _, _) => Task.FromResult(Probe(null)),
         static (_, _, _) => Task.FromResult(0),
-        static () => { },
+        static _ => { },
         Dispatcher.CurrentDispatcher);
     using (withoutRelations)
     {
@@ -2271,7 +2438,7 @@ static void TestAssemblyMateSwitchAndReport(string root)
             progress(new WorkerEvent("b", null, ConversionStage.Completed, "完成", Mate: outcome));
             return Task.FromResult(0);
         },
-        static () => { },
+        static _ => { },
         Dispatcher.CurrentDispatcher);
     using (withRelations)
     {
@@ -2324,7 +2491,7 @@ static void TestAssemblyViewModelState(string root)
     using var viewModel = new AssemblyViewModel(
         (_, _, _) => Task.FromResult(probe),
         static (_, _, _) => Task.FromResult(0),
-        static () => { },
+        static _ => { },
         Dispatcher.CurrentDispatcher);
     viewModel.SetSourceFile(assembly);
     True(viewModel.CanProbe && !viewModel.CanConvert, "选择 .asm 后只能先解析，不能直接转换");
@@ -2373,7 +2540,7 @@ static void TestAssemblyActiveRunDisposal(string root)
             }
         },
         static (_, _, _) => Task.FromResult(0),
-        static () => { },
+        static _ => { },
         Dispatcher.CurrentDispatcher);
     viewModel.SetSourceFile(assembly);
     var run = viewModel.ProbeAsync();

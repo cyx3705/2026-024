@@ -106,20 +106,25 @@ public static class AssemblyPlanner
         }
 
         var usesParasolid = ConversionPathLayout.UsesParasolidHandoff(sourceFormat);
+        // 旧平铺产物只有 Solid Edge 源才有。SW 自整备的"源目录里的同名 SLDPRT"就是源零件
+        // 自己，绝不能当成上一轮的产物去复用——详见 ConversionPathLayout.HasLegacyFlatLayout。
+        var hasLegacyFlatLayout = ConversionPathLayout.HasLegacyFlatLayout(sourceFormat);
+        var allowLegacyXt = hasLegacyFlatLayout && !hasCustomXtDirectory;
+        var allowLegacySolidWorks = hasLegacyFlatLayout && !hasCustomSolidWorksDirectory;
         var parts = supportedParts.Select(path =>
         {
             var paths = ConversionPathLayout.ResolvePartPaths(path, xtDirectory, swDirectory, sourceDirectory);
             // SW 自整备管线没有中转件：产物是否已存在只看 SLDPRT。
             var exists = File.Exists(paths.SolidWorksPath)
-                || !hasCustomSolidWorksDirectory && File.Exists(paths.LegacySolidWorksPath)
+                || allowLegacySolidWorks && File.Exists(paths.LegacySolidWorksPath)
                 || usesParasolid && (File.Exists(paths.XtPath)
-                    || !hasCustomXtDirectory && File.Exists(paths.LegacyXtPath));
+                    || allowLegacyXt && File.Exists(paths.LegacyXtPath));
             var reusableXt = File.Exists(paths.XtPath)
                 ? paths.XtPath
-                : !hasCustomXtDirectory && File.Exists(paths.LegacyXtPath) ? paths.LegacyXtPath : paths.XtPath;
+                : allowLegacyXt && File.Exists(paths.LegacyXtPath) ? paths.LegacyXtPath : paths.XtPath;
             var reusableSw = File.Exists(paths.SolidWorksPath)
                 ? paths.SolidWorksPath
-                : !hasCustomSolidWorksDirectory && File.Exists(paths.LegacySolidWorksPath)
+                : allowLegacySolidWorks && File.Exists(paths.LegacySolidWorksPath)
                     ? paths.LegacySolidWorksPath
                     : paths.SolidWorksPath;
             return new ScanCandidate(path, reusableXt, reusableSw, exists);
@@ -139,9 +144,14 @@ public static class AssemblyPlanner
 
         if (parts.Any(item => item.HasExistingOutput))
         {
+            // 措辞必须覆盖两条分支：识别开关在解析之后还能改，计划无从知道最终取值。
+            // 只说"安全复用、不覆盖"会让用户以为已有产物必定被跳过——正是这一句加上
+            // "已存在"标记，让 SW 自整备看起来像是没法整备。
             warnings.Add(usesParasolid
-                ? "检测到已有零件产物；转换时会校验时间与格式，安全复用有效的分层或旧平铺 XT/SLDPRT，不覆盖用户文件。"
-                : "检测到已有零件产物；转换时会校验时间与格式，安全复用有效的 SLDPRT，不覆盖用户文件。");
+                ? "检测到已有零件产物；开启特征识别时会连同特征一起就地重做，"
+                    + "否则校验时间与格式后安全复用有效的分层或旧平铺 XT/SLDPRT。"
+                : "检测到已有零件产物；开启特征识别时会连同特征一起就地重做，"
+                    + "否则校验时间与格式后安全复用有效的 SLDPRT。");
         }
         if (parts.Length == 0)
         {

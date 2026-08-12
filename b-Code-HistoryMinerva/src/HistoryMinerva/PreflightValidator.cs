@@ -5,22 +5,34 @@ namespace HistoryMinerva;
 
 public static class PreflightValidator
 {
-    public static void ValidateEnvironment(string workerPath)
+    /// <param name="workerPath">Worker 可执行文件路径。</param>
+    /// <param name="sourceFormat">
+    /// 本次转换的源格式。SW 自整备全程只用 SolidWorks，机器上没装 Solid Edge 也应当能跑。
+    /// </param>
+    public static void ValidateEnvironment(
+        string workerPath,
+        ConversionSourceFormat sourceFormat = ConversionSourceFormat.SolidEdge)
     {
         if (!File.Exists(workerPath))
             throw new FileNotFoundException(
                 $"未找到 {Path.GetFileNameWithoutExtension(HistoryMinervaIdentity.WorkerFileName)} 工作进程，请重新构建或同步模块。",
                 workerPath);
-        if (Type.GetTypeFromProgID("SolidEdge.Application", throwOnError: false) is null)
+        if (sourceFormat == ConversionSourceFormat.SolidEdge
+            && Type.GetTypeFromProgID("SolidEdge.Application", throwOnError: false) is null)
+        {
             throw new InvalidOperationException("未检测到 Solid Edge COM 注册（SolidEdge.Application）。");
+        }
         if (Type.GetTypeFromProgID("SldWorks.Application", throwOnError: false) is null)
             throw new InvalidOperationException("未检测到 SolidWorks COM 注册（SldWorks.Application）。");
     }
 
-    public static void ValidateJobs(IEnumerable<ConversionJob> jobs, bool overwrite)
+    public static void ValidateJobs(
+        IEnumerable<ConversionJob> jobs,
+        bool overwrite,
+        ConversionSourceFormat sourceFormat = ConversionSourceFormat.SolidEdge)
     {
         var outputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        ValidateJobs(jobs, overwrite, outputs);
+        ValidateJobs(jobs, overwrite, outputs, sourceFormat);
     }
 
     public static void ValidateAssemblyRequest(AssemblyBatchRequest request)
@@ -28,15 +40,26 @@ public static class PreflightValidator
         ArgumentNullException.ThrowIfNull(request);
         if (request.Mode != ConversionMode.External)
             throw new InvalidDataException("当前装配转换仅支持外界模式。");
+        // 扩展名一律按源格式取。写死 .asm / .par 会让 SW 自整备在界面这一侧就被判死，
+        // 而 Worker 侧的 WorkerRequestValidator 早已认得 SolidWorks 源——两个校验器
+        // 必须同一口径。
+        var sourceAssemblyExtension = ConversionPathLayout.GetSourceAssemblyExtension(request.SourceFormat);
         if (!Path.IsPathFullyQualified(request.SourceAssemblyPath)
             || !File.Exists(request.SourceAssemblyPath)
-            || !ConversionPathLayout.HasExtension(request.SourceAssemblyPath, ConversionPathLayout.SolidEdgeAssemblyExtension))
+            || !ConversionPathLayout.HasExtension(request.SourceAssemblyPath, sourceAssemblyExtension))
         {
-            throw new FileNotFoundException("源装配体不存在或不是绝对 .asm 路径。", request.SourceAssemblyPath);
+            throw new FileNotFoundException(
+                $"源装配体不存在或不是绝对 {sourceAssemblyExtension} 路径。",
+                request.SourceAssemblyPath);
         }
 
         var outputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        ValidateJobs(request.PartJobs, request.Overwrite, outputs, allowExistingOutputs: true);
+        ValidateJobs(
+            request.PartJobs,
+            request.Overwrite,
+            outputs,
+            request.SourceFormat,
+            allowExistingOutputs: true);
 
         // V3.3：嵌套时每个装配节点都有自己的输出，逐个校验；已存在不再是硬阻断，
         // 由 Worker 的复用判定核验它是否比全部依赖都新（与零件同口径）。
@@ -47,9 +70,11 @@ public static class PreflightValidator
             {
                 if (!Path.IsPathFullyQualified(node.SourceAssemblyPath)
                     || !File.Exists(node.SourceAssemblyPath)
-                    || !ConversionPathLayout.HasExtension(node.SourceAssemblyPath, ConversionPathLayout.SolidEdgeAssemblyExtension))
+                    || !ConversionPathLayout.HasExtension(node.SourceAssemblyPath, sourceAssemblyExtension))
                 {
-                    throw new FileNotFoundException("装配节点的源文件不存在或不是绝对 .asm 路径。", node.SourceAssemblyPath);
+                    throw new FileNotFoundException(
+                        $"装配节点的源文件不存在或不是绝对 {sourceAssemblyExtension} 路径。",
+                        node.SourceAssemblyPath);
                 }
                 if (node.Children.Count == 0)
                     throw new InvalidDataException($"装配节点没有任何子项：{node.SourceAssemblyPath}");
@@ -93,18 +118,33 @@ public static class PreflightValidator
         IEnumerable<ConversionJob> jobs,
         bool overwrite,
         ISet<string> outputs,
+        ConversionSourceFormat sourceFormat,
         bool allowExistingOutputs = false)
     {
+        var sourcePartExtension = ConversionPathLayout.GetSourcePartExtension(sourceFormat);
+        var usesParasolid = ConversionPathLayout.UsesParasolidHandoff(sourceFormat);
         var count = 0;
         foreach (var job in jobs)
         {
             count++;
             if (!Path.IsPathFullyQualified(job.SourcePath) || !File.Exists(job.SourcePath))
                 throw new FileNotFoundException("源文件不存在或不是绝对路径。", job.SourcePath);
-            if (!ConversionPathLayout.HasExtension(job.SourcePath, ConversionPathLayout.SolidEdgePartExtension))
-                throw new InvalidDataException($"输入不是 Solid Edge .par 文件：{job.SourcePath}");
-            ValidateOutput(job.XtPath, ConversionArtifactKind.Xt, overwrite, outputs, allowExistingOutputs);
+            if (!ConversionPathLayout.HasExtension(job.SourcePath, sourcePartExtension))
+                throw new InvalidDataException($"输入不是 {sourcePartExtension} 文件：{job.SourcePath}");
+            // SW 自整备没有中转件：XtPath 是空串，XT 目录也故意没有建起来
+            // （ExternalOutputLayout.EnsureDirectories 传的是 null），不能按输出去校验。
+            if (usesParasolid)
+                ValidateOutput(job.XtPath, ConversionArtifactKind.Xt, overwrite, outputs, allowExistingOutputs);
             ValidateOutput(job.SolidWorksPath, ConversionArtifactKind.SolidWorksPart, overwrite, outputs, allowExistingOutputs);
+            // 与 WorkerRequestValidator 同口径：源与产物同名不同目录是自整备常态，
+            // 只有真的指到同一个文件才拦——那会当场毁掉用户的原始零件。
+            if (string.Equals(
+                    Path.GetFullPath(job.SourcePath),
+                    Path.GetFullPath(job.SolidWorksPath),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"产物不能就是源零件本身：{job.SourcePath}");
+            }
         }
         if (count == 0)
             throw new InvalidOperationException("没有选中可转换文件。");

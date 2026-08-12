@@ -50,6 +50,17 @@ public static class ConversionPathLayout
     public static bool UsesParasolidHandoff(ConversionSourceFormat format)
         => format == ConversionSourceFormat.SolidEdge;
 
+    /// <summary>
+    /// 该源格式是否可能留下 V3.0 时代的旧平铺产物（产物与源同目录、同基名）。
+    ///
+    /// Solid Edge 源有：<c>A.par</c> 旁边的 <c>A.SLDPRT</c> 确实是上一代的产物。
+    /// SolidWorks 源没有：那个位置按构造就是**源零件本身**。把它当成旧产物，会让
+    /// 自整备的每个零件都被判成"已存在"，并把产物路径改写回源文件——计划阶段随即
+    /// 以"产物会覆盖源零件本身"整轮阻断，用户一个零件都整备不了。
+    /// </summary>
+    public static bool HasLegacyFlatLayout(ConversionSourceFormat format)
+        => format == ConversionSourceFormat.SolidEdge;
+
     public static ExternalOutputDirectories ResolveExternalDirectories(string sourceDirectory)
     {
         var root = Path.GetFullPath(sourceDirectory);
