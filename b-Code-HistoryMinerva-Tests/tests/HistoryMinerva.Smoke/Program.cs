@@ -1986,29 +1986,15 @@ static void TestMateOutcomeSelfConsistency()
 /// </summary>
 static void TestRecognitionGeometryGuard()
 {
-    // 一致：体积逐位相同，面数变化不影响判定（识别可能合并共面面）。
-    Equal(null, FeatureRecognizer.DescribeGeometryMismatch((1.234e-4, 32), (1.234e-4, 30)),
-        "体积一致时不得判为几何改变——面数合并是识别的正常行为");
-
-    // 方块事故：体积掉了一大截。
-    var boxed = FeatureRecognizer.DescribeGeometryMismatch((1.0e-4, 55), (2.5e-4, 6));
-    True(boxed is not null, "体积变化必须被检出");
-    True(boxed!.Contains("体积", StringComparison.Ordinal) && boxed.Contains("面数", StringComparison.Ordinal),
-        $"诊断要给出前后数值便于排查，实得：{boxed}");
-
-    // 已验证的 FeatureWorks 金标准会产生 1.418e-5 的重建偏差，守卫必须放行但保持有界。
-    Equal(null, FeatureRecognizer.DescribeGeometryMismatch((1.0, 10), (1.0 + 1.5e-5, 10)),
-        "已验证的 FeatureWorks 重建偏差不得误判为几何破坏");
-    True(FeatureRecognizer.DescribeGeometryMismatch((1.0, 10), (1.0 + 2.1e-5, 10)) is not null,
-        "超过金标准上限的体积偏差必须判为几何改变");
-    True(FeatureRecognizer.DescribeGeometryMismatch((1.0, 10), (1.0001, 10)) is not null,
-        "万分之一的体积偏差就必须判为几何改变——这不是噪声");
-
-    // 量不到就是不安全，绝不默认放行。
-    True(FeatureRecognizer.DescribeGeometryMismatch((1.0e-4, 20), null) is not null,
-        "识别后读不出几何必须判为不安全");
-    Equal(null, FeatureRecognizer.DescribeGeometryMismatch(null, (1.0e-4, 20)),
-        "识别前就没有基准时，本判据不兜底，交给其他环节");
+    // V4.3.5：几何守卫已整条移除（DEC-022）。判据不再问"识别得像不像手工结果"，
+    // 只问"这个产物人工还能不能救"：
+    //   · 残留导入体 → 不合规且人工修不了 → 丢弃；
+    //   · 体积偏差、特征类型认错 → 人工能改 → 放行，拦下来反而剥夺修正机会。
+    // 实测 BJ10B-05 偏差 2.28e-4 曾被旧阈值拦回哑实体，而它的 24 项特征树完整且无残留导入体。
+    var cleanTree = FeatureRecognizer.DescribeSemanticMismatch(
+        14, true,
+        [new FeatureTreeEntry("Sketch1", "ProfileFeature"), new FeatureTreeEntry("Boss-Extrude1", "Extrusion")]);
+    Equal(null, cleanTree, "特征完备且无残留导入体时必须放行，几何偏差不再参与判定");
 
     // 契约：GeometryChanged 与 DegradedToDumbSolid 语义不同，不能混用。
     var outcome = new FeatureOutcome(3, true, 0, 0, [], true, 10, "几何被改变", GeometryChanged: true);
@@ -2194,17 +2180,14 @@ static void TestRecognitionSemanticGuard()
         "普通零件自动识别必须选中体积特征");
     Equal(0, FeatureRecognizer.StandardPartRecognitionOptions & FeatureRecognizer.SheetMetalRecognitionOptions,
         "普通零件识别参数严禁混入钣金四位");
-    Equal(2e-5, FeatureRecognizer.MaximumFeatureWorksVolumeRelativeDeviation,
-        "几何守卫必须覆盖已验证的 FeatureWorks 重建误差且保持有界");
-
-    // V4.3.4 判据反转，依据是 2026-08-12 的真机实测（BJ10B-04消解底壳，已激活会话）：
-    // FeatureWorks 识别 30 项并全部建成——16 个旋转、6 个孔向导、5 个圆角——只因一块几何
-    // 没被认出、树里残留一个 Imported1，旧判据就把整棵树丢掉，用户拿到哑实体。
-    // 残留导入体是"部分识别"，不是语义错误；真正要拦的是"报了成功却一个造型特征都没建"。
-    Equal(null, FeatureRecognizer.DescribeSemanticMismatch(
+    // V4.3.5（DEC-022）：判据按"人工还能不能救"定，不按"像不像手工结果"定。
+    // 残留导入体的零件不合规、且没有特征可编辑、人工修不回来——必须拦。
+    // 而识别得不完美（体积偏差、特征类型认错）人工可以改，不拦。
+    var residual = FeatureRecognizer.DescribeSemanticMismatch(
         2, true,
-        [new FeatureTreeEntry("Imported1", "BaseBody"), new FeatureTreeEntry("Boss-Extrude1", "Extrusion")]),
-        "建成了造型特征、只残留导入体时属于部分识别，必须保留特征树");
+        [new FeatureTreeEntry("Imported1", "BaseBody"), new FeatureTreeEntry("Boss-Extrude1", "Extrusion")]);
+    True(residual is not null && residual.Contains("无法人工修复", StringComparison.Ordinal),
+        "残留导入体必须拦截，并说清是不合规且人工修不了，而不是识别得不够好");
     Equal(1, FeatureRecognizer.CountBuiltSolidFeatures(
         [new FeatureTreeEntry("Imported1", "BaseBody"), new FeatureTreeEntry("Boss-Extrude1", "Extrusion")]),
         "造型特征计数不得把导入体算进去");
@@ -2215,10 +2198,17 @@ static void TestRecognitionSemanticGuard()
         [new FeatureTreeEntry("Sketch1", "ProfileFeature"), new FeatureTreeEntry("Imported1", "BaseBody")]),
         "只有草图不算建成造型特征——那正是 CreateFeatures 报成功却什么都没做的形态");
 
-    var builtNothing = FeatureRecognizer.DescribeSemanticMismatch(
+    // 草图 + 导入体：两条判据都成立，残留导入体优先——它是更根本的不合规原因。
+    var sketchOnly = FeatureRecognizer.DescribeSemanticMismatch(
         1, true,
         [new FeatureTreeEntry("Sketch1", "ProfileFeature"), new FeatureTreeEntry("Imported1", "BaseBody")]);
-    True(builtNothing is not null && builtNothing.Contains("一个造型特征都没建", StringComparison.Ordinal),
+    True(sketchOnly is not null && sketchOnly.Contains("导入体", StringComparison.Ordinal),
+        "只建出草图、导入体还在时必须丢弃，且归因到残留导入体");
+
+    // 没有导入体、也没有造型特征：同样是人工无从下手的形态，仍须丢弃。
+    var noSolid = FeatureRecognizer.DescribeSemanticMismatch(
+        1, true, [new FeatureTreeEntry("Sketch1", "ProfileFeature")]);
+    True(noSolid is not null && noSolid.Contains("没有任何造型特征", StringComparison.Ordinal),
         "报成功却零造型特征仍必须丢弃：那只是被动过一轮的哑实体，不如源文件干净");
 
     var sheetMetal = FeatureRecognizer.DescribeSemanticMismatch(

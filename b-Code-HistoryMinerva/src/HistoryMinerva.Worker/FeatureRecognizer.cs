@@ -54,11 +54,9 @@ internal sealed class FeatureRecognizer : IDisposable
     private const int RecognitionAttempts = 10;
     private const int RecognitionRetryDelayMilliseconds = 300;
 
-    /// <summary>
-    /// FeatureWorks 会按识别结果重建实体，实测有效结果仍可能产生约 1.42e-5 的体积偏差。
-    /// 此上限覆盖已验收样件，同时继续拒绝明显改变零件形状的错误识别。
-    /// </summary>
-    internal const double MaximumFeatureWorksVolumeRelativeDeviation = 2e-5;
+    // V4.3.5：几何守卫（识别前后比对体积/面数，阈值 2e-5）已整条移除。
+    // 判据改按产品口径走：不合规且人工修不了的才拦（残留导入体、钣金误识别、零造型特征），
+    // "识别得不完美但特征完备"一律放行，因为那种问题人工可以改。详见 DescribeSemanticMismatch。
 
     /// <summary>
     /// COM 服务器已死的 HRESULT。实测事故：FeatureWorks 在批次中途故障后，
@@ -263,10 +261,8 @@ internal sealed class FeatureRecognizer : IDisposable
 
             TryRun(() => _ = _interop.SetPerformanceOptions(_featureWorks!, 0));
 
-            // 识别前的几何基准。FeatureWorks 的 CreateFeatures 会用识别出的特征**重建实体**——
-            // 只认出一部分特征时，重建结果可能只剩基体（一个方块），而 CreateFeatures 照样返回 true。
-            // 这条管线此前从不校验几何，方块会被当成正常产物存盘。
-            var baselineGeometry = _interop.MeasureSolidGeometry(model);
+            // V4.3.5：这里原本要量一次识别前的几何基准，用来在识别后比对体积。该守卫已按
+            // 产品口径整条移除——见 DescribeSemanticMismatch 的说明。
 
             step = "RecognizeFeatureAutomatic";
             var recognition = RunRecognitionAttempts(
@@ -330,13 +326,6 @@ internal sealed class FeatureRecognizer : IDisposable
                     stopwatch,
                     statuses,
                     "CreateFeatures 返回 false。");
-            }
-
-            step = "VerifyGeometry";
-            var mismatch = DescribeGeometryMismatch(baselineGeometry, _interop.MeasureSolidGeometry(model));
-            if (mismatch is not null)
-            {
-                return Degraded(recognized, true, stopwatch, statuses, mismatch) with { GeometryChanged = true };
             }
 
             step = "VerifyFeatureTree";
@@ -660,33 +649,6 @@ internal sealed class FeatureRecognizer : IDisposable
     };
 
     /// <summary>
-    /// 比对识别前后的实体几何。返回 null 表示一致；否则返回可直接进报告的原因。
-    ///
-    /// 量不到就判为不一致：识别把实体重建了，此时读不出几何本身就是异常信号，
-    /// 绝不能因为"读不到"而默认放行。
-    /// </summary>
-    internal static string? DescribeGeometryMismatch(
-        (double Volume, int FaceCount)? before,
-        (double Volume, int FaceCount)? after)
-    {
-        if (before is not { } baseline)
-            return null;   // 识别前就量不到，说明这条管线本来就没有可比基准，不由本判据兜底。
-        if (after is not { } result)
-            return "特征识别后无法读出实体几何，已降级为哑实体。";
-        if (baseline.Volume <= 0)
-            return null;
-
-        var deviation = Math.Abs(result.Volume - baseline.Volume) / baseline.Volume;
-        if (deviation > MaximumFeatureWorksVolumeRelativeDeviation)
-        {
-            return $"特征识别改变了零件几何：体积 {baseline.Volume:G6} → {result.Volume:G6}"
-                + $"（相对偏差 {deviation:G3}），面数 {baseline.FaceCount} → {result.FaceCount}；已降级为哑实体。";
-        }
-
-        return null;
-    }
-
-    /// <summary>
     /// 结果特征树里真正建成的造型特征数——不含草图、基准、文件夹和未识别的导入体。
     /// 它回答的是"这次识别到底给零件添了多少东西"。
     /// </summary>
@@ -707,18 +669,18 @@ internal sealed class FeatureRecognizer : IDisposable
     /// <summary>
     /// 语义守卫：什么样的识别结果必须整体丢弃。
     ///
-    /// 2026-08-12 真机实测（BJ10B-04消解底壳，激活会话）：FeatureWorks 识别 30 项、
-    /// 全部建成——16 个旋转、6 个孔向导、5 个圆角、3 个切除拉伸——只因为有一块几何
-    /// 没被认出、树里残留一个 <c>Imported1</c>，旧判据就把**整棵树**判为语义错误丢掉，
-    /// 用户拿到的是哑实体。这是本守卫在扔掉好结果，不是在拦坏结果。
+    /// 判据按产品口径定，不按"识别得像不像手工结果"定（DEC-022）：
     ///
-    /// 现在分三级：
-    ///   · 钣金误识别 / 报成功却读不出树 / 报成功却一个造型特征都没建 → 丢弃；
-    ///   · 建成了造型特征、只是残留导入体 → **部分识别**，保留，由调用方如实报数；
-    ///   · 干净全认 → 保留。
+    ///   · **残留导入体 → 丢弃**。带导入体的零件不合规，而且**人工也修不回来**——
+    ///     没有特征可编辑，只能整件重做。这种产物交出去只会浪费下游的时间，
+    ///     不如老实退回哑实体，让用户知道这一件要单独处理。
+    ///   · **识别得不完美但特征完备 → 放行**。特征类型认错、尺寸标注不理想这类问题
+    ///     **人工可以改**，拦下来反而剥夺了用户手动修正的机会。
+    ///   · 钣金误识别、报成功却读不出树、报成功却零造型特征 → 丢弃（同样是人工修不了的形态）。
     ///
-    /// "残留导入体 + 零造型特征"仍必须丢弃：那是 FeatureWorks 报了成功却什么都没做，
-    /// 存下来只是个被动过一轮的哑实体，不如源文件干净。
+    /// 几何守卫（识别前后比对体积与面数）已按同一口径整条移除：体积偏差属于"识别得不完美"，
+    /// 不属于"不合规"。实测 BJ10B-05 偏差 2.28e-4 被旧阈值拦回哑实体，而它的 24 项特征树
+    /// 完整且无残留导入体，正是应当交付的形态。
     /// </summary>
     internal static string? DescribeSemanticMismatch(
         int recognized,
@@ -737,14 +699,18 @@ internal sealed class FeatureRecognizer : IDisposable
         if (features.Count == 0)
             return "FeatureWorks 报告识别成功，但无法读取结果特征树；已降级为哑实体。";
 
-        if (CountBuiltSolidFeatures(features) == 0)
+        var imported = features.FirstOrDefault(feature => IsImportedBodyFeature(feature.TypeName));
+        if (!string.IsNullOrWhiteSpace(imported.TypeName))
         {
-            var imported = features.FirstOrDefault(feature => IsImportedBodyFeature(feature.TypeName));
-            return string.IsNullOrWhiteSpace(imported.TypeName)
-                ? "FeatureWorks 报告识别成功，但特征树里没有任何造型特征；已降级为哑实体。"
-                : $"FeatureWorks 报告识别成功，但一个造型特征都没建出来，树里仍只有导入体："
-                    + $"{imported.Name} [{imported.TypeName}]；已降级为哑实体。";
+            var built = CountBuiltSolidFeatures(features);
+            var residual = CountResidualImportedBodies(features);
+            return $"识别结果仍残留 {residual} 处未识别导入体（首个：{imported.Name} [{imported.TypeName}]），"
+                + $"已建成 {built} 个造型特征。带导入体的零件不合规且无法人工修复，"
+                + "已整体丢弃并降级为哑实体，请单独处理该零件。";
         }
+
+        if (CountBuiltSolidFeatures(features) == 0)
+            return "FeatureWorks 报告识别成功，但特征树里没有任何造型特征；已降级为哑实体。";
 
         return null;
     }

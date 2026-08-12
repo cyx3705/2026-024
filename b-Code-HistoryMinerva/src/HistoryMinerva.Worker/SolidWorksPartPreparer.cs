@@ -364,10 +364,15 @@ internal static class SolidWorksPartPreparer
 
     private static string DescribeFallback(FeatureOutcome outcome)
     {
-        if (outcome.GeometryChanged)
-            return "特征识别改变了零件几何，已丢弃并回退为源零件副本。";
+        // 语义错误有好几种成因（残留导入体、钣金误识别、零造型特征），
+        // 具体是哪一种由 DescribeSemanticMismatch 写进 Diagnostic，这里不再另编一句
+        // 笼统的"结果类型错误"——现场就因此把"残留导入体"报成了"类型错误"。
         if (outcome.SemanticMismatch)
-            return "特征识别结果类型错误，已丢弃并回退为源零件副本。";
+        {
+            return string.IsNullOrWhiteSpace(outcome.Diagnostic)
+                ? "特征识别结果不可交付，已丢弃并回退为源零件副本。"
+                : outcome.Diagnostic;
+        }
         var reason = string.IsNullOrWhiteSpace(outcome.Diagnostic) ? string.Empty : $"（{outcome.Diagnostic}）";
         return $"未识别到可用特征，产物为源零件副本。{reason}";
     }
