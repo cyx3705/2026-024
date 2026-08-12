@@ -47,6 +47,8 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private MateOutcome? _mateOutcome;
     private string? _sourceHashAfterProbe;
     private IProgress<string>? _operationProgress;
+    private bool _lastOperationSucceeded;
+    private bool _lastOperationCanceled;
     private bool _disposed;
 
     public ObservableCollection<AssemblyTreeNode> AssemblyTree { get; } = [];
@@ -120,6 +122,9 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         get => _warningSummary;
         private set => SetField(ref _warningSummary, value);
     }
+
+    internal bool LastOperationSucceeded => _lastOperationSucceeded;
+    internal bool LastOperationCanceled => _lastOperationCanceled;
 
     public bool IsBusy
     {
@@ -395,7 +400,18 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             _dispatchOperation = null;
         }
 
-        activeOperation?.GetAwaiter().GetResult();
+        try
+        {
+            activeOperation?.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+            // Disposal owns cancellation; do not surface it as a shutdown failure.
+        }
+        catch (Exception)
+        {
+            // The command path already observed and reported the operation failure.
+        }
         AssemblyTree.Clear();
         Parts.Clear();
     }
@@ -418,6 +434,8 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
 
         IsProbing = isProbe;
         IsBusy = true;
+        _lastOperationSucceeded = false;
+        _lastOperationCanceled = false;
         OnPropertyChanged(nameof(CanCancel));
         OnPropertyChanged(nameof(OperationText));
         _ = RunOperationAndCompleteAsync(operation, cancellation, completion);
@@ -429,16 +447,21 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         CancellationTokenSource cancellation,
         TaskCompletionSource completion)
     {
+        Exception? failure = null;
+        var canceled = false;
         try
         {
             await operation(cancellation.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+            canceled = true;
+            _lastOperationCanceled = true;
             QueueUiUpdate(() => StatusText = "操作已取消");
         }
         catch (Exception ex)
         {
+            failure = ex;
             QueueUiUpdate(() => StatusText = ex.Message);
         }
         finally
@@ -462,7 +485,12 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
                     _operationCancellation = null;
             }
             cancellation.Dispose();
-            completion.TrySetResult();
+            if (canceled)
+                completion.TrySetCanceled();
+            else if (failure is not null)
+                completion.TrySetException(failure);
+            else
+                completion.TrySetResult();
         }
     }
 
@@ -493,6 +521,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
                 result, customXtDirectory: null, customSolidWorksDirectory: null, sourceFormat);
             var sourceHash = ComputeSha256(result.SourceAssemblyPath);
             QueueUiUpdate(() => ApplyProbeResult(result, plan, sourceHash));
+            _lastOperationSucceeded = true;
         }
         finally
         {
@@ -578,6 +607,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             AppendMateDiagnostics();
             OnPropertyChanged(nameof(CanConvert));
         });
+        _lastOperationSucceeded = exitCode == 0 && File.Exists(plan.AssemblyOutputPath);
     }
 
     private async Task ConvertPartsCoreAsync(CancellationToken cancellationToken)
@@ -623,6 +653,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             request,
             ReportWorkerEvent,
             cancellationToken).ConfigureAwait(false);
+        _lastOperationSucceeded = exitCode == 0;
         QueueUiUpdate(() => StatusText = exitCode == 0 ? "零件转换完成" : "零件转换结束，存在失败项");
     }
 

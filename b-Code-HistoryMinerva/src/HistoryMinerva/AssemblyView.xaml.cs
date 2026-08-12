@@ -81,19 +81,7 @@ public partial class AssemblyView : UserControl, IDisposable
         if (dialog.ShowDialog(Window.GetWindow(this)) != true)
             return;
 
-        try
-        {
-            _viewModel.SetPartDirectory(dialog.FolderName);
-        }
-        catch (Exception exception)
-        {
-            MessageBox.Show(
-                Window.GetWindow(this),
-                exception.Message,
-                "Mapping",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        }
+        _viewModel.SetPartDirectory(dialog.FolderName);
     }
 
     private async void OnConvertClick(object sender, RoutedEventArgs e)

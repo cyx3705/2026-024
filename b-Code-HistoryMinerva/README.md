@@ -2,7 +2,7 @@
 
 > 对外模块：`HistoryMinerva` / `historyminerva`
 >
-> 当前源码、候选与正式 `z-HistoryMinerva` 版本：`4.3.1`
+> 当前源码、候选与正式 `z-HistoryMinerva` 快照版本：`4.3.2`
 >
 > 最新正式清单：`../z-HistoryMinerva/module.manifest.json`
 
@@ -18,7 +18,7 @@ src/HistoryMinerva            前端：WPF 停靠页（原 Mapping 页）、模�
 src/HistoryMinerva.Contracts  后端协议：HistoryMinerva 转换协议 + SWuse 构建协议
 src/HistoryMinerva.Api        用户建模 API（原 SWuse.Api，供 Worker 编译的用户代码引用）
 src/HistoryMinerva.Worker     单一 x64 STA 工作进程：入口按参数形态路由 HistoryMinerva/SWuse 两条协议
-build/                        唯一版本源（HistoryMinervaVersion）与 HistoryVulcan 3.4.0 钉定快照
+build/                        唯一版本源（HistoryMinervaVersion）与 HistoryVulcan 3.9.0 最低兼容版本
 eng/                          清单同步、正式包和Z 快照部署脚本
 ```
 
@@ -39,5 +39,5 @@ dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.Smoke\Hi
 `2026-019-HistoryDiana/b-Code/Publish-OneHistoryModule.ps1 -Module HistoryMinerva` 负责。
 （双槽安装并退役 Mapping、SWuse 与历史转换模块槽）。只读命令域为 `historyminerva`。
 
-测试、UI Smoke、COM 探针与真实 CAD 门禁由独立的
+测试、UI Smoke 与四个真实 CAD 端到端门禁由独立的
 [`b-Code-HistoryMinerva-Tests`](../b-Code-HistoryMinerva-Tests/README.md) 维护。

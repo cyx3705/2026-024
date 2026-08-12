@@ -1,6 +1,6 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva `4.3.1` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
+本文件是 HistoryMinerva `4.3.2` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
 SolidWorks 自整备管线与 `minerva.*` 命令面均已正式生效。
 构建与部署验收命令见 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用。
 
@@ -15,7 +15,7 @@ SolidWorks 自整备管线与 `minerva.*` 命令面均已正式生效。
 | 停靠页标题 | `Minerva` |
 | 窗口内部标识 / 日志类别 | `historyminerva` |
 | Worker 可执行文件 | `HistoryMinerva.Worker.exe` |
-| HistoryVulcan 宿主基线 | `3.5.0` 正式快照 |
+| HistoryVulcan 宿主基线 | `3.9.0` 正式快照 |
 
 ## HistoryVulcan 命令面
 

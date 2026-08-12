@@ -83,6 +83,18 @@ foreach ($required in @($projectManifestPath, $agentsPath, $versionPropsPath, $s
     }
 }
 
+$cadToolRoot = Join-Path $testRoot 'tools'
+$expectedCadTools = @(
+    'AssemblyProductionGate'
+    'FeatureWorksBatchSmoke'
+    'SolidWorksSelfPipelineGate'
+    'SWuse.CadGate'
+)
+$actualCadTools = @(Get-ChildItem -LiteralPath $cadToolRoot -Directory |
+    Where-Object { Get-ChildItem -LiteralPath $_.FullName -File -Filter '*.csproj' } |
+    ForEach-Object Name)
+Assert-SameSet 'Retained CAD gate directories' $expectedCadTools $actualCadTools
+
 [xml]$versionProps = [IO.File]::ReadAllText($versionPropsPath)
 $sourceVersion = Read-XmlProperty $versionProps 'HistoryMinervaVersion'
 # 宿主兼容性按下限判定，不再钉精确版本或构建哈希——见 Build-HistoryMinervaPackage.ps1 的说明。
@@ -100,10 +112,8 @@ if ([string]$projectManifest.project.version -ne $sourceVersion) {
 if ([string]$projectManifest.project.branch -ne '2026-024-HistoryMinerva') {
     Add-Violation 'project.manifest.json branch must be 2026-024-HistoryMinerva'
 }
-if ([string]$projectManifest.historyVulcanHost.version -ne $requiredVulcan -or
-    [string]$projectManifest.historyVulcanHost.manifestSha256 -ne $requiredManifestHash -or
-    [string]$projectManifest.historyVulcanHost.coreSha256 -ne $requiredCoreHash) {
-    Add-Violation 'project.manifest.json HistoryVulcan projection differs from HistoryMinerva.Version.props'
+if ([version][string]$projectManifest.historyVulcanHost.version -lt [version]$requiredVulcan) {
+    Add-Violation 'project.manifest.json HistoryVulcan projection is below the required minimum'
 }
 if ([string]$projectManifest.commands.verify -notmatch 'Test-QualityGate\.ps1') {
     Add-Violation 'project.manifest.json commands.verify must invoke Test-QualityGate.ps1'
@@ -153,6 +163,10 @@ $backendCommands = @(
         Sort-Object -Unique
 )
 $uiSource = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva\HistoryMinervaUiModule.cs'))
+$assemblyViewCode = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva\AssemblyView.xaml.cs'))
+$assemblyViewXaml = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva\AssemblyView.xaml'))
+$viewModelSource = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva\AssemblyViewModel.cs'))
+$commandHandlerSource = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva\ConversionCommandHandlers.cs'))
 $uiCommands = @(
     [regex]::Matches($uiSource, 'CommandRoot\s*\+\s*"(?<suffix>\.conversion\.[a-z][a-z0-9]*)"') |
         ForEach-Object { $commandRoot + $_.Groups['suffix'].Value } |
@@ -166,6 +180,17 @@ $apiCommands = @(
 )
 if ($backendCommands.Count -ne 5 -or $uiCommands.Count -ne 3) {
     Add-Violation "Expected 5 backend and 3 frontend commands; found $($backendCommands.Count) and $($uiCommands.Count)"
+}
+if ($assemblyViewCode -match 'MessageBox\.Show' -or
+    $assemblyViewXaml -match '\{Binding\s+(StatusText|WarningSummary)\}') {
+    Add-Violation 'Minerva page must route prompts through CommandBus/console, not MessageBox or global status bindings'
+}
+if ($uiSource -match '_context\?\.Log\.Info\([^\r\n]*StatusText' -or
+    $viewModelSource -notmatch 'completion\.TrySetException\(failure\)') {
+    Add-Violation 'Minerva command handlers must not duplicate result logs or swallow operation failures'
+}
+if ($commandHandlerSource -notmatch 'CommandResult\.Fail\("Minerva .*已取消') {
+    Add-Violation 'Minerva command handlers must expose cancellation through CommandResult.Fail'
 }
 Assert-SameSet 'Module API command catalog' $sourceCommands $apiCommands
 if (@([regex]::Matches($uiSource, 'RegisterToolWindow\(')).Count -ne 1 -or
@@ -214,7 +239,8 @@ else {
     }
     $formalSnapshot = [IO.File]::ReadAllText((Join-Path $formalRoot 'historyvulcan.snapshot.json')) | ConvertFrom-Json
     if ([string]$formalSnapshot.moduleVersion -ne [string]$formalManifest.version -or
-        [string]$formalSnapshot.historyVulcanVersion -notmatch '^\d+\.\d+\.\d+$') {
+        ($null -ne $formalSnapshot.historyVulcanVersion -and
+         [string]$formalSnapshot.historyVulcanVersion -notmatch '^\d+\.\d+\.\d+$')) {
         Add-Violation 'z-HistoryMinerva snapshot metadata is invalid or differs from its own manifest'
     }
 }
@@ -229,18 +255,13 @@ if (-not (Test-Path -LiteralPath $vulcanManifestPath -PathType Leaf) -or
 }
 else {
     $vulcanManifest = [IO.File]::ReadAllText($vulcanManifestPath) | ConvertFrom-Json
-    if ([string]$vulcanManifest.product -ne 'HistoryVulcan' -or [string]$vulcanManifest.version -ne $requiredVulcan) {
+    if ([string]$vulcanManifest.product -ne 'HistoryVulcan' -or
+        [version][string]$vulcanManifest.version -lt [version]$requiredVulcan) {
         Add-Violation "HistoryVulcan identity/version mismatch: $($vulcanManifest.product) $($vulcanManifest.version)"
     }
-    if ((Get-FileHash -LiteralPath $vulcanManifestPath -Algorithm SHA256).Hash -ne $requiredManifestHash) {
-        Add-Violation 'HistoryVulcan manifest SHA256 differs from the pinned value'
-    }
-    if ((Get-FileHash -LiteralPath $vulcanCorePath -Algorithm SHA256).Hash -ne $requiredCoreHash) {
-        Add-Violation 'HistoryVulcan.Core SHA256 differs from the pinned value'
-    }
     $coreIdentity = [Reflection.AssemblyName]::GetAssemblyName($vulcanCorePath)
-    if ($coreIdentity.Version.ToString() -ne "$requiredVulcan.0") {
-        Add-Violation "HistoryVulcan.Core identity $($coreIdentity.Version) != $requiredVulcan.0"
+    if ($coreIdentity.Version -lt [version]"$requiredVulcan.0") {
+        Add-Violation "HistoryVulcan.Core identity $($coreIdentity.Version) is older than required minimum $requiredVulcan.0"
     }
 }
 
@@ -251,4 +272,4 @@ if ($violations.Count -gt 0) {
     exit 1
 }
 
-Write-Host ("Quality gate passed: contract; suppressions 0; production hotspots {0}; version {1}; commands {2}; formal snapshot SHA; HistoryVulcan {3} pinned." -f $hotspots.Count, $sourceVersion, $sourceCommands.Count, $requiredVulcan)
+Write-Host ("Quality gate passed: contract; suppressions 0; production hotspots {0}; version {1}; commands {2}; formal snapshot SHA; HistoryVulcan minimum {3}." -f $hotspots.Count, $sourceVersion, $sourceCommands.Count, $requiredVulcan)

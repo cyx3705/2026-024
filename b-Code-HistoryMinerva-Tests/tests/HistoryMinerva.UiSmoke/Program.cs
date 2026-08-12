@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.IO;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using HistoryMinerva;
 
@@ -140,8 +141,9 @@ internal static class Program
                 throw new InvalidOperationException("转换选项必须保留四项配置。");
             var optionsLabel = FindVisualChildren<TextBlock>(optionsList).Single(textBlock =>
                 string.Equals(textBlock.Name, "OptionsLabelText", StringComparison.Ordinal));
-            var statusText = FindVisualChildren<TextBlock>(optionsActionBar).Single(textBlock =>
-                string.Equals(textBlock.Name, "StatusText", StringComparison.Ordinal));
+            if (FindVisualChildren<TextBlock>(optionsActionBar).Any(textBlock =>
+                    string.Equals(textBlock.Name, "StatusText", StringComparison.Ordinal)))
+                throw new InvalidOperationException("操作结果必须显示在 Vulcan 控制台，页面不得保留状态栏。");
             var convertButton = FindVisualChildren<Button>(optionsActionBar).Single(button =>
                 string.Equals(button.Name, "ConvertButton", StringComparison.Ordinal));
             if (workspace.ActualWidth >= 900)
@@ -149,7 +151,7 @@ internal static class Program
                 var actionItems = new FrameworkElement[]
                 {
                     optionsLabel, optionBoxes[0], optionBoxes[1], optionBoxes[2], optionBoxes[3],
-                    statusText, convertButton,
+                    convertButton,
                 };
                 var firstActionPosition = actionItems[0].TranslatePoint(new Point(0, 0), workspace);
                 var firstActionCenter = firstActionPosition.Y + actionItems[0].ActualHeight / 2;
@@ -158,14 +160,14 @@ internal static class Program
                     var position = item.TranslatePoint(new Point(0, 0), workspace);
                     return Math.Abs(position.Y + item.ActualHeight / 2 - firstActionCenter) > 1;
                 }))
-                    throw new InvalidOperationException("宽窗口下转换选项、状态与按钮必须横向排列。");
+                    throw new InvalidOperationException("宽窗口下转换选项与按钮必须横向排列。");
             }
             else
             {
                 foreach (var item in new FrameworkElement[]
                 {
                     optionsLabel, optionBoxes[0], optionBoxes[1], optionBoxes[2], optionBoxes[3],
-                    statusText, convertButton,
+                    convertButton,
                 })
                 {
                     var position = item.TranslatePoint(new Point(0, 0), workspace);
@@ -234,6 +236,16 @@ internal static class Program
 
     private static string LocateRepoFile(string relativePath)
     {
+        var repositoryRoot = Assembly.GetEntryAssembly()!
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .SingleOrDefault(attribute => attribute.Key == "HistoryMinervaRepositoryRoot")?.Value;
+        if (!string.IsNullOrWhiteSpace(repositoryRoot))
+        {
+            var declared = Path.GetFullPath(Path.Combine(repositoryRoot, relativePath));
+            if (File.Exists(declared))
+                return declared;
+        }
+
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
             var candidate = Path.Combine(directory.FullName, relativePath);

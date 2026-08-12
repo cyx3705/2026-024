@@ -11,14 +11,12 @@
     "title": "HistoryMinerva CAD 模块（Mapping 前端 + 合并 Worker 后端）",
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active",
-    "version": "4.3.1",
+    "version": "4.3.2",
     "branch": "2026-024-HistoryMinerva"
   },
   "historyVulcanHost": {
     "packageRoot": "../2026-023-HistoryVulcan/z-HistoryVulcan",
-    "version": "3.5.0",
-    "manifestSha256": "278D81B8FED646434B9F57D1A1AB9EE1DFC0660BCC25255B66B74DE9F6ED1F4F",
-    "coreSha256": "91F1739FA1014980AB5969297DBB1C27EFA2BF5E6DA605FE59529F1967C1BD50"
+    "version": "3.9.0"
   },
   "paths": {
     "activeRoots": [
@@ -61,7 +59,7 @@
   },
   "externalDependencies": [
     ".NET 8 SDK and Windows Desktop Runtime",
-    "HistoryVulcan.Core 3.5.0 host snapshot (manifest SHA256 278D81B8FED646434B9F57D1A1AB9EE1DFC0660BCC25255B66B74DE9F6ED1F4F)",
+    "HistoryVulcan.Core 3.9.0 or newer host snapshot (minimum compatible host version)",
     "Solid Edge 2020 COM automation",
     "SolidWorks 2025 SP5 COM automation",
     "SolidWorks FeatureWorks"

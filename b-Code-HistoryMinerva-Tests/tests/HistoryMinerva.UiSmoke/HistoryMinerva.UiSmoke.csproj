@@ -8,6 +8,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <AssemblyMetadata Include="HistoryMinervaRepositoryRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..'))" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\..\b-Code-HistoryMinerva\src\HistoryMinerva\HistoryMinerva.csproj" />
     <Reference Include="HistoryVulcan.Core">
       <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HintPath>
@@ -30,4 +33,15 @@
       <Private>true</Private>
     </Reference>
   </ItemGroup>
+  <Target Name="RefreshHistoryVulcanUiTestRuntime" AfterTargets="Build">
+    <ItemGroup>
+      <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll" />
+      <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll" />
+      <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Shell.dll" />
+      <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Extensibility.dll" />
+      <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\AvalonDock.dll" />
+      <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\AvalonDock.Themes.VS2013.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(HistoryVulcanUiTestRuntime)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="false" />
+  </Target>
 </Project>

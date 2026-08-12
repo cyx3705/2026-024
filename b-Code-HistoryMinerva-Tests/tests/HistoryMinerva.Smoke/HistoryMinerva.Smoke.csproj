@@ -18,6 +18,10 @@
       <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <Reference Include="HistoryVulcan.Extensibility">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Extensibility.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
   <PropertyGroup>
     <HistoryMinervaModuleRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..\b-Code-HistoryMinerva'))</HistoryMinervaModuleRoot>
@@ -25,5 +29,14 @@
   </PropertyGroup>
   <ItemGroup>
     <AssemblyMetadata Include="HistoryMinervaWorkerPath" Value="$(HistoryMinervaWorkerPath)" />
+    <AssemblyMetadata Include="HistoryMinervaRepositoryRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..'))" />
   </ItemGroup>
+  <Target Name="RefreshHistoryVulcanTestRuntime" AfterTargets="Build">
+    <ItemGroup>
+      <HistoryVulcanTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll" />
+      <HistoryVulcanTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll" />
+      <HistoryVulcanTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Extensibility.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(HistoryVulcanTestRuntime)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="false" />
+  </Target>
 </Project>

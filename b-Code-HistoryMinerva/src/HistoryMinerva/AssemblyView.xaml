@@ -242,7 +242,6 @@
               Grid.Row="2"
               Margin="{DynamicResource Shell.Space.PadTight}">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
@@ -272,15 +271,8 @@
                           IsEnabled="{Binding CanRebuildMates}"
                           ToolTip="{Binding RebuildMatesHint}" />
             </WrapPanel>
-            <TextBlock x:Name="StatusText"
-                       Grid.Column="1"
-                       Style="{DynamicResource Shell.Text.Body}"
-                       Margin="{DynamicResource Shell.Space.ControlPad}"
-                       Text="{Binding StatusText}"
-                       TextTrimming="CharacterEllipsis"
-                       VerticalAlignment="Center" />
             <Button x:Name="ConvertButton"
-                    Grid.Column="2"
+                    Grid.Column="1"
                     MinWidth="128"
                     MinHeight="{DynamicResource Shell.Size.Control}"
                     Margin="{DynamicResource Shell.Space.Gap}"

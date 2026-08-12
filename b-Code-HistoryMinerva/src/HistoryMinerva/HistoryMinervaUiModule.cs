@@ -96,33 +96,26 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
         _workspace = null;
     }
 
-    private async Task<CommandResult> ProbeCurrentAsync(CommandContext command)
+    private Task<CommandResult> ProbeCurrentAsync(CommandContext command)
     {
         var viewModel = _workspace?.UnifiedPage.ViewModel;
         if (viewModel is null)
-            return CommandResult.Fail("Minerva 页面尚未创建。");
+            return Task.FromResult(CommandResult.Fail("Minerva 页面尚未创建。"));
         if (!viewModel.CanProbe)
-            return CommandResult.Fail(viewModel.StatusText);
+            return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
 
-        command.Progress?.Report(viewModel.OperationText);
-        await viewModel.ProbeAsync(command.Progress);
-        _context?.Log.Info(HistoryMinervaIdentity.WindowId, viewModel.StatusText);
-        return CommandResult.Ok(viewModel.StatusText);
+        return ConversionCommandHandlers.ProbeAsync(viewModel, command);
     }
 
-    private async Task<CommandResult> ConvertCurrentAsync(CommandContext command)
+    private Task<CommandResult> ConvertCurrentAsync(CommandContext command)
     {
         var viewModel = _workspace?.UnifiedPage.ViewModel;
         if (viewModel is null)
-            return CommandResult.Fail("Minerva 页面尚未创建。");
+            return Task.FromResult(CommandResult.Fail("Minerva 页面尚未创建。"));
         if (!viewModel.CanConvert)
-            return CommandResult.Fail(viewModel.StatusText);
+            return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
 
-        _context?.Log.Info(HistoryMinervaIdentity.WindowId, $"开始执行 {viewModel.SelectedMappingContent.DisplayName}");
-        command.Progress?.Report(viewModel.OperationText);
-        await viewModel.ConvertAsync(command.Progress);
-        _context?.Log.Info(HistoryMinervaIdentity.WindowId, viewModel.StatusText);
-        return CommandResult.Ok(viewModel.StatusText);
+        return ConversionCommandHandlers.ConvertAsync(viewModel, command);
     }
 
     private CommandResult CancelCurrent(CommandContext _)

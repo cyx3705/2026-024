@@ -5,7 +5,7 @@ namespace HistoryMinerva.Worker;
 /// <summary>
 /// 把一个 SolidWorks 组件的面收集成 <see cref="MateCandidate"/>。
 ///
-/// 两条全部由 <c>tools/MateMatchProbe</c> 实测确定、不能凭直觉写反的规矩：
+/// 两条由真机样件实测确定、不能凭直觉写反的规矩：
 ///
 /// 1. **曲面参数在零件坐标系**，必须乘组件的总变换才能和关系几何对上。
 ///    按装配系解释时实测只有 24/53 命中，按零件系是 53/53。

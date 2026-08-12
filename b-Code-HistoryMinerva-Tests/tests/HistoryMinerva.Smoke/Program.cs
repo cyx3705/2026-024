@@ -12,6 +12,7 @@ using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
 using HistoryVulcan.Core.Storage;
 using HistoryVulcan.Core.Mcp;
+using HistoryVulcan.Extensibility.Mcp;
 using HistoryVulcan.Services.Modules;
 using System.Text.Json;
 using System.Windows.Threading;
@@ -37,6 +38,7 @@ try
     TestExternalLegacyAndDirectoryCreation(root);
     TestCustomOutputDirectories(root);
     TestSingleShotCancellation(root);
+    TestConversionCommandBusOutcomes(root);
     TestDuplicateOutputRejection(root);
     TestAssemblyPlanningAndJson(root);
     TestAssemblyLegacyReuse(root);
@@ -366,6 +368,16 @@ static string ReadVersionFromSourceManifest()
 
 static string LocateRepoFile(string relative)
 {
+    var repositoryRoot = Assembly.GetEntryAssembly()!
+        .GetCustomAttributes<AssemblyMetadataAttribute>()
+        .SingleOrDefault(attribute => attribute.Key == "HistoryMinervaRepositoryRoot")?.Value;
+    if (!string.IsNullOrWhiteSpace(repositoryRoot))
+    {
+        var declared = Path.GetFullPath(Path.Combine(repositoryRoot, relative));
+        if (File.Exists(declared))
+            return declared;
+    }
+
     var directory = AppContext.BaseDirectory;
     for (var depth = 0; depth < 10 && directory is not null; depth++)
     {
@@ -579,9 +591,115 @@ static void TestSingleShotCancellation(string root)
     True(started.Wait(TimeSpan.FromSeconds(3)), "取消 Smoke 的探查任务必须启动");
     True(viewModel.CanCancel && viewModel.Cancel(), "运行期间第一次取消必须生效");
     True(!viewModel.CanCancel && !viewModel.Cancel(), "重复取消不得创建第二个取消流程");
-    run.GetAwaiter().GetResult();
+    Throws<OperationCanceledException>(() => run.GetAwaiter().GetResult());
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(!viewModel.IsBusy && !viewModel.CanCancel, "取消完成后必须隐藏运行态并恢复编辑");
+}
+
+static void TestConversionCommandBusOutcomes(string root)
+{
+    var viewSource = File.ReadAllText(LocateRepoFile(
+        Path.Combine("b-Code-HistoryMinerva", "src", "HistoryMinerva", "AssemblyView.xaml")));
+    var viewCode = File.ReadAllText(LocateRepoFile(
+        Path.Combine("b-Code-HistoryMinerva", "src", "HistoryMinerva", "AssemblyView.xaml.cs")));
+    True(!viewSource.Contains("{Binding StatusText}", StringComparison.Ordinal)
+         && !viewSource.Contains("{Binding WarningSummary}", StringComparison.Ordinal),
+        "Minerva 页面不得显示全局操作提示，结果必须进入 Vulcan 控制台");
+    True(!viewCode.Contains("MessageBox.Show", StringComparison.Ordinal),
+        "Minerva 页面不得绕过命令总线弹出 MessageBox");
+
+    var sourceDirectory = Path.Combine(root, "command-bus-outcomes");
+    Directory.CreateDirectory(sourceDirectory);
+    var sourceAssembly = Path.Combine(sourceDirectory, "Top.asm");
+    File.WriteAllText(sourceAssembly, "asm");
+
+    using (var invalidViewModel = CreateViewModel(
+               static (_, _, _) => throw new InvalidOperationException("不应启动 Worker")))
+    {
+        var (bus, log) = CreateProbeBus(invalidViewModel);
+        var result = bus.ExecuteAsync("minerva.conversion.probe", "Smoke").GetAwaiter().GetResult();
+        True(!result.Success, "未选择来源的探查必须通过命令总线返回失败");
+        True(log.Entries.Any(entry =>
+                entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)
+                && entry.Level == ShellLogLevel.Error),
+            "未选择来源的失败必须进入 cmd:result:minerva:conversion");
+    }
+
+    using (var failedViewModel = CreateViewModel((request, progress, _) =>
+           {
+               progress(new WorkerEvent(
+                   request.BatchId,
+                   null,
+                   ConversionStage.AssemblyProbe,
+                   "总线进度样本"));
+               throw new InvalidOperationException("模拟 Worker 失败");
+           }))
+    {
+        failedViewModel.SetAssemblySource(sourceAssembly);
+        var (bus, log) = CreateProbeBus(failedViewModel);
+        var result = bus.ExecuteAsync("minerva.conversion.probe", "Smoke").GetAwaiter().GetResult();
+        True(!result.Success && result.Message.Contains("模拟 Worker 失败", StringComparison.Ordinal),
+            "Worker 异常不得被吞成成功结果");
+        True(SpinWait.SpinUntil(
+                () => log.Entries.Any(entry =>
+                    entry.Category.Equals("cmd:progress:minerva:conversion", StringComparison.OrdinalIgnoreCase)
+                    && entry.Message.Contains("总线进度样本", StringComparison.Ordinal)),
+                TimeSpan.FromSeconds(3)),
+            "Worker 进度必须进入 cmd:progress:minerva:conversion");
+        True(log.Entries.Any(entry =>
+                entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)
+                && entry.Level == ShellLogLevel.Error
+                && entry.Message.Contains("模拟 Worker 失败", StringComparison.Ordinal)),
+            "Worker 异常必须作为失败结果进入 Vulcan 控制台");
+    }
+
+    var started = new ManualResetEventSlim();
+    using (var canceledViewModel = CreateViewModel(async (_, _, cancellationToken) =>
+           {
+               started.Set();
+               await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+               throw new InvalidOperationException("不可达");
+           }))
+    {
+        canceledViewModel.SetAssemblySource(sourceAssembly);
+        var (bus, log) = CreateProbeBus(canceledViewModel);
+        var run = bus.ExecuteAsync("minerva.conversion.probe", "Smoke");
+        True(started.Wait(TimeSpan.FromSeconds(3)) && canceledViewModel.Cancel(),
+            "命令总线取消样本必须进入运行态并接受取消");
+        var result = run.GetAwaiter().GetResult();
+        True(!result.Success && result.Message.Contains("取消", StringComparison.Ordinal),
+            "取消必须通过命令总线返回明确失败结果");
+        True(log.Entries.Any(entry =>
+                entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)
+                && entry.Level == ShellLogLevel.Error
+                && entry.Message.Contains("取消", StringComparison.Ordinal)),
+            "取消结果必须进入 Vulcan 控制台");
+    }
+
+    static AssemblyViewModel CreateViewModel(
+        Func<AssemblyProbeRequest, Action<WorkerEvent>, CancellationToken, Task<AssemblyProbeResult>> probeWorker)
+        => new(
+            probeWorker,
+            static (_, _, _) => Task.FromResult(0),
+            static () => { },
+            Dispatcher.CurrentDispatcher);
+
+    static (CommandBus Bus, RecordingShellLog Log) CreateProbeBus(AssemblyViewModel viewModel)
+    {
+        var registry = new CommandRegistry();
+        registry.Register(new CommandDescriptor
+        {
+            Name = "minerva.conversion.probe",
+            CommandClass = "conversion",
+            Summary = "Smoke command-bus probe",
+            Readonly = true,
+            Handler = context => viewModel.CanProbe
+                ? ConversionCommandHandlers.ProbeAsync(viewModel, context)
+                : Task.FromResult(CommandResult.Fail(viewModel.StatusText)),
+        });
+        var log = new RecordingShellLog();
+        return (new CommandBus(registry, log), log);
+    }
 }
 
 /// <summary>
@@ -2265,7 +2383,8 @@ static void TestAssemblyActiveRunDisposal(string root)
     True(!dispose.IsCompleted, "装配 ViewModel Dispose 必须等待 Worker 收束");
     True(dispose.Wait(TimeSpan.FromSeconds(3)), "装配 ViewModel 必须在取消完成后释放");
     True(cancellationObserved && workerExited.IsSet, "装配生命周期必须传播取消并等待 Worker 退出");
-    True(run.IsCompletedSuccessfully, "Dispose 返回前装配操作任务必须完成");
+    True(run.IsCanceled, "Dispose 返回前装配操作任务必须完成并保留取消语义");
+    Throws<OperationCanceledException>(() => run.GetAwaiter().GetResult());
     Throws<ObjectDisposedException>(() => viewModel.ProbeAsync().GetAwaiter().GetResult());
 }
 

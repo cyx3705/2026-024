@@ -8,7 +8,7 @@ namespace HistoryMinerva.Worker;
 /// <see cref="AssemblyProbeResult"/>。同形是这一版的全部设计意图——只要读数形状一致，
 /// 计划器、拓扑排序、嵌套装配生成、配合重建就一行都不用改。
 ///
-/// 三条实测事实（2026-08-11，tools/SolidWorksAssemblyProbe 对 Module 样件）：
+/// 三条实测事实（2026-08-11，Module 样件）：
 ///
 ///   1. <c>GetComponents(true)</c> 的 <c>Transform2</c> 是**本文档坐标系**下的局部矩阵；
 ///      <c>GetComponents(false)</c> 的则一律相对当前顶层文档，即世界矩阵。

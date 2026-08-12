@@ -117,7 +117,7 @@ $snapshot = [ordered]@{
     schemaVersion = 1
     module = 'HistoryMinerva'
     moduleVersion = $moduleVersion
-    historyVulcanVersion = $expectedHostVersion
+    historyVulcanVersion = $actualHostVersion
     historyVulcanSource = '../2026-023-HistoryVulcan/z-HistoryVulcan'
 }
 $snapshotJson = $snapshot | ConvertTo-Json -Depth 4
@@ -179,5 +179,5 @@ foreach ($file in $hashTargets) {
 }
 
 Write-Host "HistoryMinerva $moduleVersion package created: $OutputRoot"
-Write-Host "HistoryVulcan $expectedHostVersion formal snapshot verified."
+Write-Host "HistoryVulcan $actualHostVersion candidate provenance recorded."
 Write-Host "Candidate file boundary and $($hashTargets.Count) SHA256 entries verified."
