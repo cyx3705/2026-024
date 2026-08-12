@@ -213,6 +213,8 @@ internal sealed class FeatureRecognizer : IDisposable
 
         var recognized = 0;
         var created = false;
+        var builtSolidFeatures = 0;
+        var residualImportedBodies = 0;
         var step = "开始";
 
         try
@@ -364,7 +366,12 @@ internal sealed class FeatureRecognizer : IDisposable
                 };
             }
 
-            statuses.Add($"FeatureWorks 创建 {recognized} 个特征。");
+            builtSolidFeatures = CountBuiltSolidFeatures(featureTree);
+            residualImportedBodies = CountResidualImportedBodies(featureTree);
+            statuses.Add(residualImportedBodies == 0
+                ? $"FeatureWorks 创建 {recognized} 个特征。"
+                : $"FeatureWorks 创建 {recognized} 个特征，建成造型特征 {builtSolidFeatures} 个；"
+                    + $"另有 {residualImportedBodies} 处几何未识别，以导入体保留。");
         }
         catch (OperationCanceledException)
         {
@@ -395,7 +402,14 @@ internal sealed class FeatureRecognizer : IDisposable
             fullyDefined,
             statuses,
             false,
-            stopwatch.ElapsedMilliseconds);
+            stopwatch.ElapsedMilliseconds,
+            // 部分识别要在诊断里说清楚，否则用户看到"识别 30 个特征"却发现零件里
+            // 还杵着一个导入体，会以为是产物出了问题。
+            Diagnostic: residualImportedBodies == 0
+                ? null
+                : $"部分识别：建成造型特征 {builtSolidFeatures} 个，另有 {residualImportedBodies} 处几何未识别，以导入体保留。",
+            BuiltSolidFeatureCount: builtSolidFeatures,
+            ResidualImportedBodyCount: residualImportedBodies);
     }
 
     private string? ActivateExpectedDocument(string documentTitle, CancellationToken cancellationToken)
@@ -672,6 +686,40 @@ internal sealed class FeatureRecognizer : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// 结果特征树里真正建成的造型特征数——不含草图、基准、文件夹和未识别的导入体。
+    /// 它回答的是"这次识别到底给零件添了多少东西"。
+    /// </summary>
+    internal static int CountBuiltSolidFeatures(IReadOnlyList<FeatureTreeEntry> features)
+        => features.Count(feature =>
+            !IsImportedBodyFeature(feature.TypeName)
+            && !feature.TypeName.Equals("ProfileFeature", StringComparison.OrdinalIgnoreCase)
+            && !feature.TypeName.Equals("RefPlane", StringComparison.OrdinalIgnoreCase)
+            && !feature.TypeName.Equals("RefSurface", StringComparison.OrdinalIgnoreCase)
+            && !feature.TypeName.Equals("OriginProfileFeature", StringComparison.OrdinalIgnoreCase)
+            && !feature.TypeName.EndsWith("Folder", StringComparison.OrdinalIgnoreCase)
+            && !feature.TypeName.Equals("DetailCabinet", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>残留的未识别导入体个数。大于 0 且确有造型特征时是"部分识别"，不是错误。</summary>
+    internal static int CountResidualImportedBodies(IReadOnlyList<FeatureTreeEntry> features)
+        => features.Count(feature => IsImportedBodyFeature(feature.TypeName));
+
+    /// <summary>
+    /// 语义守卫：什么样的识别结果必须整体丢弃。
+    ///
+    /// 2026-08-12 真机实测（BJ10B-04消解底壳，激活会话）：FeatureWorks 识别 30 项、
+    /// 全部建成——16 个旋转、6 个孔向导、5 个圆角、3 个切除拉伸——只因为有一块几何
+    /// 没被认出、树里残留一个 <c>Imported1</c>，旧判据就把**整棵树**判为语义错误丢掉，
+    /// 用户拿到的是哑实体。这是本守卫在扔掉好结果，不是在拦坏结果。
+    ///
+    /// 现在分三级：
+    ///   · 钣金误识别 / 报成功却读不出树 / 报成功却一个造型特征都没建 → 丢弃；
+    ///   · 建成了造型特征、只是残留导入体 → **部分识别**，保留，由调用方如实报数；
+    ///   · 干净全认 → 保留。
+    ///
+    /// "残留导入体 + 零造型特征"仍必须丢弃：那是 FeatureWorks 报了成功却什么都没做，
+    /// 存下来只是个被动过一轮的哑实体，不如源文件干净。
+    /// </summary>
     internal static string? DescribeSemanticMismatch(
         int recognized,
         bool created,
@@ -689,11 +737,13 @@ internal sealed class FeatureRecognizer : IDisposable
         if (features.Count == 0)
             return "FeatureWorks 报告识别成功，但无法读取结果特征树；已降级为哑实体。";
 
-        var imported = features.FirstOrDefault(feature => IsImportedBodyFeature(feature.TypeName));
-        if (!string.IsNullOrWhiteSpace(imported.TypeName))
+        if (CountBuiltSolidFeatures(features) == 0)
         {
-            return $"FeatureWorks 报告识别成功，但结果仍包含未识别导入体：{imported.Name} [{imported.TypeName}]；"
-                + "该特征树不等价于手工识别，已降级为哑实体。";
+            var imported = features.FirstOrDefault(feature => IsImportedBodyFeature(feature.TypeName));
+            return string.IsNullOrWhiteSpace(imported.TypeName)
+                ? "FeatureWorks 报告识别成功，但特征树里没有任何造型特征；已降级为哑实体。"
+                : $"FeatureWorks 报告识别成功，但一个造型特征都没建出来，树里仍只有导入体："
+                    + $"{imported.Name} [{imported.TypeName}]；已降级为哑实体。";
         }
 
         return null;

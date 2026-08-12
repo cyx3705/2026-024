@@ -35,6 +35,10 @@ public enum ConversionStage
     Cancelled,
     AssemblyProbe,
     AssemblyBuild,
+    // V4.3.4：SolidWorks 源的 Parasolid 导出。**必须追加在末尾**——
+    // WorkerProtocol 没有装 JsonStringEnumConverter，枚举按数字过线，
+    // 插在中间会让父子 Worker 对不上号。
+    SolidWorksExport,
 }
 
 public enum ConversionErrorClass
@@ -159,7 +163,12 @@ public sealed record FeatureOutcome(
     // 本 SolidWorks 会话未激活 FeatureWorks：SetAdvancedOptions 返回 false。
     // 实测该返回值与识别成败逐次吻合，且重试 12 次也翻不过来（见 40 号文档）。
     // 调用方应当立即停止对本批次继续尝试识别，而不是每个零件白跑一遍。
-    bool SessionNotActivated = false);
+    bool SessionNotActivated = false,
+    // V4.3.4：结果树里真正建成的造型特征数（不含草图、基准与导入体）。
+    int BuiltSolidFeatureCount = 0,
+    // V4.3.4：残留的未识别导入体个数。大于 0 且 BuiltSolidFeatureCount 也大于 0 时，
+    // 这是**部分识别**——特征树可用，只是有一块几何没认出来，不再整体丢弃。
+    int ResidualImportedBodyCount = 0);
 
 public sealed record WorkerEvent(
     string BatchId,

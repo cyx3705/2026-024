@@ -211,6 +211,29 @@ internal static class SolidWorksPartPreparer
             if (identityFailure is not null)
                 throw new InvalidDataException(identityFailure);
 
+            // 源零件里没有导入体 = 已经有完整特征树 = 没有可整备的东西。
+            //
+            // 必须在识别之前拦掉，否则会连累整批：对这种零件
+            // RecognizeFeatureAutomatic 必然返回 0，而 SetAdvancedOptions 也返回 false
+            // ——后者被当成"本会话未激活 FeatureWorks"的证据。实测（2026-08-12，
+            // 12位消解器样件）：批次头两个零件恰好都已整备好，于是连续两次"未识别"
+            // 触发降级，真正需要整备的 BJ10B-04/05 反而一次都没被识别，整批交付哑实体。
+            //
+            // SetAdvancedOptions 返回 false 有两种成因——会话未激活、活动文档里没有
+            // 可识别的导入体——它从来就不是一个干净的激活信号，不能让第二种冒充第一种。
+            var sourceTree = interop.ReadTopLevelFeatureTree(model);
+            if (FeatureRecognizer.CountResidualImportedBodies(sourceTree) == 0)
+            {
+                var existingFeatures = FeatureRecognizer.CountBuiltSolidFeatures(sourceTree);
+                TryClose(interop, model);
+                ComRelease.Final(model);
+                model = null;
+                CommitCopy(job, ref temporaryPath, request.Overwrite, cancellationToken, reporter, null,
+                    $"源零件已有特征树（{existingFeatures} 个造型特征），没有待整备的导入体；"
+                        + "产物与源逐字节相同。");
+                return true;
+            }
+
             featureOutcome = recognizer.Process(
                 model,
                 title,
@@ -309,7 +332,8 @@ internal static class SolidWorksPartPreparer
         bool overwrite,
         CancellationToken cancellationToken,
         WorkerReporter reporter,
-        FeatureOutcome? featureOutcome)
+        FeatureOutcome? featureOutcome,
+        string? completionNote = null)
     {
         var output = FileProbe.WaitForStableNonEmptyFile(temporaryPath!, cancellationToken);
         TemporaryOutput.Commit(temporaryPath!, job.SolidWorksPath, overwrite);
@@ -317,7 +341,9 @@ internal static class SolidWorksPartPreparer
         reporter.Report(
             job.Id,
             ConversionStage.Completed,
-            featureOutcome is null
+            completionNote is not null
+                ? $"跳过整备：{completionNote}"
+                : featureOutcome is null
                 ? $"整备完成（未启用特征识别），SolidWorks 零件 {output.Length} 字节，与源逐字节相同。"
                 : $"整备完成，SolidWorks 零件 {output.Length} 字节。{DescribeFeatures(featureOutcome)}",
             errorClass: featureOutcome is null

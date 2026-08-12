@@ -2197,11 +2197,29 @@ static void TestRecognitionSemanticGuard()
     Equal(2e-5, FeatureRecognizer.MaximumFeatureWorksVolumeRelativeDeviation,
         "几何守卫必须覆盖已验证的 FeatureWorks 重建误差且保持有界");
 
-    var mixedImported = FeatureRecognizer.DescribeSemanticMismatch(
+    // V4.3.4 判据反转，依据是 2026-08-12 的真机实测（BJ10B-04消解底壳，已激活会话）：
+    // FeatureWorks 识别 30 项并全部建成——16 个旋转、6 个孔向导、5 个圆角——只因一块几何
+    // 没被认出、树里残留一个 Imported1，旧判据就把整棵树丢掉，用户拿到哑实体。
+    // 残留导入体是"部分识别"，不是语义错误；真正要拦的是"报了成功却一个造型特征都没建"。
+    Equal(null, FeatureRecognizer.DescribeSemanticMismatch(
         2, true,
-        [new FeatureTreeEntry("Imported1", "BaseBody"), new FeatureTreeEntry("Boss-Extrude1", "Extrusion")]);
-    True(mixedImported is not null && mixedImported.Contains("不等价于手工识别", StringComparison.Ordinal),
-        "混合树仍含未识别导入体，不得把部分识别冒充完整成功");
+        [new FeatureTreeEntry("Imported1", "BaseBody"), new FeatureTreeEntry("Boss-Extrude1", "Extrusion")]),
+        "建成了造型特征、只残留导入体时属于部分识别，必须保留特征树");
+    Equal(1, FeatureRecognizer.CountBuiltSolidFeatures(
+        [new FeatureTreeEntry("Imported1", "BaseBody"), new FeatureTreeEntry("Boss-Extrude1", "Extrusion")]),
+        "造型特征计数不得把导入体算进去");
+    Equal(1, FeatureRecognizer.CountResidualImportedBodies(
+        [new FeatureTreeEntry("Imported1", "BaseBody"), new FeatureTreeEntry("Boss-Extrude1", "Extrusion")]),
+        "残留导入体要能数出来，供如实报数");
+    Equal(0, FeatureRecognizer.CountBuiltSolidFeatures(
+        [new FeatureTreeEntry("Sketch1", "ProfileFeature"), new FeatureTreeEntry("Imported1", "BaseBody")]),
+        "只有草图不算建成造型特征——那正是 CreateFeatures 报成功却什么都没做的形态");
+
+    var builtNothing = FeatureRecognizer.DescribeSemanticMismatch(
+        1, true,
+        [new FeatureTreeEntry("Sketch1", "ProfileFeature"), new FeatureTreeEntry("Imported1", "BaseBody")]);
+    True(builtNothing is not null && builtNothing.Contains("一个造型特征都没建", StringComparison.Ordinal),
+        "报成功却零造型特征仍必须丢弃：那只是被动过一轮的哑实体，不如源文件干净");
 
     var sheetMetal = FeatureRecognizer.DescribeSemanticMismatch(
         2, true,
@@ -2224,6 +2242,21 @@ static void TestRecognitionSemanticGuard()
         [new FeatureTreeEntry("Origin", "OriginProfileFeature"), new FeatureTreeEntry("Imported1", "BaseBody")]);
     True(importedOnly is not null && importedOnly.Contains("导入体", StringComparison.Ordinal),
         "返回成功但仍只有导入体时不得报告识别成功");
+
+    // 专属会话恢复路径的口径：新进程未经人工激活，识别在其中恒为 0。
+    True(!SolidWorksPartImportIsolation.ShouldUseDedicatedSession(1),
+        "首次尝试必须附着现有会话——人工激活过的那个才可能识别出特征");
+    True(SolidWorksPartImportIsolation.ShouldUseDedicatedSession(2),
+        "会话故障后必须换 SolidWorks 进程，客户端换进程救不了服务端的加载项");
+    var dedicatedLimit = SolidWorksPartImportIsolation.DescribeDedicatedSessionRecognitionLimit(2);
+    True(dedicatedLimit.Contains("恒返回 0", StringComparison.Ordinal)
+            && dedicatedLimit.Contains("哑实体", StringComparison.Ordinal),
+        "换专属会话时必须如实说明它产不出特征，不能让用户以为是零件识别不了");
+
+    var batchOutcome = SolidWorksPartImportIsolation.DescribeUnactivatedBatchOutcome(53, 2);
+    True(batchOutcome.Contains("53", StringComparison.Ordinal)
+            && batchOutcome.Contains("手工执行一次特征识别", StringComparison.Ordinal),
+        "未激活会话的批次收尾结论要给出总数和可执行的下一步");
 
     True(FeatureRecognizer.DescribeSemanticMismatch(1, true, []) is not null,
         "成功后无法枚举特征树必须安全降级");

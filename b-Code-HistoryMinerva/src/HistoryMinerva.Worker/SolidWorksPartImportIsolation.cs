@@ -34,6 +34,8 @@ internal static class SolidWorksPartImportIsolation
         // 连续多少个零件识别到 0 个特征就判定"该 SolidWorks 会话未激活 FeatureWorks"。
         // 取 2 而不是 1：单个零件确实可能没有可识别特征，连着两个就不可能是巧合了。
         var consecutiveUnrecognized = 0;
+        // 大于 0 表示本批已判定会话未激活，收尾时要再说一次结论。
+        var unactivatedSessionParts = 0;
         var effectiveRequest = request;
         foreach (var job in jobs)
         {
@@ -42,14 +44,19 @@ internal static class SolidWorksPartImportIsolation
             {
                 // 第一次尝试附着现有会话（多半是用户人工激活过的那个，识别质量最好）；
                 // 一旦 FeatureWorks 崩了，后续尝试改用专属进程——继续附着只会拿到同一具尸体。
+                var useDedicatedSession = ShouldUseDedicatedSession(attempt);
+                // 专属进程未经人工激活，识别在其中恒为 0，开着它只会白耗一个识别超时。
+                var attemptRequest = useDedicatedSession && effectiveRequest.RecognizeFeatures
+                    ? effectiveRequest with { RecognizeFeatures = false, FullyDefineSketches = false }
+                    : effectiveRequest;
                 var result = RunIsolated(
-                    effectiveRequest,
+                    attemptRequest,
                     job,
                     reporter,
                     cancellationToken,
                     out var recognizedFeatureCount,
                     out var sessionNotActivated,
-                    useDedicatedSession: ShouldUseDedicatedSession(attempt));
+                    useDedicatedSession: useDedicatedSession);
                 if (result == IsolatedImportResult.RecognitionTimedOut)
                 {
                     var timeoutSeconds = FeatureRecognitionPolicy.NormalizeTimeoutSeconds(
@@ -93,7 +100,9 @@ internal static class SolidWorksPartImportIsolation
                 if (result != IsolatedImportResult.SessionFaulted)
                 {
                     failed += result == IsolatedImportResult.Failed ? 1 : 0;
-                    if (result == IsolatedImportResult.Succeeded && effectiveRequest.RecognizeFeatures)
+                    // 只有本次尝试真的开着识别，它的"没认出来"才说明得了问题。
+                    // 专属会话那一趟识别是被我们自己关掉的，不能拿来给会话定罪。
+                    if (result == IsolatedImportResult.Succeeded && attemptRequest.RecognizeFeatures)
                     {
                         // 只统计"识别本身颗粒无收"（子 Worker 的 SessionNotActivated）。
                         //
@@ -121,6 +130,7 @@ internal static class SolidWorksPartImportIsolation
                                 RecognizeFeatures = false,
                                 FullyDefineSketches = false,
                             };
+                            unactivatedSessionParts = consecutiveUnrecognized;
                         }
                     }
                     break;
@@ -141,6 +151,16 @@ internal static class SolidWorksPartImportIsolation
                     ConversionStage.FeatureRecognition,
                     $"FeatureWorks 会话故障，正在创建新的单零件 Worker 重试（{attempt + 1}/{SessionFaultAttempts}）。",
                     errorClass: ConversionErrorClass.FeatureWorksUnavailable);
+                if (effectiveRequest.RecognizeFeatures && ShouldUseDedicatedSession(attempt + 1))
+                {
+                    // 专属会话必然未激活，识别在其中恒为 0。继续开着识别只会让这一件
+                    // 白白耗掉整个识别超时，结果还是哑实体——不如当场说清并关掉。
+                    reporter.Report(
+                        job.Id,
+                        ConversionStage.FeatureRecognition,
+                        DescribeDedicatedSessionRecognitionLimit(attempt + 1),
+                        errorClass: ConversionErrorClass.FeatureWorksUnavailable);
+                }
                 try
                 {
                     if (File.Exists(job.SolidWorksPath))
@@ -161,8 +181,27 @@ internal static class SolidWorksPartImportIsolation
             }
         }
 
+        // 收尾再说一次。中途那条降级提示会被后面几十个零件的进度刷走，用户看到的是
+        // 一批"完成"，回头才发现全是哑实体。结论必须出现在最后一屏。
+        if (unactivatedSessionParts > 0)
+        {
+            reporter.Report(
+                null,
+                ConversionStage.FeatureRecognition,
+                DescribeUnactivatedBatchOutcome(jobs.Count, unactivatedSessionParts),
+                errorClass: ConversionErrorClass.FeatureWorksUnavailable);
+        }
+
         return failed;
     }
+
+    /// <summary>批次收尾结论：说清"这一批为什么没有特征"和"下一步怎么做"。</summary>
+    internal static string DescribeUnactivatedBatchOutcome(int totalJobs, int unrecognizedBeforeGiveUp)
+        => $"本批 {totalJobs} 个零件全部输出为哑实体：前 {unrecognizedBeforeGiveUp} 个零件连续识别到 0 个特征，"
+           + "判定本 SolidWorks 会话未激活 FeatureWorks，其余零件已跳过识别。"
+           + "几何与装配关系不受影响。"
+           + "要拿到特征，请在这个 SolidWorks 窗口里对任意零件手工执行一次特征识别（该状态不跨进程、"
+           + "退出后不保留），然后重跑本批次。";
 
     internal static bool ShouldIsolate(BatchRequest request)
         => request.RecognizeFeatures;
@@ -174,8 +213,30 @@ internal static class SolidWorksPartImportIsolation
     /// 但 FeatureWorks 一旦在某个复杂零件上崩掉，同一个进程里的加载项就废了，
     /// 继续附着等于对着尸体重试（实测：第 14 件崩溃后剩下 39 件全退哑实体）。
     /// 所以重试一律换专属进程，把"一件搞崩整批"降级成"只坏这一件"。
+    ///
+    /// 但换进程只能救回**几何**，救不回**识别**——见 <see cref="DescribeDedicatedSessionRecognitionLimit"/>。
     /// </summary>
     internal static bool ShouldUseDedicatedSession(int attempt) => attempt > 1;
+
+    /// <summary>
+    /// 专属会话为什么产不出特征。
+    ///
+    /// 2026-08-12 实测：FeatureWorks 的自动识别要求该 SolidWorks **进程**里先由人工
+    /// 完成过一次特征识别，否则 <c>SetAdvancedOptions</c> 恒返回 false、
+    /// <c>RecognizeFeatureAutomatic</c> 恒返回 0。同一零件同一参数，未激活会话识别 0 个，
+    /// 人工点过一次之后识别 30 个。
+    ///
+    /// 而 <see cref="SolidWorksSessionLauncher.StartDedicated"/> 起的是全新进程，
+    /// 按定义就没被人工激活过。所以会话故障后的重试链有一个构造性矛盾：
+    /// 换进程是为了绕开死掉的加载项，但换完之后识别必然为 0。
+    ///
+    /// 与其让用户以为"重试三次仍未识别 = 这个零件识别不了"，不如如实说清：
+    /// 专属会话只保证几何能落盘，特征要等回到已激活的会话里重跑。
+    /// </summary>
+    internal static string DescribeDedicatedSessionRecognitionLimit(int attempt)
+        => $"第 {attempt} 次尝试改用了专属 SolidWorks 进程。新进程未经人工激活 FeatureWorks，"
+           + "自动识别在其中恒返回 0——本零件只会产出几何正确的哑实体。"
+           + "如需特征，请在人工激活过的 SolidWorks 会话里单独重跑该零件。";
 
     /// <summary>
     /// 未激活会话的诊断文案。

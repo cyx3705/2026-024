@@ -11,6 +11,7 @@ internal static class ConversionProgressPresenter
         => workerEvent.Stage switch
         {
             ConversionStage.SolidEdgeExport => "导出 XT",
+            ConversionStage.SolidWorksExport => "导出 XT",
             ConversionStage.SolidWorksImport => "生成 SW",
             ConversionStage.FeatureRecognition => "识别特征",
             ConversionStage.SketchFullyDefine => "定义草图",
@@ -40,8 +41,13 @@ internal static class ConversionProgressPresenter
             return;
         }
 
-        row.FeatureText = outcome.RecognizedFeatureCount.ToString();
+        // 部分识别：特征树可用，但有几何没认出来。行里要看得见，否则用户打开零件
+        // 发现还杵着一个导入体，会以为产物坏了。
+        row.FeatureText = outcome.ResidualImportedBodyCount > 0
+            ? $"{outcome.RecognizedFeatureCount} 部分"
+            : outcome.RecognizedFeatureCount.ToString();
         row.SketchText = $"{outcome.SketchFullyDefined}/{outcome.SketchTotal}";
-        row.HasFeatureWarning = outcome.SketchFullyDefined < outcome.SketchTotal;
+        row.HasFeatureWarning = outcome.SketchFullyDefined < outcome.SketchTotal
+            || outcome.ResidualImportedBodyCount > 0;
     }
 }
