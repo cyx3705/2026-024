@@ -173,7 +173,6 @@ internal static class SolidWorksXtExporter
         string? workingCopy = null;
         string? temporaryXt = null;
         object? model = null;
-        object? extension = null;
         var title = string.Empty;
 
         try
@@ -201,26 +200,15 @@ internal static class SolidWorksXtExporter
             if (identityFailure is not null)
                 throw new InvalidDataException(identityFailure);
 
-            // SaveAs3 按扩展名选格式：.x_t 即 Parasolid 文本。
-            extension = interop.GetExtension(model);
-            if (!interop.SaveAs3(
-                    extension, temporaryXt, SaveAsCurrentVersion, SaveAsSilent,
-                    out var saveErrors, out var saveWarnings)
-                || saveErrors != 0)
-            {
-                throw new IOException($"Parasolid 导出失败，错误码 {saveErrors}，警告码 {saveWarnings}。");
-            }
+            // 与整备链路共用同一份导出实现：非空、稳定、且真的是 Parasolid 文本。
+            SaveAsParasolid(interop, model, temporaryXt, cancellationToken);
 
-            ComRelease.Final(extension);
-            extension = null;
             interop.CloseDocument(title);
             title = string.Empty;
             ComRelease.Final(model);
             model = null;
 
-            // 与 Solid Edge 导出同一道门槛：非空、稳定、且真的是 Parasolid 文本。
-            _ = FileProbe.WaitForStableNonEmptyFile(temporaryXt, cancellationToken);
-            var facts = FileProbe.VerifyParasolidText(temporaryXt, cancellationToken, TimeSpan.FromSeconds(5));
+            var facts = new FileInfo(temporaryXt);
             TemporaryOutput.Commit(temporaryXt, job.XtPath, overwrite);
             temporaryXt = null;
 
@@ -255,9 +243,45 @@ internal static class SolidWorksXtExporter
         {
             TemporaryOutput.DeleteIfExists(temporaryXt);
             TemporaryOutput.DeleteIfExists(workingCopy);
-            ComRelease.Final(extension);
             ComRelease.Final(model);
         }
+    }
+
+    /// <summary>
+    /// 把**已经打开**的零件文档导出为 Parasolid 文本。调用方保有文档所有权，本方法不关闭它。
+    ///
+    /// <see cref="SolidWorksPartPreparer"/> 的整备链路和上面的批量导出共用这一份实现——
+    /// 导出这一步的失败判据（SaveAs3 返回值、错误码、落盘稳定性、Parasolid 文本校验）
+    /// 只能有一套，否则两条路会在"什么算导出成功"上慢慢分叉。
+    /// </summary>
+    public static void SaveAsParasolid(
+        SolidWorksInteropBridge interop,
+        object model,
+        string xtPath,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(interop);
+        ArgumentNullException.ThrowIfNull(model);
+        object? extension = null;
+        try
+        {
+            // SaveAs3 按扩展名选格式：.x_t 即 Parasolid 文本。
+            extension = interop.GetExtension(model);
+            if (!interop.SaveAs3(
+                    extension, xtPath, SaveAsCurrentVersion, SaveAsSilent,
+                    out var saveErrors, out var saveWarnings)
+                || saveErrors != 0)
+            {
+                throw new IOException($"Parasolid 导出失败，错误码 {saveErrors}，警告码 {saveWarnings}。");
+            }
+        }
+        finally
+        {
+            ComRelease.Final(extension);
+        }
+
+        _ = FileProbe.WaitForStableNonEmptyFile(xtPath, cancellationToken);
+        _ = FileProbe.VerifyParasolidText(xtPath, cancellationToken, TimeSpan.FromSeconds(5));
     }
 
     private static void TryClose(SolidWorksInteropBridge? interop, string title)

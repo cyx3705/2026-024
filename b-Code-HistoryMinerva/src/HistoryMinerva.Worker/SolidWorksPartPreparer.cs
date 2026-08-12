@@ -176,6 +176,7 @@ internal static class SolidWorksPartPreparer
             artifact: ConversionArtifactKind.SolidWorksPart);
 
         string? temporaryPath = null;
+        string? xtPath = null;
         object? model = null;
         object? extension = null;
         FeatureOutcome? featureOutcome = null;
@@ -233,6 +234,52 @@ internal static class SolidWorksPartPreparer
                         + "产物与源逐字节相同。");
                 return true;
             }
+
+            // ---- 经 Parasolid 往返再识别 ----
+            //
+            // 识别不直接作用在打开的 .SLDPRT 上，而是先把实体导出 .x_t、再 LoadFile4 导回来，
+            // 与 Solid Edge 管线进入识别时的实体形态完全一致。
+            //
+            // 这一步是按现场经验加的：直接对 .SLDPRT 识别的成品率明显不足。往返的代价是每件
+            // 约一秒的 Parasolid 推导，以及"成功件的产物由 XT 重新推导而来"——对本分支的零件
+            // 无损失，因为走到这里的都是**纯导入体**（有特征树的已在上一段跳过），本来就没有
+            // 配置、属性或特征树可丢。识别失败时仍回退为源文件副本，逐字节相同的保证不变。
+            xtPath = Path.ChangeExtension(temporaryPath, ".x_t");
+            SolidWorksXtExporter.SaveAsParasolid(interop, model, xtPath, cancellationToken);
+            interop.CloseDocument(title);
+            ComRelease.Final(model);
+            model = null;
+            // 产物稍后由识别结果另存生成，这里先腾空，免得 SaveAs3 撞上已存在的同名文件。
+            TemporaryOutput.DeleteIfExists(temporaryPath);
+
+            object? importData = null;
+            try
+            {
+                importData = interop.GetImportFileData(xtPath);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                // 部分 SW 版本没有 Parasolid 专用导入选项对象；LoadFile4 接受 null。
+                importData = null;
+            }
+
+            try
+            {
+                model = interop.LoadFile4(xtPath, "r", importData, out var loadErrors);
+                if (model is null)
+                    throw new InvalidDataException($"SolidWorks 未从 Parasolid 交回零件文档，错误码 {loadErrors}。");
+            }
+            finally
+            {
+                ComRelease.Final(importData);
+            }
+
+            if (interop.GetDocumentType(model) != DocumentTypePart)
+                throw new InvalidDataException("Parasolid 导入结果不是零件文档。");
+            title = interop.GetTitle(model);
+            var importIdentityFailure = SolidWorksImporter.DescribeImportIdentityFailure(xtPath, title);
+            if (importIdentityFailure is not null)
+                throw new InvalidDataException(importIdentityFailure);
 
             featureOutcome = recognizer.Process(
                 model,
@@ -320,6 +367,7 @@ internal static class SolidWorksPartPreparer
         finally
         {
             TemporaryOutput.DeleteIfExists(temporaryPath);
+            TemporaryOutput.DeleteIfExists(xtPath);
             ComRelease.Final(extension);
             ComRelease.Final(model);
         }

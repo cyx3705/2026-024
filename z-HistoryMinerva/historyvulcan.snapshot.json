@@ -1,7 +1,7 @@
 {
     "schemaVersion":  1,
     "module":  "HistoryMinerva",
-    "moduleVersion":  "4.3.5",
+    "moduleVersion":  "4.3.6",
     "historyVulcanVersion":  "3.11.1",
     "historyVulcanSource":  "../2026-023-HistoryVulcan/z-HistoryVulcan"
 }
