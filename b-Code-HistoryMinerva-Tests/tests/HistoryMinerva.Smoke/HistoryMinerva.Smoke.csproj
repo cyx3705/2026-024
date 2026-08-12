@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\..\b-Code-HistoryMinerva\build\HistoryMinerva.Version.props" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\b-Code-HistoryMinerva\src\HistoryMinerva\HistoryMinerva.csproj" />
+    <ProjectReference Include="..\..\..\b-Code-HistoryMinerva\src\HistoryMinerva.Api\HistoryMinerva.Api.csproj" />
+    <ProjectReference Include="..\..\..\b-Code-HistoryMinerva\src\HistoryMinerva.Worker\HistoryMinerva.Worker.csproj" />
+    <Reference Include="HistoryVulcan.Core">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="HistoryVulcan.Services">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="HistoryVulcan.Extensibility">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Extensibility.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <PropertyGroup>
+    <HistoryMinervaModuleRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..\b-Code-HistoryMinerva'))</HistoryMinervaModuleRoot>
+    <HistoryMinervaWorkerPath>$(HistoryMinervaModuleRoot)\src\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.dll</HistoryMinervaWorkerPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="HistoryMinervaWorkerPath" Value="$(HistoryMinervaWorkerPath)" />
+    <AssemblyMetadata Include="HistoryMinervaRepositoryRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..'))" />
+  </ItemGroup>
+  <Target Name="RefreshHistoryVulcanTestRuntime" AfterTargets="Build">
+    <ItemGroup>
+      <HistoryVulcanTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll" />
+      <HistoryVulcanTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll" />
+      <HistoryVulcanTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Extensibility.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(HistoryVulcanTestRuntime)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="false" />
+  </Target>
+</Project>
