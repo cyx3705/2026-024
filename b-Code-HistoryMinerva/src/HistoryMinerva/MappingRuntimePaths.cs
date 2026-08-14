@@ -1,11 +1,16 @@
 using System.IO;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using HistoryMinerva.Contracts;
 
 namespace HistoryMinerva;
 
 public sealed class MappingRuntimePaths
 {
+    private const int MinimumNumberedProjects = 2;
+    private static readonly Regex NumberedProjectName =
+        new(@"^\d{4}-\d{3}-.+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     public MappingRuntimePaths(string hostDataDirectory, string? configuredModuleDirectory = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(hostDataDirectory);
@@ -77,7 +82,8 @@ public sealed class MappingRuntimePaths
                 if (File.Exists(localPackage))
                     yield return localPackage;
 
-                if (!Directory.Exists(Path.Combine(directory.FullName, "HistoryVesta.git")))
+                if (!LooksLikeLibraryRoot(directory.FullName)
+                    && !Directory.Exists(Path.Combine(directory.FullName, "HistoryVesta.git")))
                     continue;
 
                 IEnumerable<string> projects;
@@ -103,6 +109,36 @@ public sealed class MappingRuntimePaths
                 yield break;
             }
         }
+    }
+
+    /// <summary>
+    /// 编号项目库根：至少两个 <c>YYYY-NNN-*</c> 子目录。HistoryClio 用这个识别，不再依赖裸仓哨兵。
+    /// </summary>
+    private static bool LooksLikeLibraryRoot(string directory)
+    {
+        try
+        {
+            var counted = 0;
+            foreach (var child in Directory.EnumerateDirectories(directory))
+            {
+                if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) != 0)
+                    continue;
+                if (!NumberedProjectName.IsMatch(Path.GetFileName(child)))
+                    continue;
+                if (++counted >= MinimumNumberedProjects)
+                    return true;
+            }
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        return false;
     }
 
     public static MappingRuntimePaths CreateAppShellFallback()
