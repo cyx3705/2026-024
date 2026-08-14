@@ -218,21 +218,38 @@ else {
         'SHA256SUMS'
     )
     $actualFormalFiles = @(Get-ChildItem -LiteralPath $formalRoot -File | ForEach-Object Name)
-    Assert-SameSet 'z-HistoryMinerva file boundary' $expectedFormalFiles $actualFormalFiles
+    Assert-SameSet 'z-HistoryMinerva top-level file boundary' $expectedFormalFiles $actualFormalFiles
+
+    $docsRoot = Join-Path $formalRoot 'docs'
+    if (Test-Path -LiteralPath $docsRoot) {
+        if (-not (Test-Path -LiteralPath $docsRoot -PathType Container)) {
+            Add-Violation 'z-HistoryMinerva/docs must be a directory of Markdown'
+        }
+        else {
+            foreach ($item in @(Get-ChildItem -LiteralPath $docsRoot -Recurse -File)) {
+                if ([IO.Path]::GetExtension($item.Name) -ne '.md') {
+                    Add-Violation "z-HistoryMinerva/docs may contain only Markdown: $($item.Name)"
+                }
+            }
+        }
+    }
 
     $declaredHashes = @{}
     foreach ($line in [IO.File]::ReadAllLines($checksumPath)) {
-        $match = [regex]::Match($line, '^(?<hash>[A-Fa-f0-9]{64}) \*(?<file>.+)$')
+        $match = [regex]::Match($line, '^(?<hash>[A-Fa-f0-9]{64}) [ *](?<file>.+)$')
         if (-not $match.Success) {
             Add-Violation "Invalid SHA256SUMS line: $line"
             continue
         }
-        $declaredHashes[$match.Groups['file'].Value] = $match.Groups['hash'].Value.ToUpperInvariant()
+        $declaredHashes[$match.Groups['file'].Value.Replace('\', '/')] = $match.Groups['hash'].Value.ToUpperInvariant()
     }
-    $hashTargets = @($actualFormalFiles | Where-Object { $_ -ne 'SHA256SUMS' })
+    $formalPrefix = [IO.Path]::GetFullPath($formalRoot).TrimEnd('\') + '\'
+    $hashTargets = @(Get-ChildItem -LiteralPath $formalRoot -File -Recurse |
+        Where-Object Name -ne 'SHA256SUMS' |
+        ForEach-Object { $_.FullName.Substring($formalPrefix.Length).Replace('\', '/') })
     Assert-SameSet 'z-HistoryMinerva SHA256SUMS coverage' $hashTargets @($declaredHashes.Keys)
     foreach ($file in $hashTargets) {
-        $actualHash = (Get-FileHash -LiteralPath (Join-Path $formalRoot $file) -Algorithm SHA256).Hash
+        $actualHash = (Get-FileHash -LiteralPath (Join-Path $formalRoot ($file.Replace('/', '\'))) -Algorithm SHA256).Hash
         if ($declaredHashes.ContainsKey($file) -and $declaredHashes[$file] -ne $actualHash) {
             Add-Violation "z-HistoryMinerva hash mismatch: $file"
         }

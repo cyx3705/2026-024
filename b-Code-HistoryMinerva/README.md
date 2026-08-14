@@ -35,7 +35,7 @@ dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.Smoke\Hi
 
 生产工程直接引用 `2026-023-HistoryVulcan/z-HistoryVulcan/host/HistoryVulcan.Core.dll` 3.4.0，宿主 DLL 不随模块包复制。
 只修改 `build/HistoryMinerva.Version.props` 后，通过 `eng/Update-HistoryMinervaManifest.ps1` 同步清单版本；正式包由
-`eng/Build-HistoryMinervaPackage.ps1` 生成；正式提升和 Diana 消费文档镜像由
+`eng/Build-HistoryMinervaPackage.ps1` 生成；正式提升（含写入 `z-HistoryMinerva/docs/`）由
 `2026-019-HistoryDiana/b-Code/Publish-OneHistoryModule.ps1 -Module HistoryMinerva` 负责。
 （双槽安装并退役 Mapping、SWuse 与历史转换模块槽）。只读命令域为 `historyminerva`。
 
