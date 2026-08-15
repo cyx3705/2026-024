@@ -3,14 +3,22 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [string]$OutputRoot,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    # 宿主快照根。缺省按"本仓与 2026-023-HistoryVulcan 同库根"推导；从 AI 工作树运行时
+    # 工作树在库根之外，该相对路径必然指空，由调用方显式传入或经环境变量继承。
+    [string]$HistoryVulcanPackageRoot = $env:HISTORYVULCAN_PACKAGE_ROOT
 )
 
 $ErrorActionPreference = 'Stop'
 $moduleRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = Split-Path -Parent $moduleRoot
 $projectsRoot = Split-Path -Parent $projectRoot
-$historyVulcanPackageRoot = Join-Path $projectsRoot '2026-023-HistoryVulcan\z-HistoryVulcan'
+$historyVulcanPackageRoot = if ([string]::IsNullOrWhiteSpace($HistoryVulcanPackageRoot)) {
+    Join-Path $projectsRoot '2026-023-HistoryVulcan\z-HistoryVulcan'
+}
+else {
+    [IO.Path]::GetFullPath($HistoryVulcanPackageRoot)
+}
 $historyVulcanManifestPath = Join-Path $historyVulcanPackageRoot 'manifest.json'
 $historyVulcanCorePath = Join-Path $historyVulcanPackageRoot 'host\HistoryVulcan.Core.dll'
 $moduleProject = Join-Path $moduleRoot 'src\HistoryMinerva\HistoryMinerva.csproj'
