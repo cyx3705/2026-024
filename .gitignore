@@ -89,3 +89,6 @@ b-Publish/
 # 真机门禁的产物目录：SolidWorksSelfPipelineGate 每跑一次就重写它，
 # 属生成物，不进版本控制（AGENTS.md：不直接编辑生成物）。
 b-Code-HistoryMinerva-Tests/Module/SW/
+
+# 本机覆盖点：AI 工作树里指回来源仓的宿主快照，不入库
+Directory.Build.user.props
