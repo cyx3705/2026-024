@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "template": {
+    "isTemplate": false,
+    "source": "0000-001-AIReady",
+    "strictValidationArgument": "-Instantiation"
+  },
+  "project": {
+    "id": "2026-024",
+    "name": "HistoryMinerva",
+    "title": "HistoryMinerva CAD 模块（Mapping 前端 + 合并 Worker 后端）",
+    "kind": ["software", "cad-automation", "appshell-module"],
+    "status": "active",
+    "version": "4.3.10",
+    "branch": "2026-024-HistoryMinerva"
+  },
+  "historyVulcanHost": {
+    "packageRoot": "../2026-023-HistoryVulcan/z-HistoryVulcan",
+    "version": "3.11.1"
+  },
+  "paths": {
+    "activeRoots": [
+      "b-Office/current",
+      "b-Office/package",
+      "b-Code",
+      "b-Code-HistoryMinerva",
+      "b-Code-HistoryMinerva-Tests",
+      "z-HistoryMinerva"
+    ],
+    "sourceRoots": ["b-Code", "b-Code-HistoryMinerva", "b-Code-HistoryMinerva-Tests"],
+    "generatedRoots": [
+      "b-Code-HistoryMinerva/**/bin",
+      "b-Code-HistoryMinerva/**/obj",
+      "b-Code-HistoryMinerva-Tests/**/bin",
+      "b-Code-HistoryMinerva-Tests/**/obj"
+    ],
+    "archiveRoots": ["b-Office/history"],
+    "allowedRootDirectoryPrefixes": ["a-", "b-", "z-"]
+  },
+  "documents": {
+    "center": "b-Office/文档中心.md",
+    "package": "b-Office/package/模块API.md",
+    "structure": "b-Office/文档中心.md",
+    "overview": "b-Office/current/项目概览.md",
+    "technicalContract": "b-Office/current/技术合同.md",
+    "decisions": "b-Office/current/有效决策.md",
+    "verification": "b-Office/current/验证合同.md",
+    "roadmap": "b-Office/history/45-V4.3.0-SW自整备转换管线.md",
+    "architectureDiagram": "b-Office/current/HistoryMinerva转换架构.drawio",
+    "historyBoundary": "b-Office/history/历史资料说明.md"
+  },
+  "commands": {
+    "setup": "dotnet restore .\\HistoryMinerva.sln --locked-mode -p:NuGetAudit=false",
+    "build": "dotnet build .\\HistoryMinerva.sln -c Release --no-restore -warnaserror -p:NuGetAudit=false",
+    "test": "dotnet run --project .\\b-Code-HistoryMinerva-Tests\\tests\\HistoryMinerva.Smoke\\HistoryMinerva.Smoke.csproj -c Release -p:NuGetAudit=false",
+    "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-HistoryMinerva\\eng\\Test-QualityGate.ps1",
+    "run": null,
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-HistoryMinerva\\eng\\Build-HistoryMinervaPackage.ps1"
+  },
+  "externalDependencies": [
+    ".NET 8 SDK and Windows Desktop Runtime",
+    "HistoryVulcan.Core 3.11.1 or newer host snapshot (minimum compatible host version)",
+    "Solid Edge 2020 COM automation",
+    "SolidWorks 2025 SP5 COM automation",
+    "SolidWorks FeatureWorks"
+  ],
+  "contextExclusions": [
+    "b-Office/history/**",
+    "b-Publish/**",
+    "**/bin/**",
+    "**/obj/**",
+    "**/node_modules/**",
+    "**/.vs/**",
+    "artifacts/**"
+  ]
+}
