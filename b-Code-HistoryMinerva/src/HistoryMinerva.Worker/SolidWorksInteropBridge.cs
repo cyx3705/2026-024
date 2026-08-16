@@ -142,6 +142,25 @@ internal sealed class SolidWorksInteropBridge : IDisposable
     public void ExitApplication()
         => Invoke(_applicationInterface, _application, "ExitApp");
 
+    public string GetPathName(object model)
+        => Convert.ToString(Invoke(_modelInterface, model, "GetPathName")) ?? string.Empty;
+
+    public bool IsDocumentDirty(object model)
+        => Convert.ToBoolean(Invoke(_modelInterface, model, "GetSaveFlag"));
+
+    /// <summary>
+    /// 在未打开的文档里替换引用路径。调用前必须先关闭相关文档，
+    /// 且磁盘上的新文件已经就位。
+    /// </summary>
+    public bool ReplaceReferencedDocument(string documentPath, string oldReference, string newReference)
+        => Convert.ToBoolean(Invoke(
+            _applicationInterface,
+            _application,
+            "ReplaceReferencedDocument",
+            documentPath,
+            oldReference,
+            newReference));
+
     // ---------------- V3.0：装配体创建 ----------------
 
     public string GetAssemblyTemplate()

@@ -1,11 +1,11 @@
 # HistoryMinerva
 
-HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块。当前源码为 `4.3.8`，正式
+HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块。当前源码为 `4.3.10`，正式
 `z-HistoryMinerva` 在下次发布前仍为 `4.3.7`。前身 Mapping 与 SWuse
 两个模块经破坏性重构合并为一个发布单元：纯前端 + 纯后端。
 
-- **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（原 Mapping 页面原样保留：
-  `.par → .SLDPRT`、`.asm → .SLDASM`），模块名为 `HistoryMinerva`、命令域为 `minerva`（全部取自
+- **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（`.par → .SLDPRT`、`.asm → .SLDASM`、
+  SolidWorks 特征整备与属性整备改名），模块名为 `HistoryMinerva`、命令域为 `minerva`（全部取自
   `HistoryMinervaIdentity` 唯一权威源）；SWuse 独立窗口已移除，Worker 查询通过
   `minerva.worker.*` 进入 Vulcan 命令总线与 MCP。
 - **后端**：单一 `HistoryMinerva.Worker.exe`（x64 STA）内部按参数形态路由两条既有协议——

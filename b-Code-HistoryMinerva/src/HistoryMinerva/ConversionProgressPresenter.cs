@@ -21,6 +21,7 @@ internal static class ConversionProgressPresenter
             ConversionStage.Skipped => "跳过",
             ConversionStage.Failed => "失败",
             ConversionStage.Cancelled => "已取消",
+            ConversionStage.PropertyPrep => "改名",
             _ => currentStatus,
         };
 

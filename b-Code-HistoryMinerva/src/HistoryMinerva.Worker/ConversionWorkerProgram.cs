@@ -14,7 +14,7 @@ internal static class ConversionWorkerProgram
         if (paths is null)
         {
             Console.Error.WriteLine(
-                $"Usage: {HistoryMinervaIdentity.WorkerFileName} {WorkerProtocol.PartsRequestVerb}|{WorkerProtocol.PartImportVerb}|{WorkerProtocol.AssemblyProbeVerb}|{WorkerProtocol.AssemblyBuildVerb} "
+                $"Usage: {HistoryMinervaIdentity.WorkerFileName} {WorkerProtocol.PartsRequestVerb}|{WorkerProtocol.PartImportVerb}|{WorkerProtocol.AssemblyProbeVerb}|{WorkerProtocol.AssemblyBuildVerb}|{WorkerProtocol.AssemblyRenameVerb} "
                 + $"<absolute-json-path> {WorkerProtocol.CancellationArgument} <absolute-signal-path>");
             return 2;
         }
@@ -36,6 +36,7 @@ internal static class ConversionWorkerProgram
                 WorkerProtocol.PartImportVerb => RunPartImport(Read<PartImportRequest>(paths.Value.RequestPath), cancellation.Token),
                 WorkerProtocol.AssemblyProbeVerb => RunProbe(Read<AssemblyProbeRequest>(paths.Value.RequestPath), cancellation.Token),
                 WorkerProtocol.AssemblyBuildVerb => RunAssembly(Read<AssemblyBatchRequest>(paths.Value.RequestPath), cancellation.Token),
+                WorkerProtocol.AssemblyRenameVerb => RunRename(Read<AssemblyRenameRequest>(paths.Value.RequestPath), cancellation.Token),
                 _ => 2,
             };
         }
@@ -189,6 +190,28 @@ internal static class ConversionWorkerProgram
                 errorClass: ex is ClassifiedConversionException classified
                     ? classified.ErrorClass
                     : ConversionErrorClass.Unknown);
+            return 4;
+        }
+    }
+
+    private static int RunRename(AssemblyRenameRequest request, CancellationToken cancellationToken)
+    {
+        var reporter = new WorkerReporter(request.BatchId, JsonOptions);
+        try
+        {
+            return SolidWorksDocumentRenamer.Rename(request, reporter, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            reporter.Report(null, ConversionStage.Cancelled, "属性整备改名已取消。", errorClass: ConversionErrorClass.Cancelled);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            reporter.Report(null, ConversionStage.Failed, "属性整备改名失败：" + ex.Message, true, ex.HResult,
+                errorClass: ex is ClassifiedConversionException classified
+                    ? classified.ErrorClass
+                    : ConversionErrorClass.RenameFailed);
             return 4;
         }
     }

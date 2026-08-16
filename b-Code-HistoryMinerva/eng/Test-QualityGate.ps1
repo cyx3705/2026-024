@@ -182,8 +182,8 @@ $apiCommands = @(
         ForEach-Object { $_.Groups['name'].Value } |
         Sort-Object -Unique
 )
-if ($backendCommands.Count -ne 5 -or $uiCommands.Count -ne 3) {
-    Add-Violation "Expected 5 backend and 3 frontend commands; found $($backendCommands.Count) and $($uiCommands.Count)"
+if ($backendCommands.Count -ne 5 -or $uiCommands.Count -ne 4) {
+    Add-Violation "Expected 5 backend and 4 frontend commands; found $($backendCommands.Count) and $($uiCommands.Count)"
 }
 if ($assemblyViewCode -match 'MessageBox\.Show' -or
     $assemblyViewXaml -match '\{Binding\s+(StatusText|WarningSummary)\}') {

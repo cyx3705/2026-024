@@ -39,6 +39,8 @@ public enum ConversionStage
     // WorkerProtocol 没有装 JsonStringEnumConverter，枚举按数字过线，
     // 插在中间会让父子 Worker 对不上号。
     SolidWorksExport,
+    // V4.3.9：SolidWorks 属性整备改名。枚举按数值序列化，新值只能追加在末尾。
+    PropertyPrep,
 }
 
 public enum ConversionErrorClass
@@ -86,6 +88,8 @@ public enum ConversionErrorClass
     MateTypeUnsupported,
     FeatureRecognitionTimeout,
     FeatureRecognitionSemanticMismatch,
+    // V4.3.9：SolidWorks 属性整备改名。枚举按数值序列化，新值只能追加在末尾。
+    RenameFailed,
 }
 
 public static class FeatureRecognitionPolicy

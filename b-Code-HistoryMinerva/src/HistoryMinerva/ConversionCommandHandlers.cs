@@ -51,4 +51,28 @@ internal static class ConversionCommandHandlers
             return CommandResult.Fail(ex.Message);
         }
     }
+
+    internal static async Task<CommandResult> StripAsync(
+        AssemblyViewModel viewModel,
+        CommandContext command)
+    {
+        command.Progress?.Report(viewModel.OperationText);
+        try
+        {
+            await viewModel.StripDrawingNumbersAsync(command.Progress).ConfigureAwait(true);
+            return viewModel.LastOperationCanceled
+                ? CommandResult.Fail("Minerva 洗图号已取消。")
+                : viewModel.LastOperationSucceeded
+                    ? CommandResult.Ok(viewModel.StatusText)
+                    : CommandResult.Fail(viewModel.StatusText);
+        }
+        catch (OperationCanceledException)
+        {
+            return CommandResult.Fail("Minerva 洗图号已取消。");
+        }
+        catch (Exception ex)
+        {
+            return CommandResult.Fail(ex.Message);
+        }
+    }
 }

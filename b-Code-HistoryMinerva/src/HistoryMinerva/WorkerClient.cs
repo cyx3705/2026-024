@@ -21,7 +21,9 @@ public sealed class WorkerClient
 
     /// <summary>零件按 180 秒卡；装配用自己的预算。看门狗防的是真死，不是慢。</summary>
     private static TimeSpan InactivityBudgetFor(string verb)
-        => verb == WorkerProtocol.AssemblyBuildVerb ? AssemblyInactivityTimeout : StageInactivityTimeout;
+        => verb is WorkerProtocol.AssemblyBuildVerb or WorkerProtocol.AssemblyRenameVerb
+            ? AssemblyInactivityTimeout
+            : StageInactivityTimeout;
     private static readonly JsonSerializerOptions JsonOptions = WorkerProtocol.CreateJsonOptions();
 
     public WorkerClient(MappingRuntimePaths? runtimePaths = null)
@@ -73,6 +75,17 @@ public sealed class WorkerClient
         CancellationToken cancellationToken)
         => await RunWorkerAsync(
             WorkerProtocol.AssemblyBuildVerb,
+            request.BatchId,
+            request,
+            progress,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<int> RunRenameAsync(
+        AssemblyRenameRequest request,
+        Action<WorkerEvent> progress,
+        CancellationToken cancellationToken)
+        => await RunWorkerAsync(
+            WorkerProtocol.AssemblyRenameVerb,
             request.BatchId,
             request,
             progress,

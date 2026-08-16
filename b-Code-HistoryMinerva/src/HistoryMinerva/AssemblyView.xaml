@@ -9,6 +9,7 @@
              FontSize="{DynamicResource Shell.Font.Body}"
              Foreground="{DynamicResource Shell.Brush.TextPrimary}">
     <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <Style x:Key="Mapping.DataGridHeader" TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="{DynamicResource Shell.Brush.SurfaceAlt}" />
             <Setter Property="Foreground" Value="{DynamicResource Shell.Brush.TextSecondary}" />
@@ -258,33 +259,82 @@
                            Margin="{DynamicResource Shell.Space.Gap}"
                            Text="转换选项"
                            VerticalAlignment="Center" />
-                <!-- 识别与草图合并成一项：草图完全定义本就依赖识别，两个开关多占的横向空间
-                     会把"重建装配关系"挤到第二行——那等于用户根本拿不到这个开关。 -->
-                <CheckBox Content="识别特征与草图"
-                          Margin="{DynamicResource Shell.Space.Gap}"
-                          IsChecked="{Binding RecognizeFeatures}"
-                          ToolTip="识别特征，并对识别出的草图执行完全定义。" />
-                <CheckBox Content="失败继续"
-                          Margin="{DynamicResource Shell.Space.Gap}"
-                          IsChecked="{Binding ContinueWhenPartFails}"
-                          IsEnabled="{Binding CanContinueWhenPartFails}"
-                          ToolTip="单个零件失败时继续转换其余零件。" />
-                <CheckBox Content="重建装配关系"
-                          Margin="{DynamicResource Shell.Space.Gap}"
-                          IsChecked="{Binding RebuildMates}"
-                          IsEnabled="{Binding CanRebuildMates}"
-                          ToolTip="{Binding RebuildMatesHint}" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowConversionOptions}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <CheckBox Content="识别特征与草图"
+                              Margin="{DynamicResource Shell.Space.Gap}"
+                              IsChecked="{Binding RecognizeFeatures}"
+                              ToolTip="识别特征，并对识别出的草图执行完全定义。" />
+                    <CheckBox Content="失败继续"
+                              Margin="{DynamicResource Shell.Space.Gap}"
+                              IsChecked="{Binding ContinueWhenPartFails}"
+                              IsEnabled="{Binding CanContinueWhenPartFails}"
+                              ToolTip="单个零件失败时继续转换其余零件。" />
+                    <CheckBox Content="重建装配关系"
+                              Margin="{DynamicResource Shell.Space.Gap}"
+                              IsChecked="{Binding RebuildMates}"
+                              IsEnabled="{Binding CanRebuildMates}"
+                              ToolTip="{Binding RebuildMatesHint}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsRenameMode}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock x:Name="DrawingPrefixLabelText"
+                               Style="{DynamicResource Shell.Text.Body}"
+                               FontWeight="SemiBold"
+                               Margin="{DynamicResource Shell.Space.Gap}"
+                               Text="图号前缀"
+                               VerticalAlignment="Center" />
+                    <TextBox x:Name="DrawingPrefixBox"
+                             MinWidth="120"
+                             Margin="{DynamicResource Shell.Space.Gap}"
+                             VerticalAlignment="Center"
+                             Text="{Binding DrawingPrefix, UpdateSourceTrigger=PropertyChanged}"
+                             IsEnabled="{Binding CanEdit}"
+                             ToolTip="手写前缀，例如 ZS-LHL。后面的层级数字按所选装配体自动生成。" />
+                </StackPanel>
             </WrapPanel>
-            <Button x:Name="ConvertButton"
-                    Grid.Column="1"
-                    MinWidth="128"
-                    MinHeight="{DynamicResource Shell.Size.Control}"
-                    Margin="{DynamicResource Shell.Space.Gap}"
-                    Style="{DynamicResource Shell.Button.Accent}"
-                    Content="{Binding PrimaryActionText}"
-                    Click="OnConvertClick"
-                    IsEnabled="{Binding CanConvert}"
-                    VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <Button x:Name="StripButton"
+                        MinWidth="128"
+                        MinHeight="{DynamicResource Shell.Size.Control}"
+                        Margin="{DynamicResource Shell.Space.Gap}"
+                        Style="{DynamicResource Shell.Button.Accent}"
+                        Content="按空格洗图号"
+                        Click="OnStripClick"
+                        IsEnabled="{Binding CanStrip}"
+                        VerticalAlignment="Center"
+                        Visibility="{Binding IsRenameMode, Converter={StaticResource BoolToVis}}"
+                        ToolTip="按文件名第一个空格去掉图号，只保留原名称。" />
+                <Button x:Name="ConvertButton"
+                        MinWidth="128"
+                        MinHeight="{DynamicResource Shell.Size.Control}"
+                        Margin="{DynamicResource Shell.Space.Gap}"
+                        Style="{DynamicResource Shell.Button.Accent}"
+                        Content="{Binding PrimaryActionText}"
+                        Click="OnConvertClick"
+                        IsEnabled="{Binding CanConvert}"
+                        VerticalAlignment="Center" />
+            </StackPanel>
         </Grid>
     </Grid>
 </UserControl>

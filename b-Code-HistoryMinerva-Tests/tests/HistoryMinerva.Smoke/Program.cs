@@ -62,6 +62,8 @@ try
     TestMateGeometryMatching();
     TestMateTypeMapping();
     TestSolidWorksSelfPipelineContracts();
+    TestPropertyPrepDrawingNumbers(root);
+    TestPropertyPrepViewModel(root);
     TestSolidWorksSelfPipelinePlanning(root);
     TestSolidWorksSelfPipelineDefaultDirectories(root);
     TestPreflightValidatorAcceptsSolidWorksSource(root);
@@ -156,6 +158,7 @@ static void TestSharedContractsAndVersion()
     True(WorkerProtocol.IsKnownVerb(WorkerProtocol.PartImportVerb), "单零件隔离导入动词必须由共享合同认可");
     True(WorkerProtocol.IsKnownVerb(WorkerProtocol.AssemblyProbeVerb), "装配探查动词必须由共享合同认可");
     True(WorkerProtocol.IsKnownVerb(WorkerProtocol.AssemblyBuildVerb), "装配构建动词必须由共享合同认可");
+    True(WorkerProtocol.IsKnownVerb(WorkerProtocol.AssemblyRenameVerb), "属性整备改名动词必须由共享合同认可");
     True(!WorkerProtocol.IsKnownVerb("--unknown"), "未知 Worker 动词必须被拒绝");
 
     var directories = ConversionPathLayout.ResolveExternalDirectories(@"C:\fixture");
@@ -1742,6 +1745,261 @@ static void TestSolidWorksSelfPipelineContracts()
         MappingContentOption.ForAssemblyFile(@"C:\T\A.asm")!.Kind,
         ".asm 必须选到 Solid Edge 装配转换");
     True(MappingContentOption.ForAssemblyFile(@"C:\T\A.step") is null, "不支持的扩展名不得猜一个格式出来");
+    var renameContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    Equal(ConversionSourceFormat.SolidWorks, renameContent.SourceFormat, "属性整备项的源格式必须是 SolidWorks");
+    True(renameContent.IsAssemblySource, "属性整备的来源是单个装配体文件");
+    Equal(4, MappingContentOption.Available.Count, "转换内容必须包含属性整备改名这一项");
+}
+
+/// <summary>V4.3.9：图号前缀手写，层级数字按所选装配体推断；标准件内部无图号。</summary>
+static void TestPropertyPrepDrawingNumbers(string root)
+{
+    True(DrawingNumber.TryParseFileName("ZS-LHL-01-02-00 进样器模块.SLDASM", "ZS-LHL", out var parsed, out var name),
+        "必须能从已命名装配体解析图号");
+    Equal("ZS-LHL-01-02-00", parsed.Text, "小组件图号必须保留到 -00");
+    Equal("进样器模块", name, "原零件名称必须原样留下");
+    True(parsed.IsMinorAssembly, "01-02-00 必须识别为小组件");
+    True(DrawingNumber.RootAssembly("ZS-LHL").IsRootAssembly, "只有 -00 的是总装");
+    Equal(
+        "ZS-LHL-01-02-01 阀体.SLDPRT",
+        DrawingNumber.FormatFileName(parsed.Child(1, asAssembly: false), "阀体", ".SLDPRT"),
+        "小组件下的零件必须按 -01 递增且保留原名");
+
+    var dir = Path.Combine(root, "property-prep");
+    var standardDir = Path.Combine(dir, "标准件");
+    Directory.CreateDirectory(standardDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "ZS-LHL-00 总装.SLDASM");
+    var major = Path.Combine(dir, "进样器模块.SLDASM");
+    var basePlate = Path.Combine(dir, "底板.SLDPRT");
+    var shaft = Path.Combine(dir, "轴.SLDPRT");
+    var standard = Path.Combine(standardDir, "GB70.SLDASM");
+    var screw = Path.Combine(standardDir, "螺钉.SLDPRT");
+    foreach (var path in new[] { rootAsm, major, basePlate, shaft, standard, screw })
+        File.WriteAllText(path, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        [
+            new AssemblyOccurrence("进样器模块-1", null, major, true, false, false, identity, null),
+            new AssemblyOccurrence("进样器模块-1/轴-1", "进样器模块-1", shaft, false, false, false, identity, null),
+            new AssemblyOccurrence("底板-1", null, basePlate, false, false, false, identity, null),
+            new AssemblyOccurrence("GB70-1", null, standard, true, false, false, identity, null),
+            new AssemblyOccurrence("GB70-1/螺钉-1", "GB70-1", screw, false, false, false, identity, null),
+        ],
+        [shaft, basePlate, screw],
+        0, 0, 3, 0, [],
+        [
+            new AssemblyDocumentReading(rootAsm,
+            [
+                new AssemblyChild("进样器模块-1", major, true, false, identity),
+                new AssemblyChild("底板-1", basePlate, false, false, identity),
+                new AssemblyChild("GB70-1", standard, true, false, identity),
+            ], []),
+            new AssemblyDocumentReading(major,
+            [
+                new AssemblyChild("轴-1", shaft, false, false, identity),
+            ], []),
+            new AssemblyDocumentReading(standard,
+            [
+                new AssemblyChild("螺钉-1", screw, false, false, identity),
+            ], []),
+        ]);
+
+    var plan = PropertyPrepPlanner.Create(probe, "ZS-LHL");
+    True(plan.BlockingIssues.Count == 0, "合法装配的图号规划不得有阻断：" + string.Join("；", plan.BlockingIssues));
+    Equal("ZS-LHL-00 总装.SLDASM", Path.GetFileName(Target(plan, rootAsm)), "总装已按规则命名时不得再改名");
+    Equal("ZS-LHL-01-00 进样器模块.SLDASM", Path.GetFileName(Target(plan, major)), "总装下的子装配必须编成大组件");
+    Equal("ZS-LHL-01-01 轴.SLDPRT", Path.GetFileName(Target(plan, shaft)), "大组件下的零件必须接到该大组件编号后");
+    Equal("ZS-LHL-02 底板.SLDPRT", Path.GetFileName(Target(plan, basePlate)), "总装直属零件必须占用一个序号");
+    Equal("ZS-LHL-03 GB70.SLDASM", Path.GetFileName(Target(plan, standard)), "标准件装配体无论层级都按零件编号");
+    True(plan.Unnumbered.Any(entry => AssemblyRenamePlan.SamePath(entry.SourcePath, screw)),
+        "标准件内部零件不得分配图号");
+
+    var minorDir = Path.Combine(root, "property-prep-minor");
+    Directory.CreateDirectory(minorDir);
+    var minor = Path.Combine(minorDir, "ZS-LHL-01-02-00 进样器模块.SLDASM");
+    var valveBody = Path.Combine(minorDir, "阀体.SLDPRT");
+    var valveCore = Path.Combine(minorDir, "阀芯.SLDPRT");
+    foreach (var path in new[] { minor, valveBody, valveCore })
+        File.WriteAllText(path, "cad");
+    var minorProbe = new AssemblyProbeResult(
+        minor,
+        [
+            new AssemblyOccurrence("阀体-1", null, valveBody, false, false, false, identity, null),
+            new AssemblyOccurrence("阀芯-1", null, valveCore, false, false, false, identity, null),
+        ],
+        [valveBody, valveCore],
+        0, 0, 2, 0, [],
+        [
+            new AssemblyDocumentReading(minor,
+            [
+                new AssemblyChild("阀体-1", valveBody, false, false, identity),
+                new AssemblyChild("阀芯-1", valveCore, false, false, identity),
+            ], []),
+        ]);
+    var minorPlan = PropertyPrepPlanner.Create(minorProbe, "ZS-LHL");
+    True(minorPlan.CanRename, "小组件下的未编号零件必须允许改名");
+    Equal("ZS-LHL-01-02-01 阀体.SLDPRT", Path.GetFileName(Target(minorPlan, valveBody)), "小组件零件从 -01 起编");
+    Equal("ZS-LHL-01-02-02 阀芯.SLDPRT", Path.GetFileName(Target(minorPlan, valveCore)), "小组件零件按出现顺序递增");
+
+    var empty = PropertyPrepPlanner.Create(minorProbe, " ");
+    True(empty.BlockingIssues.Count > 0 && empty.BlockingIssues[0].Contains("前缀", StringComparison.Ordinal),
+        "空前缀必须阻断，不能猜一个前缀出来");
+
+    True(DrawingNumber.TryStripBySpace("ZS-LHL-00 总装.SLDASM", out var stripToken, out var stripName),
+        "必须能按第一个空格洗掉图号");
+    Equal("ZS-LHL-00", stripToken, "空格前是图号");
+    Equal("总装", stripName, "空格后是原名称");
+    True(DrawingNumber.TryStripBySpace("ZS-LHL-01-02-01 进样器 模块.SLDPRT", out _, out var spacedName),
+        "原名里还有空格时，只切第一处");
+    Equal("进样器 模块", spacedName, "第一空格之后全部保留为原名");
+    True(!DrawingNumber.TryStripBySpace("阀体.SLDPRT", out _, out _),
+        "没有空格的文件不得假装有图号");
+
+    var stripDir = Path.Combine(root, "property-prep-strip");
+    var stripStandardDir = Path.Combine(stripDir, "标准件");
+    Directory.CreateDirectory(stripStandardDir);
+    var numberedRoot = Path.Combine(stripDir, "ZS-LHL-00 总装.SLDASM");
+    var numberedMajor = Path.Combine(stripDir, "ZS-LHL-01-00 进样器模块.SLDASM");
+    var numberedShaft = Path.Combine(stripDir, "ZS-LHL-01-01 轴.SLDPRT");
+    var plainPlate = Path.Combine(stripDir, "底板.SLDPRT");
+    var numberedStandard = Path.Combine(stripStandardDir, "ZS-LHL-03 GB70.SLDASM");
+    var numberedScrew = Path.Combine(stripStandardDir, "ZS-LHL-03-01 螺钉.SLDPRT");
+    foreach (var path in new[] { numberedRoot, numberedMajor, numberedShaft, plainPlate, numberedStandard, numberedScrew })
+        File.WriteAllText(path, "cad");
+    var stripProbe = new AssemblyProbeResult(
+        numberedRoot,
+        [
+            new AssemblyOccurrence("进样器模块-1", null, numberedMajor, true, false, false, identity, null),
+            new AssemblyOccurrence("进样器模块-1/轴-1", "进样器模块-1", numberedShaft, false, false, false, identity, null),
+            new AssemblyOccurrence("底板-1", null, plainPlate, false, false, false, identity, null),
+            new AssemblyOccurrence("GB70-1", null, numberedStandard, true, false, false, identity, null),
+            new AssemblyOccurrence("GB70-1/螺钉-1", "GB70-1", numberedScrew, false, false, false, identity, null),
+        ],
+        [numberedShaft, plainPlate, numberedScrew],
+        0, 0, 3, 0, [],
+        [
+            new AssemblyDocumentReading(numberedRoot,
+            [
+                new AssemblyChild("进样器模块-1", numberedMajor, true, false, identity),
+                new AssemblyChild("底板-1", plainPlate, false, false, identity),
+                new AssemblyChild("GB70-1", numberedStandard, true, false, identity),
+            ], []),
+            new AssemblyDocumentReading(numberedMajor,
+            [
+                new AssemblyChild("轴-1", numberedShaft, false, false, identity),
+            ], []),
+            new AssemblyDocumentReading(numberedStandard,
+            [
+                new AssemblyChild("螺钉-1", numberedScrew, false, false, identity),
+            ], []),
+        ]);
+    var stripPlan = PropertyPrepPlanner.CreateStrip(stripProbe);
+    True(stripPlan.BlockingIssues.Count == 0, "合法装配的洗图号规划不得有阻断：" + string.Join("；", stripPlan.BlockingIssues));
+    True(stripPlan.CanRename, "带空格图号的装配必须允许按空格洗名");
+    Equal("总装.SLDASM", Path.GetFileName(Target(stripPlan, numberedRoot)), "总装必须洗成原名");
+    Equal("进样器模块.SLDASM", Path.GetFileName(Target(stripPlan, numberedMajor)), "大组件必须洗成原名");
+    Equal("轴.SLDPRT", Path.GetFileName(Target(stripPlan, numberedShaft)), "零件必须洗成原名");
+    Equal("GB70.SLDASM", Path.GetFileName(Target(stripPlan, numberedStandard)), "标准件装配也按空格洗");
+    Equal("螺钉.SLDPRT", Path.GetFileName(Target(stripPlan, numberedScrew)), "标准件内部若已有图号也要洗");
+    True(stripPlan.Unnumbered.Any(entry => AssemblyRenamePlan.SamePath(entry.SourcePath, plainPlate)),
+        "没有空格的文件必须保持原名");
+}
+
+static string Target(AssemblyRenamePlan plan, string source)
+    => plan.Entries.Single(entry => AssemblyRenamePlan.SamePath(entry.SourcePath, source)).TargetPath;
+
+static void TestPropertyPrepViewModel(string root)
+{
+    var directory = Path.Combine(root, "property-prep-vm");
+    Directory.CreateDirectory(directory);
+    var assembly = Path.Combine(directory, "进样器模块.SLDASM");
+    var part = Path.Combine(directory, "阀体.SLDPRT");
+    File.WriteAllText(assembly, "asm");
+    File.WriteAllText(part, "part");
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var probe = new AssemblyProbeResult(
+        assembly,
+        [new AssemblyOccurrence("阀体-1", null, part, false, false, false, identity, null)],
+        [part],
+        0, 0, 1, 0, [],
+        [
+            new AssemblyDocumentReading(assembly,
+            [
+                new AssemblyChild("阀体-1", part, false, false, identity),
+            ], []),
+        ]);
+    var renamed = false;
+    using var viewModel = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(probe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher,
+        renameWorker: (_, _, _) =>
+        {
+            renamed = true;
+            return Task.FromResult(0);
+        });
+    viewModel.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    viewModel.SetAssemblySource(assembly);
+    Equal(MappingContent.SolidWorksAssemblyPropertyPrep, viewModel.SelectedMappingContent.Kind,
+        "已经选了属性整备时，再选 .SLDASM 不得被切回特征整备");
+    True(viewModel.IsRenameMode, "属性整备项必须进入改名模式");
+    viewModel.DrawingPrefix = "ZS-LHL";
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(viewModel.CanConvert, "解析成功且前缀有效后必须允许按图号改名");
+    True(viewModel.Parts.Any(row => row.Detail.Contains("ZS-LHL-00", StringComparison.Ordinal)
+                                    || row.Detail.Contains("ZS-LHL-01", StringComparison.Ordinal)),
+        "改名预览必须展示规划后的文件名");
+    viewModel.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(renamed, "主按钮在改名模式下必须走 rename Worker，而不是装配转换");
+
+    var stripDirectory = Path.Combine(root, "property-prep-vm-strip");
+    Directory.CreateDirectory(stripDirectory);
+    var numberedAssembly = Path.Combine(stripDirectory, "ZS-LHL-00 总装.SLDASM");
+    var numberedPart = Path.Combine(stripDirectory, "ZS-LHL-01 阀体.SLDPRT");
+    File.WriteAllText(numberedAssembly, "asm");
+    File.WriteAllText(numberedPart, "part");
+    var stripProbe = new AssemblyProbeResult(
+        numberedAssembly,
+        [new AssemblyOccurrence("阀体-1", null, numberedPart, false, false, false, identity, null)],
+        [numberedPart],
+        0, 0, 1, 0, [],
+        [
+            new AssemblyDocumentReading(numberedAssembly,
+            [
+                new AssemblyChild("阀体-1", numberedPart, false, false, identity),
+            ], []),
+        ]);
+    AssemblyRenameRequest? stripRequest = null;
+    using var stripModel = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(stripProbe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher,
+        renameWorker: (request, _, _) =>
+        {
+            stripRequest = request;
+            return Task.FromResult(0);
+        });
+    stripModel.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    stripModel.SetAssemblySource(numberedAssembly);
+    stripModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(!stripModel.CanConvert, "未填前缀时不得按图号改名");
+    True(stripModel.CanStrip, "文件名带空格时必须允许按空格洗图号");
+    True(stripModel.Parts.Any(row => row.Detail.Contains("总装", StringComparison.Ordinal)
+                                    || row.Detail.Contains("阀体", StringComparison.Ordinal)),
+        "未填前缀时预览必须展示洗掉图号后的文件名");
+    stripModel.StripDrawingNumbersAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(stripRequest is { StripBySpace: true }, "洗图号按钮必须走 rename Worker 并带上 StripBySpace");
 }
 
 /// <summary>V4.3：SW 源的整备计划与校验。产物绝不能落回源文件本身。</summary>
@@ -2060,9 +2318,11 @@ static void TestUiModuleRegistration(string root)
         "HistoryVulcan 前端必须注册 minerva.conversion.cancel");
     True(context.Registry.TryGet("minerva.conversion.probe", out var probe),
         "HistoryVulcan frontend must register minerva.conversion.probe");
+    True(context.Registry.TryGet("minerva.conversion.strip", out var strip),
+        "HistoryVulcan 前端必须注册 minerva.conversion.strip");
     True(probe.Readonly && probe.RequiresUiThread && !probe.AllowMcpExecution,
         "minerva.conversion.probe must be a frontend-only read command");
-    foreach (var registeredCommand in new[] { convert, cancel })
+    foreach (var registeredCommand in new[] { convert, cancel, strip })
     {
         True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
             $"{registeredCommand.Name} 必须是需要 UI 线程的写命令");
@@ -2114,6 +2374,7 @@ static void TestUiModuleRegistration(string root)
     serviceModule.Attach(serviceContext);
     serviceModule.CreateUi();
     True(!serviceContext.Registry.TryGet("minerva.conversion.run", out _)
+         && !serviceContext.Registry.TryGet("minerva.conversion.strip", out _)
          && !serviceContext.Registry.TryGet("minerva.conversion.cancel", out _),
         "无 ShellUi 的服务宿主不得重复注册页面状态命令");
 
@@ -2149,8 +2410,8 @@ static void TestUnifiedSourceWorkspace()
                 "单页工作区默认必须等待用户选择来源");
             True(workspace.UnifiedPage.ViewModel.SourcePath.Length == 0,
                 "未选择来源时不能残留旧路径");
-            Equal(3, workspace.UnifiedPage.ViewModel.MappingContents.Count,
-                "通用 Mapping 页面必须只提供当前支持的三种转换内容");
+            Equal(4, workspace.UnifiedPage.ViewModel.MappingContents.Count,
+                "通用 Mapping 页面必须提供当前支持的四种转换内容");
             Equal(MappingContent.SolidEdgePartToSolidWorksPart,
                 workspace.UnifiedPage.ViewModel.SelectedMappingContent.Kind,
                 "默认转换内容必须是 .par → .SLDPRT");

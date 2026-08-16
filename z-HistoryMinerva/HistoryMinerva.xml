@@ -207,6 +207,11 @@
         <member name="M:HistoryMinerva.MappingContentOption.ForAssemblyFile(System.String)">
             <summary>按源装配文件的扩展名选出对应的转换内容。识别不出时返回 null。</summary>
         </member>
+        <member name="M:HistoryMinerva.MappingRuntimePaths.LooksLikeLibraryRoot(System.String)">
+            <summary>
+            编号项目库根：至少两个 <c>YYYY-NNN-*</c> 子目录。HistoryClio 用这个识别，不再依赖裸仓哨兵。
+            </summary>
+        </member>
         <member name="M:HistoryMinerva.PreflightValidator.ValidateEnvironment(System.String,HistoryMinerva.Contracts.ConversionSourceFormat)">
             <param name="workerPath">Worker 可执行文件路径。</param>
             <param name="sourceFormat">
@@ -238,6 +243,36 @@
             <summary>
             SWuse 生命周期占位。4.2.0 起独立 SWuse 窗口已移除（待打磨后再回归）；
             建模能力保留在 HistoryMinerva.Worker 协议层。映射停靠页由 HistoryMinervaUiModule 注册。
+            </summary>
+        </member>
+        <member name="T:XamlGeneratedNamespace.GeneratedInternalTypeHelper">
+            <summary>
+            GeneratedInternalTypeHelper
+            </summary>
+        </member>
+        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.CreateInstance(System.Type,System.Globalization.CultureInfo)">
+            <summary>
+            CreateInstance
+            </summary>
+        </member>
+        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.GetPropertyValue(System.Reflection.PropertyInfo,System.Object,System.Globalization.CultureInfo)">
+            <summary>
+            GetPropertyValue
+            </summary>
+        </member>
+        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.SetPropertyValue(System.Reflection.PropertyInfo,System.Object,System.Object,System.Globalization.CultureInfo)">
+            <summary>
+            SetPropertyValue
+            </summary>
+        </member>
+        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.CreateDelegate(System.Type,System.Object,System.String)">
+            <summary>
+            CreateDelegate
+            </summary>
+        </member>
+        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.AddEventHandler(System.Reflection.EventInfo,System.Object,System.Delegate)">
+            <summary>
+            AddEventHandler
             </summary>
         </member>
     </members>

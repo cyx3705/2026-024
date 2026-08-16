@@ -58,6 +58,16 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
                 });
                 registry.Register(new CommandDescriptor
                 {
+                    Name = HistoryMinervaIdentity.CommandRoot + ".conversion.strip",
+                    CommandClass = "conversion",
+                    Summary = "通过命令总线按空格洗掉当前装配体的图号",
+                    Example = "minerva.conversion.strip",
+                    RequiresUiThread = true,
+                    AllowMcpExecution = false,
+                    Handler = StripCurrentAsync,
+                });
+                registry.Register(new CommandDescriptor
+                {
                     Name = HistoryMinervaIdentity.CommandRoot + ".conversion.cancel",
                     CommandClass = "conversion",
                     Summary = "取消当前 Minerva 转换或探查",
@@ -116,6 +126,17 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
             return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
 
         return ConversionCommandHandlers.ConvertAsync(viewModel, command);
+    }
+
+    private Task<CommandResult> StripCurrentAsync(CommandContext command)
+    {
+        var viewModel = _workspace?.UnifiedPage.ViewModel;
+        if (viewModel is null)
+            return Task.FromResult(CommandResult.Fail("Minerva 页面尚未创建。"));
+        if (!viewModel.CanStrip)
+            return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
+
+        return ConversionCommandHandlers.StripAsync(viewModel, command);
     }
 
     private CommandResult CancelCurrent(CommandContext _)

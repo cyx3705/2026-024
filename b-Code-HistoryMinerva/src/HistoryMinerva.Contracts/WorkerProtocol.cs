@@ -11,6 +11,7 @@ public static class WorkerProtocol
     public const string PartImportVerb = "--import-part";
     public const string AssemblyProbeVerb = "--probe-assembly";
     public const string AssemblyBuildVerb = "--assembly";
+    public const string AssemblyRenameVerb = "--rename-assembly";
     public const string CancellationArgument = "--cancel";
 
     public static JsonSerializerOptions CreateJsonOptions() => new()
@@ -20,5 +21,6 @@ public static class WorkerProtocol
     };
 
     public static bool IsKnownVerb(string? value)
-        => value is PartsRequestVerb or PartImportVerb or AssemblyProbeVerb or AssemblyBuildVerb;
+        => value is PartsRequestVerb or PartImportVerb or AssemblyProbeVerb or AssemblyBuildVerb
+            or AssemblyRenameVerb;
 }

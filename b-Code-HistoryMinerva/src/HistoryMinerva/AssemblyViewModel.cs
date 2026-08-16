@@ -9,11 +9,12 @@ using HistoryMinerva.Contracts;
 
 namespace HistoryMinerva;
 
-public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
+public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly Func<AssemblyProbeRequest, Action<WorkerEvent>, CancellationToken, Task<AssemblyProbeResult>> _probeWorker;
     private readonly Func<AssemblyBatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _runWorker;
     private readonly Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _runPartWorker;
+    private readonly Func<AssemblyRenameRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _renameWorker;
     private readonly Action<ConversionSourceFormat> _validateEnvironment;
     private readonly Dispatcher _uiDispatcher;
     private readonly MappingRuntimePaths _runtimePaths;
@@ -43,6 +44,9 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private Task? _activeOperation;
     private DispatcherOperation? _dispatchOperation;
     private AssemblyConversionPlan? _plan;
+    private AssemblyRenamePlan? _renamePlan;
+    private AssemblyRenamePlan? _stripPlan;
+    private bool _isStripping;
     private AssemblyProbeResult? _probeResult;
     private MateOutcome? _mateOutcome;
     private string? _sourceHashAfterProbe;
@@ -50,6 +54,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private bool _lastOperationSucceeded;
     private bool _lastOperationCanceled;
     private bool _disposed;
+    private string _drawingPrefix = string.Empty;
 
     public ObservableCollection<AssemblyTreeNode> AssemblyTree { get; } = [];
     public ObservableCollection<ConversionFileRow> Parts { get; } = [];
@@ -65,22 +70,18 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             if (IsBusy || EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, value))
                 return;
 
-            _selectedMappingContent = value;
-            ClearSourceResults();
-            ResetOutputDirectories();
-            _sourceAssemblyPath = string.Empty;
-            _partDirectory = string.Empty;
-            SetSourceKind(ConversionSourceKind.None);
-            RebuildMates = false;
-            StatusText = "请选择转换来源";
+            ApplyMappingContentChange(value);
             OnPropertyChanged(nameof(PrimaryActionText));
             OnPropertyChanged(nameof(PartsPanelTitle));
             OnPropertyChanged(nameof(OperationText));
             OnPropertyChanged(nameof(IsAssemblyMode));
+            OnPropertyChanged(nameof(IsRenameMode));
+            OnPropertyChanged(nameof(ShowConversionOptions));
             OnPropertyChanged(nameof(SourcePartColumnHeader));
             OnPropertyChanged(nameof(IsPartDirectoryMode));
             OnPropertyChanged(nameof(CanProbe));
             OnPropertyChanged(nameof(CanConvert));
+            OnPropertyChanged(nameof(CanStrip));
             OnPropertyChanged();
             NotifySourceChanged();
         }
@@ -137,6 +138,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(CanEdit));
             OnPropertyChanged(nameof(CanProbe));
             OnPropertyChanged(nameof(CanConvert));
+            OnPropertyChanged(nameof(CanStrip));
             OnPropertyChanged(nameof(CanRebuildMates));
             OnPropertyChanged(nameof(CanContinueWhenPartFails));
             OnPropertyChanged(nameof(CanCancel));
@@ -251,23 +253,31 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     public bool CanProbe => CanEdit && IsAssemblyMode && File.Exists(SourceAssemblyPath)
         && ConversionPathLayout.HasExtension(
             SourceAssemblyPath, ConversionPathLayout.GetSourceAssemblyExtension(SourceFormat));
-    public bool CanConvert => CanEdit && (IsAssemblyMode
-        ? !_conversionCompleted && _plan?.CanConvert == true
-        : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
+    public bool CanConvert => CanEdit && (IsRenameMode
+        ? !_conversionCompleted && _renamePlan?.CanRename == true
+        : IsAssemblyMode
+            ? !_conversionCompleted && _plan?.CanConvert == true
+            : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
     public bool CanContinueWhenPartFails => CanEdit && IsAssemblyMode;
 
     /// <summary>零件列的列头。写死"Solid Edge 零件"在 SW 自整备模式下是假话。</summary>
-    public string SourcePartColumnHeader => SourceFormat == ConversionSourceFormat.SolidWorks
-        ? "SolidWorks 零件"
-        : "Solid Edge 零件";
-    public string PrimaryActionText => IsPartDirectoryMode
-        || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource
-        ? "转换全部零件"
-        : "转换装配体";
+    public string SourcePartColumnHeader => IsRenameMode
+        ? "当前文件"
+        : SourceFormat == ConversionSourceFormat.SolidWorks
+            ? "SolidWorks 零件"
+            : "Solid Edge 零件";
+    public string PrimaryActionText => IsRenameMode
+        ? "按图号改名"
+        : IsPartDirectoryMode
+            || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource
+            ? "转换全部零件"
+            : "转换装配体";
     public string PartsPanelTitle => IsPartDirectoryMode ? "零件" : "唯一零件";
     public string OperationText => IsProbing
         ? "正在解析装配体"
-        : IsPartDirectoryMode ? "正在转换全部零件" : "正在转换装配体";
+        : IsRenameMode
+            ? (_isStripping ? "正在按空格洗图号" : "正在按图号改名")
+            : IsPartDirectoryMode ? "正在转换全部零件" : "正在转换装配体";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -291,7 +301,8 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
             sourceFormat => PreflightValidator.ValidateEnvironment(workerClient.WorkerPath, sourceFormat),
             uiDispatcher,
             workerClient.RunAsync,
-            runtimePaths)
+            runtimePaths,
+            workerClient.RunRenameAsync)
     {
     }
 
@@ -301,13 +312,17 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         Action<ConversionSourceFormat> validateEnvironment,
         Dispatcher uiDispatcher,
         Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? runPartWorker = null,
-        MappingRuntimePaths? runtimePaths = null)
+        MappingRuntimePaths? runtimePaths = null,
+        Func<AssemblyRenameRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? renameWorker = null)
     {
         _probeWorker = probeWorker ?? throw new ArgumentNullException(nameof(probeWorker));
         _runWorker = runWorker ?? throw new ArgumentNullException(nameof(runWorker));
         _runPartWorker = runPartWorker
             ?? ((request, progress, cancellationToken) =>
                 new WorkerClient(runtimePaths).RunAsync(request, progress, cancellationToken));
+        _renameWorker = renameWorker
+            ?? ((request, progress, cancellationToken) =>
+                new WorkerClient(runtimePaths).RunRenameAsync(request, progress, cancellationToken));
         _validateEnvironment = validateEnvironment ?? throw new ArgumentNullException(nameof(validateEnvironment));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _runtimePaths = runtimePaths ?? MappingRuntimePaths.CreateAppShellFallback();
@@ -326,7 +341,9 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         var trimmed = path.Trim();
         var option = MappingContentOption.ForAssemblyFile(trimmed)
             ?? throw new InvalidOperationException("只支持 Solid Edge .asm 或 SolidWorks .SLDASM 装配体。");
-        SelectMappingContentForSource(option.Kind);
+        if (!(SelectedMappingContent.IsAssemblySource
+              && SelectedMappingContent.SourceFormat == option.SourceFormat))
+            SelectMappingContentForSource(option.Kind);
         ClearSourceResults();
         ResetOutputDirectories();
         _sourceAssemblyPath = Path.GetFullPath(trimmed);
@@ -380,7 +397,9 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         {
             await StartOperationAsync(
                 isProbe: false,
-                IsPartDirectoryMode ? ConvertPartsCoreAsync : ConvertAssemblyCoreAsync);
+                IsRenameMode
+                    ? RenameCoreAsync
+                    : IsPartDirectoryMode ? ConvertPartsCoreAsync : ConvertAssemblyCoreAsync);
         }
         finally
         {
@@ -631,6 +650,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
                     : "装配转换失败，未生成 SLDASM";
             AppendMateDiagnostics();
             OnPropertyChanged(nameof(CanConvert));
+            OnPropertyChanged(nameof(CanStrip));
         });
         _lastOperationSucceeded = exitCode == 0 && File.Exists(plan.AssemblyOutputPath);
     }
@@ -750,6 +770,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
                     + $"{plan.SubAssemblyCount} 个子装配，最大 {plan.MaxDepth} 层、{plan.RelationCount} 条装配关系；按层级生成嵌套装配"
                 : $"解析完成：{result.Occurrences.Count} 个实例、{plan.Parts.Count} 个唯一零件；最终输出会展平"
             : $"解析完成，但有 {plan.BlockingIssues.Count} 个前置错误";
+        ApplyRenamePreview();
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanRebuildMates));
         OnPropertyChanged(nameof(RebuildMatesHint));
@@ -805,6 +826,9 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
     private void ClearProbeResult()
     {
         _plan = null;
+        _renamePlan = null;
+        _stripPlan = null;
+        _isStripping = false;
         _probeResult = null;
         _sourceHashAfterProbe = null;
         _conversionCompleted = false;
@@ -812,6 +836,7 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         Parts.Clear();
         WarningSummary = "输出按源装配的层级生成嵌套装配体，全部组件固定，不含配合。";
         OnPropertyChanged(nameof(CanConvert));
+        OnPropertyChanged(nameof(CanStrip));
     }
 
     private void ClearSourceResults()
@@ -875,6 +900,8 @@ public sealed class AssemblyViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(CanContinueWhenPartFails));
         OnPropertyChanged(nameof(CanRebuildMates));
         OnPropertyChanged(nameof(RebuildMatesHint));
+        OnPropertyChanged(nameof(IsRenameMode));
+        OnPropertyChanged(nameof(ShowConversionOptions));
         OnPropertyChanged(nameof(CanProbe));
         OnPropertyChanged(nameof(CanConvert));
     }

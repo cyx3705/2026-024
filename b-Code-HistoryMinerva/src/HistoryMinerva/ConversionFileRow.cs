@@ -22,9 +22,9 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     private string _sketchText = "";
     private bool _hasFeatureWarning;
 
-    public ConversionFileRow(ScanCandidate candidate, bool regeneratesExistingOutput = false)
+    public ConversionFileRow(ScanCandidate candidate, bool regeneratesExistingOutput = false, string? id = null)
     {
-        Id = Guid.NewGuid().ToString("N");
+        Id = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString("N") : id;
         SourcePath = candidate.SourcePath;
         XtPath = candidate.XtPath;
         SolidWorksPath = candidate.SolidWorksPath;

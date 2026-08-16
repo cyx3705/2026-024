@@ -8,6 +8,8 @@ public enum MappingContent
     SolidEdgeAssemblyToSolidWorksAssembly,
     // V4.3：SolidWorks 自整备。源与产物都是 SolidWorks，做的是"补上特征树"，不是格式转换。
     SolidWorksAssemblyToSolidWorksAssembly,
+    // V4.3.9：SolidWorks 属性整备。本版只做按图号改名，不改其它属性。
+    SolidWorksAssemblyPropertyPrep,
 }
 
 /// <param name="Kind">转换内容枚举值。</param>
@@ -40,6 +42,12 @@ public sealed record MappingContentOption(
             MappingContent.SolidWorksAssemblyToSolidWorksAssembly,
             "SolidWorks .SLDASM → SolidWorks .SLDASM（特征整备）",
             "选择单个 .SLDASM 装配体文件",
+            ConversionSourceFormat.SolidWorks,
+            IsAssemblySource: true),
+        new(
+            MappingContent.SolidWorksAssemblyPropertyPrep,
+            "SolidWorks .SLDASM → 属性整备（改名）",
+            "选择单个 .SLDASM 装配体，并填写图号前缀",
             ConversionSourceFormat.SolidWorks,
             IsAssemblySource: true),
     ];
