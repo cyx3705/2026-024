@@ -86,6 +86,7 @@ try
     TestRecognitionGeometryGuard();
     TestRecognitionSemanticGuard();
     TestNativeSolidWorksPartRecognition(root);
+    TestSolidWorksFeaturePrepBansSkipNativeTree(root);
     TestCadShortcutResolution(root);
     TestUnresolvedReferenceNamesPath(root);
     TestImportIdentityAndSessionFaultGuards();
@@ -2820,6 +2821,73 @@ static void TestNativeSolidWorksPartRecognition(string root)
          && (blocked.StatusText.Contains("同名不同路径", StringComparison.Ordinal)
              || blocked.StatusText.Contains("同一输出", StringComparison.Ordinal)),
         "命令结果必须带上挡住转换的原因，不能只说有前置错误");
+}
+
+/// <summary>
+/// 特征整备禁止「源零件已有特征树所以跳过」。离线锁两件事：生产源码不得再写出这句，
+/// 计划器对每个 SW 零件都必须给出 XT/ 下的交付用 .x_t，且不得复用已有 SLDPRT。
+/// </summary>
+static void TestSolidWorksFeaturePrepBansSkipNativeTree(string root)
+{
+    string[] banned = ["源零件已有特征树", "跳过整备"];
+    var sourceRoot = Path.GetFullPath(Path.Combine(
+        Path.GetDirectoryName(LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "build", "HistoryMinerva.Version.props")))!,
+        "..",
+        "src"));
+    True(Directory.Exists(sourceRoot), $"生产源码根必须存在：{sourceRoot}");
+    var hits = new List<string>();
+    foreach (var file in Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories))
+    {
+        var relative = Path.GetRelativePath(sourceRoot, file);
+        if (relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(segment => segment is "bin" or "obj"))
+        {
+            continue;
+        }
+
+        var text = File.ReadAllText(file);
+        foreach (var phrase in banned)
+        {
+            if (text.Contains(phrase, StringComparison.Ordinal))
+                hits.Add($"{relative} → {phrase}");
+        }
+    }
+
+    Equal(0, hits.Count, "生产代码禁止跳过整备文案：" + string.Join("；", hits));
+
+    var xtDirectory = Path.Combine(root, ConversionPathLayout.XtDirectoryName);
+    var swDirectory = Path.Combine(root, ConversionPathLayout.SolidWorksDirectoryName);
+    Directory.CreateDirectory(xtDirectory);
+    Directory.CreateDirectory(swDirectory);
+    var sourcePart = Path.Combine(root, "gate-native.SLDPRT");
+    File.WriteAllText(sourcePart, "native-tree");
+    var job = new ConversionJob(
+        "密封",
+        sourcePart,
+        Path.Combine(xtDirectory, "密封.x_t"),
+        Path.Combine(swDirectory, "密封.SLDPRT"));
+    File.WriteAllText(job.SolidWorksPath, "previous-output");
+    foreach (var recognize in new[] { false, true })
+    {
+        var plan = AssemblyPartReusePlanner.Create(
+            [job], CancellationToken.None, recognize, ConversionSourceFormat.SolidWorks);
+        Equal(0, plan.ReusableSolidWorksParts.Count, $"识别={recognize} 时 SW 不得复用已有 SLDPRT");
+        True(plan.NeedsExport.Count + plan.ImportFromExistingXt.Count == 1,
+            $"识别={recognize} 时每个零件必须导出 XT 或从已有 XT 导入");
+        Equal(
+            ConversionPathLayout.XtDirectoryName,
+            Path.GetFileName(Path.GetDirectoryName(job.XtPath)),
+            "交付用 XT 必须落在 XT/ 目录");
+        True(
+            ConversionPathLayout.HasExtension(job.XtPath, ConversionArtifactKind.Xt),
+            "计划路径必须是 .x_t");
+    }
+
+    var skipEvent = new WorkerEvent("b", "密封", ConversionStage.Skipped, "源零件已有特征树");
+    var status = ConversionProgressPresenter.GetRowStatus(skipEvent, "排队");
+    True(!status.Contains("跳过整备", StringComparison.Ordinal)
+         && !status.Contains("源零件已有特征树", StringComparison.Ordinal),
+        $"界面状态不得复述跳过整备文案，实得：{status}");
 }
 
 static void TestCadShortcutResolution(string root)
