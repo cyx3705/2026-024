@@ -9,11 +9,8 @@ namespace HistoryMinerva.Worker;
 /// 把源零件复制到输出目录，在**副本**上跑既有的 FeatureWorks 识别与草图完全定义，存盘。
 /// 源文件从头到尾只被读取一次（<c>File.Copy</c>），SolidWorks 永远打不开它。
 ///
-/// 与 Solid Edge 管线的关键差别，也是这条路更稳的原因：
-///
-///   · 没有 Parasolid 往返，几何天然逐位保真；
-///   · 识别失败时的降级产物不需要"重新导入"——直接把源文件再复制一遍就是完美的哑实体，
-///     字节与源完全相同。V2.0 那套"丢弃文档、从 XT 重来"的补救在这里根本用不上。
+/// 哑实体和已有特征树的普通零件走同一条识别路：先把副本导出临时 <c>.x_t</c> 再导回，
+/// FeatureWorks 只认导入体。识别失败时把源文件再复制一遍，产物与源逐字节相同。
 ///
 /// 工作副本用 <see cref="TemporaryOutput.For"/> 的唯一临时名打开，因此它的文档标题
 /// 绝不会和会话里可能开着的同名源零件相撞（<c>swFileWithSameTitleAlreadyOpen</c>），
@@ -212,38 +209,22 @@ internal static class SolidWorksPartPreparer
             if (identityFailure is not null)
                 throw new InvalidDataException(identityFailure);
 
-            // 源零件里没有导入体 = 已经有完整特征树 = 没有可整备的东西。
-            //
-            // 必须在识别之前拦掉，否则会连累整批：对这种零件
-            // RecognizeFeatureAutomatic 必然返回 0，而 SetAdvancedOptions 也返回 false
-            // ——后者被当成"本会话未激活 FeatureWorks"的证据。实测（2026-08-12，
-            // 12位消解器样件）：批次头两个零件恰好都已整备好，于是连续两次"未识别"
-            // 触发降级，真正需要整备的 BJ10B-04/05 反而一次都没被识别，整批交付哑实体。
-            //
-            // SetAdvancedOptions 返回 false 有两种成因——会话未激活、活动文档里没有
-            // 可识别的导入体——它从来就不是一个干净的激活信号，不能让第二种冒充第一种。
             var sourceTree = interop.ReadTopLevelFeatureTree(model);
-            if (FeatureRecognizer.CountResidualImportedBodies(sourceTree) == 0)
-            {
-                var existingFeatures = FeatureRecognizer.CountBuiltSolidFeatures(sourceTree);
-                TryClose(interop, model);
-                ComRelease.Final(model);
-                model = null;
-                CommitCopy(job, ref temporaryPath, request.Overwrite, cancellationToken, reporter, null,
-                    $"源零件已有特征树（{existingFeatures} 个造型特征），没有待整备的导入体；"
-                        + "产物与源逐字节相同。");
-                return true;
-            }
+            reporter.Report(
+                job.Id,
+                ConversionStage.FeatureRecognition,
+                DescribeRecognitionPrep(
+                    FeatureRecognizer.CountBuiltSolidFeatures(sourceTree),
+                    FeatureRecognizer.CountResidualImportedBodies(sourceTree)));
+            if (!RequiresParasolidFlattenBeforeRecognition(sourceTree))
+                throw new InvalidOperationException("特征整备在开启识别时必须先压平，不能跳过普通 SolidWorks 零件。");
 
             // ---- 经 Parasolid 往返再识别 ----
             //
-            // 识别不直接作用在打开的 .SLDPRT 上，而是先把实体导出 .x_t、再 LoadFile4 导回来，
-            // 与 Solid Edge 管线进入识别时的实体形态完全一致。
-            //
-            // 这一步是按现场经验加的：直接对 .SLDPRT 识别的成品率明显不足。往返的代价是每件
-            // 约一秒的 Parasolid 推导，以及"成功件的产物由 XT 重新推导而来"——对本分支的零件
-            // 无损失，因为走到这里的都是**纯导入体**（有特征树的已在上一段跳过），本来就没有
-            // 配置、属性或特征树可丢。识别失败时仍回退为源文件副本，逐字节相同的保证不变。
+            // FeatureWorks 只认导入体。直接对已有特征树调用 RecognizeFeatureAutomatic
+            // 必然返回 0，还会把 SetAdvancedOptions=false 误判成"会话未激活"。
+            // 所以普通 SW 零件和哑实体一样：先把实体导出 .x_t、再 LoadFile4 导回来。
+            // 往返会丢掉源特征树、配置和属性；识别失败则回退源文件副本，逐字节相同。
             xtPath = Path.ChangeExtension(temporaryPath, ".x_t");
             SolidWorksXtExporter.SaveAsParasolid(interop, model, xtPath, cancellationToken);
             interop.CloseDocument(title);
@@ -372,6 +353,22 @@ internal static class SolidWorksPartPreparer
             ComRelease.Final(model);
         }
     }
+
+    /// <summary>
+    /// 开启识别时，源零件是否必须先压平为导入体。哑实体和普通 SW 零件都要：
+    /// FeatureWorks 不能作用在已有特征树上。
+    /// </summary>
+    internal static bool RequiresParasolidFlattenBeforeRecognition(
+        IReadOnlyList<FeatureTreeEntry> sourceTree)
+    {
+        ArgumentNullException.ThrowIfNull(sourceTree);
+        return true;
+    }
+
+    internal static string DescribeRecognitionPrep(int existingSolidFeatures, int importedBodies)
+        => importedBodies == 0
+            ? $"源零件是普通 SolidWorks 零件（{existingSolidFeatures} 个造型特征），没有导入体；先压平为导入体再识别。"
+            : $"源零件含 {importedBodies} 处导入体，经 Parasolid 往返后识别。";
 
     /// <summary>把已经就位的副本改名成最终产物，并报告完成。</summary>
     private static void CommitCopy(
