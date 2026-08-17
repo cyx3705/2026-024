@@ -92,7 +92,7 @@ jobs:
         shell: pwsh
         run: >-
           .\b-Code-HistoryMinerva\eng\Build-HistoryMinervaPackage.ps1
-          -Configuration Release -SkipBuild -OutputRoot .\b-Publish\current\HistoryMinerva-CI
+          -Configuration Release -SkipBuild -OutputRoot .\z-Publish\current\HistoryMinerva-CI
 
       - name: Reject generated tracked changes
         working-directory: 2026-024-HistoryMinerva
