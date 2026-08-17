@@ -63,7 +63,7 @@ if ([version]$actualHostVersion -lt [version]$minimumHostVersion) {
 Write-Host "HistoryVulcan host: $actualHostVersion (minimum $minimumHostVersion)"
 
 if (-not $SkipBuild) {
-    & dotnet build $moduleProject -c $Configuration -p:NuGetAudit=false
+    & dotnet build $moduleProject -c $Configuration -p:NuGetAudit=false "-p:HistoryVulcanPackageRoot=$historyVulcanPackageRoot"
     if ($LASTEXITCODE -ne 0) {
         throw "Mapping $Configuration build failed with exit code $LASTEXITCODE"
     }

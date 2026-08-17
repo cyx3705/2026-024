@@ -1,0 +1,21 @@
+{
+    "schemaVersion":  1,
+    "type":  "HistoryVulcan.Module",
+    "name":  "HistoryMinerva",
+    "version":  "4.3.17",
+    "description":  "CAD 装配转换与建模 Worker",
+    "artifact":  "HistoryMinerva.dll",
+    "docs":  "HistoryMinerva.xml",
+    "deps":  [
+                 "HistoryMinerva.Contracts.dll",
+                 "HistoryMinerva.Api.dll",
+                 "HistoryMinerva.Worker.exe",
+                 "HistoryMinerva.Worker.dll",
+                 "HistoryMinerva.Worker.deps.json",
+                 "HistoryMinerva.Worker.runtimeconfig.json",
+                 "Microsoft.CodeAnalysis.dll",
+                 "Microsoft.CodeAnalysis.CSharp.dll"
+             ],
+    "mcpExposure":  "readonly",
+    "ui":  true
+}
