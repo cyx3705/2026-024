@@ -159,4 +159,84 @@ public static class AssemblyTransformVerifier
         0, 0, 1, 0,
         0, 0, 0, 1,
     ];
+
+    public static double MaxAbsDifference(IReadOnlyList<double> left, IReadOnlyList<double> right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+        if (left.Count != 16 || right.Count != 16)
+            throw new InvalidDataException("变换矩阵必须是 16 元素。");
+
+        var max = 0d;
+        for (var index = 0; index < 16; index++)
+            max = Math.Max(max, Math.Abs(left[index] - right[index]));
+        return max;
+    }
+
+    /// <summary>
+    /// 行主序 4×4 求逆。父级世界矩阵可逆时，子级在位局部矩阵为
+    /// <c>局部 = 世界 × Inverse(父世界)</c>。
+    /// </summary>
+    public static bool TryInverse(IReadOnlyList<double> matrix, out double[] inverse)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        if (matrix.Count != 16)
+            throw new InvalidDataException("变换矩阵必须是 16 元素。");
+
+        inverse = Identity();
+        const double pivotMin = 1e-14;
+        var augmented = new double[4, 8];
+        for (var row = 0; row < 4; row++)
+        {
+            for (var column = 0; column < 4; column++)
+                augmented[row, column] = matrix[row * 4 + column];
+            augmented[row, row + 4] = 1;
+        }
+
+        for (var pivot = 0; pivot < 4; pivot++)
+        {
+            var best = pivot;
+            var bestAbs = Math.Abs(augmented[pivot, pivot]);
+            for (var row = pivot + 1; row < 4; row++)
+            {
+                var candidate = Math.Abs(augmented[row, pivot]);
+                if (candidate <= bestAbs)
+                    continue;
+                best = row;
+                bestAbs = candidate;
+            }
+
+            if (bestAbs < pivotMin)
+                return false;
+            if (best != pivot)
+            {
+                for (var column = 0; column < 8; column++)
+                    (augmented[pivot, column], augmented[best, column]) = (augmented[best, column], augmented[pivot, column]);
+            }
+
+            var scale = augmented[pivot, pivot];
+            for (var column = 0; column < 8; column++)
+                augmented[pivot, column] /= scale;
+
+            for (var row = 0; row < 4; row++)
+            {
+                if (row == pivot)
+                    continue;
+                var factor = augmented[row, pivot];
+                if (factor == 0)
+                    continue;
+                for (var column = 0; column < 8; column++)
+                    augmented[row, column] -= factor * augmented[pivot, column];
+            }
+        }
+
+        inverse = new double[16];
+        for (var row = 0; row < 4; row++)
+        {
+            for (var column = 0; column < 4; column++)
+                inverse[row * 4 + column] = augmented[row, column + 4];
+        }
+
+        return true;
+    }
 }
