@@ -574,7 +574,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 result, customXtDirectory: null, customSolidWorksDirectory: null, sourceFormat);
             var sourceHash = ComputeSha256(result.SourceAssemblyPath);
             QueueUiUpdate(() => ApplyProbeResult(result, plan, sourceHash));
-            _lastOperationSucceeded = true;
         }
         finally
         {
@@ -780,12 +779,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         }
         WarningSummary = string.Join("；", plan.Warnings.Concat(
             string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
-        StatusText = plan.CanConvert
-            ? plan.IsNested
-                ? $"解析完成：{result.Occurrences.Count} 个实例、{plan.Parts.Count} 个唯一零件、"
-                    + $"{plan.SubAssemblyCount} 个子装配，最大 {plan.MaxDepth} 层、{plan.RelationCount} 条装配关系；按层级生成嵌套装配"
-                : $"解析完成：{result.Occurrences.Count} 个实例、{plan.Parts.Count} 个唯一零件；最终输出会展平"
-            : $"解析完成，但有 {plan.BlockingIssues.Count} 个前置错误";
+        StatusText = FormatProbeStatus(plan, result, issueText);
+        _lastOperationSucceeded = plan.CanConvert;
         ApplyRenamePreview();
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanRebuildMates));
@@ -798,7 +793,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         _mateOutcome = workerEvent.Mate ?? workerEvent.Assembly?.Mate ?? _mateOutcome;
         if (workerEvent.JobId is null)
         {
-            StatusText = ConversionProgressPresenter.FormatMessage(workerEvent);
+            // Completed 会盖掉 ApplyProbeResult 写好的前置错误，控制台看起来像解析成功。
+            if (workerEvent.Stage != ConversionStage.Completed)
+                StatusText = ConversionProgressPresenter.FormatMessage(workerEvent);
             return;
         }
         var row = Parts.FirstOrDefault(item => item.Id == workerEvent.JobId);

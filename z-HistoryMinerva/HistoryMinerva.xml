@@ -129,6 +129,9 @@
             报告只写进日志、用户看不见的话，这个承诺就没兑现。
             </summary>
         </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.FormatProbeStatus(HistoryMinerva.AssemblyConversionPlan,HistoryMinerva.Contracts.AssemblyProbeResult,System.String)">
+            <summary>探查结果进命令总线。前置错误必须出现在文本里，页面按 REQ-006 不绑 StatusText。</summary>
+        </member>
         <member name="F:HistoryMinerva.ConversionFileRow.ExistingStatus">
             <summary>已有产物、且本轮不会重做时的状态文字。</summary>
         </member>

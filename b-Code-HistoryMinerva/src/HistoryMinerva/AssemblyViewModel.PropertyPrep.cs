@@ -270,4 +270,23 @@ public sealed partial class AssemblyViewModel
         if (exitCode != 0)
             throw new InvalidOperationException($"{resultPrefix}失败，详见 Vulcan 控制台。");
     }
+
+    /// <summary>探查结果进命令总线。前置错误必须出现在文本里，页面按 REQ-006 不绑 StatusText。</summary>
+    internal static string FormatProbeStatus(
+        AssemblyConversionPlan plan,
+        AssemblyProbeResult result,
+        string issueText)
+    {
+        if (plan.CanConvert)
+        {
+            return plan.IsNested
+                ? $"解析完成：{result.Occurrences.Count} 个实例、{plan.Parts.Count} 个唯一零件、"
+                    + $"{plan.SubAssemblyCount} 个子装配，最大 {plan.MaxDepth} 层、{plan.RelationCount} 条装配关系；按层级生成嵌套装配"
+                : $"解析完成：{result.Occurrences.Count} 个实例、{plan.Parts.Count} 个唯一零件；最终输出会展平";
+        }
+
+        return string.IsNullOrWhiteSpace(issueText)
+            ? $"解析完成，但有 {plan.BlockingIssues.Count} 个前置错误"
+            : $"解析完成，但有 {plan.BlockingIssues.Count} 个前置错误：{issueText}";
+    }
 }

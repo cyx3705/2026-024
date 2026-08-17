@@ -353,6 +353,13 @@ internal sealed class SolidWorksInteropBridge : IDisposable
     public string GetComponentPath(object component)
         => Convert.ToString(Invoke(_componentInterface, component, "GetPathName")) ?? string.Empty;
 
+    public bool IsComponentVirtual(object component)
+        => Convert.ToBoolean(Invoke(_componentInterface, component, "get_IsVirtual"));
+
+    /// <summary>已加载组件的模型。调用方不得 FinalRelease：它可能是会话里正打开的文档。</summary>
+    public object? GetComponentModelDoc(object component)
+        => Invoke(_componentInterface, component, "GetModelDoc2");
+
     public bool IsComponentSuppressed(object component)
         => Convert.ToBoolean(Invoke(_componentInterface, component, "IsSuppressed"));
 

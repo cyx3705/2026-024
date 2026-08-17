@@ -69,16 +69,29 @@ public static class AssemblyPlanner
         if (!File.Exists(sourceAssemblyPath))
             issues.Add(new AssemblyPlanIssue(ConversionErrorClass.InputMissing, $"源装配体不存在：{sourceAssemblyPath}"));
         if (probe.UnresolvedCount > 0)
+        {
+            var missing = probe.Occurrences
+                .Where(item => item.Diagnostic?.Contains("引用不存在", StringComparison.Ordinal) == true)
+                .Select(item => string.IsNullOrWhiteSpace(item.SourcePath) ? item.OccurrenceId : item.SourcePath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(5)
+                .ToArray();
+            var suffix = missing.Length == 0 ? "。" : "：" + string.Join("；", missing);
             issues.Add(new AssemblyPlanIssue(
                 ConversionErrorClass.OccurrenceUnresolved,
-                $"装配体有 {probe.UnresolvedCount} 个未解析引用，转换已阻止。"));
+                $"装配体有 {probe.UnresolvedCount} 个未解析引用，转换已阻止{suffix}"));
+        }
 
-        CheckDirectoryNameConflict(xtDirectory, issues);
+        // SW 自整备不建 XT/。源目录里若有叫 XT 的文件，不得当成输出目录冲突。
+        if (ConversionPathLayout.UsesParasolidHandoff(sourceFormat))
+            CheckDirectoryNameConflict(xtDirectory, issues);
         CheckDirectoryNameConflict(swDirectory, issues);
 
         var supportedParts = probe.Occurrences
             .Where(item => !item.IsSubAssembly && !item.IsSuppressed)
-            .Select(item => Path.GetFullPath(item.SourcePath))
+            .Select(item => item.SourcePath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
             .Where(path => ConversionPathLayout.HasExtension(path, sourcePartExtension))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(path => path, StringComparer.CurrentCultureIgnoreCase)

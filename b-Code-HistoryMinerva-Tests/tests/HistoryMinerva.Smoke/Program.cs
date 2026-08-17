@@ -85,6 +85,8 @@ try
     TestRecognitionGeometryGuard();
     TestRecognitionSemanticGuard();
     TestNativeSolidWorksPartRecognition(root);
+    TestCadShortcutResolution(root);
+    TestUnresolvedReferenceNamesPath(root);
     TestImportIdentityAndSessionFaultGuards();
     Console.WriteLine("HistoryMinerva.Smoke: PASS");
 }
@@ -2101,6 +2103,14 @@ static void TestSolidWorksSelfPipelineDefaultDirectories(string root)
         plan.Parts[0].SolidWorksPath,
         "产物必须落在 SW 子目录，不能被回退路径改写回源零件");
 
+    File.WriteAllText(Path.Combine(source, ConversionPathLayout.XtDirectoryName), "not-a-directory");
+    var xtFilePlan = AssemblyPlanner.Create(
+        probe,
+        customXtDirectory: null,
+        customSolidWorksDirectory: null,
+        ConversionSourceFormat.SolidWorks);
+    True(xtFilePlan.CanConvert, "SW 自整备不使用 XT，源目录里的 XT 文件不得挡住转换");
+
     // Solid Edge 源的旧平铺产物是真实存在的，放宽 SW 不能把它一并关掉。
     var seSource = Path.Combine(root, "se-legacy-flat");
     Directory.CreateDirectory(seSource);
@@ -2647,6 +2657,84 @@ static void TestNativeSolidWorksPartRecognition(string root)
     True(blocked.Parts.Any(row => row.Detail.Contains("同名不同路径", StringComparison.Ordinal)
                                   || row.Detail.Contains("同一输出", StringComparison.Ordinal)),
         "零件行要写出挡住转换的原因");
+    True(!blocked.LastOperationSucceeded, "前置错误的探查不得报成功");
+    True(blocked.StatusText.Contains("前置错误", StringComparison.Ordinal)
+         && (blocked.StatusText.Contains("同名不同路径", StringComparison.Ordinal)
+             || blocked.StatusText.Contains("同一输出", StringComparison.Ordinal)),
+        "命令结果必须带上挡住转换的原因，不能只说有前置错误");
+}
+
+static void TestCadShortcutResolution(string root)
+{
+    var dir = Path.Combine(root, "cad-lnk");
+    Directory.CreateDirectory(dir);
+    var target = Path.Combine(dir, "real.SLDPRT");
+    File.WriteAllText(target, "part");
+    var missing = Path.Combine(dir, "ghost.SLDPRT");
+    CreateWindowsShortcut(missing + ".lnk", target);
+    Equal(
+        Path.GetFullPath(target),
+        CadPathResolver.ResolveExisting(missing),
+        "缺失的 SLDPRT 若旁边有同名 .lnk，必须解析到目标文件");
+
+    var assemblyTarget = Path.Combine(dir, "direct-target.SLDASM");
+    File.WriteAllText(assemblyTarget, "asm");
+    var directLnk = Path.Combine(dir, "direct.SLDASM.lnk");
+    CreateWindowsShortcut(directLnk, assemblyTarget);
+    Equal(
+        Path.GetFullPath(assemblyTarget),
+        CadPathResolver.ResolveExisting(directLnk),
+        "GetPathName 直接给出 .lnk 时也要解析到装配体");
+}
+
+static void TestUnresolvedReferenceNamesPath(string root)
+{
+    var directory = Path.Combine(root, "unresolved-path");
+    Directory.CreateDirectory(directory);
+    var assembly = Path.Combine(directory, "Top.SLDASM");
+    File.WriteAllText(assembly, "asm");
+    var missing = Path.Combine(directory, "Missing.SLDPRT");
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var plan = AssemblyPlanner.Create(
+        new AssemblyProbeResult(
+            assembly,
+            [new AssemblyOccurrence("Missing-1", null, missing, false, false, false, identity, "引用不存在")],
+            [],
+            0, 1, 0, 0, [],
+            [new AssemblyDocumentReading(assembly, [new AssemblyChild("Missing-1", missing, false, false, identity, "引用不存在")], [])]),
+        customXtDirectory: null,
+        customSolidWorksDirectory: null,
+        ConversionSourceFormat.SolidWorks);
+    True(!plan.CanConvert, "未解析引用必须挡住转换");
+    True(plan.BlockingIssues.Any(issue => issue.Message.Contains("Missing.SLDPRT", StringComparison.Ordinal)),
+        "前置错误必须写出缺失文件路径");
+}
+
+static void CreateWindowsShortcut(string lnkPath, string targetPath)
+{
+    var type = Type.GetTypeFromProgID("WScript.Shell", throwOnError: false);
+    True(type is not null, "本机必须有 WScript.Shell 才能覆盖快捷方式解析");
+    var shell = Activator.CreateInstance(type!);
+    True(shell is not null, "WScript.Shell 必须能创建实例");
+    var shortcut = type!.InvokeMember(
+        "CreateShortcut",
+        BindingFlags.InvokeMethod,
+        binder: null,
+        shell,
+        [lnkPath]);
+    True(shortcut is not null, "CreateShortcut 必须返回快捷方式对象");
+    shortcut!.GetType().InvokeMember(
+        "TargetPath",
+        BindingFlags.SetProperty,
+        binder: null,
+        shortcut,
+        [targetPath]);
+    shortcut.GetType().InvokeMember(
+        "Save",
+        BindingFlags.InvokeMethod,
+        binder: null,
+        shortcut,
+        null);
 }
 
 static void TestUnifiedPartDirectoryFlow(string root)
