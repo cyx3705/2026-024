@@ -55,6 +55,46 @@ public sealed partial class AssemblyViewModel
            && SelectedMappingContent.SourceFormat == next.SourceFormat
            && next.SourceFormat == ConversionSourceFormat.SolidWorks;
 
+    private void SelectMappingContentForSource(MappingContent kind)
+    {
+        var selected = MappingContentOption.Available.Single(option => option.Kind == kind);
+        if (EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, selected))
+        {
+            SyncFeatureRecognitionDefault(kind);
+            return;
+        }
+
+        _suppressMappingContentChange = true;
+        try
+        {
+            _selectedMappingContent = selected;
+            SyncFeatureRecognitionDefault(kind);
+            OnPropertyChanged(nameof(SelectedMappingContent));
+            OnPropertyChanged(nameof(IsRenameMode));
+            OnPropertyChanged(nameof(ShowConversionOptions));
+            OnPropertyChanged(nameof(PrimaryActionText));
+            OnPropertyChanged(nameof(SourcePartColumnHeader));
+            OnPropertyChanged(nameof(IsAssemblyMode));
+            OnPropertyChanged(nameof(IsPartDirectoryMode));
+        }
+        finally
+        {
+            _suppressMappingContentChange = false;
+        }
+    }
+
+    private void SyncFeatureRecognitionDefault(MappingContent kind)
+    {
+        var next = kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly;
+        if (_recognizeFeatures == next)
+            return;
+        _recognizeFeatures = next;
+        _fullyDefineSketches = next;
+        ApplyRegenerationToRows();
+        OnPropertyChanged(nameof(RecognizeFeatures));
+        OnPropertyChanged(nameof(FullyDefineSketches));
+    }
+
     private void ApplyMappingContentChange(MappingContentOption value)
     {
         var keepAssembly = CanKeepSolidWorksAssembly(value);
@@ -75,6 +115,7 @@ public sealed partial class AssemblyViewModel
                 ApplyProbeResult(keptProbe, keptPlan, keptHash);
             else
                 StatusText = "正在准备解析装配体";
+            SyncFeatureRecognitionDefault(value.Kind);
             return;
         }
 
@@ -85,6 +126,7 @@ public sealed partial class AssemblyViewModel
         _sourceAssemblyPath = string.Empty;
         SetSourceKind(ConversionSourceKind.None);
         StatusText = "请选择转换来源";
+        SyncFeatureRecognitionDefault(value.Kind);
     }
 
     private void ApplyRenamePreview()
@@ -227,5 +269,24 @@ public sealed partial class AssemblyViewModel
         _lastOperationSucceeded = exitCode == 0;
         if (exitCode != 0)
             throw new InvalidOperationException($"{resultPrefix}失败，详见 Vulcan 控制台。");
+    }
+
+    /// <summary>探查结果进命令总线。前置错误必须出现在文本里，页面按 REQ-006 不绑 StatusText。</summary>
+    internal static string FormatProbeStatus(
+        AssemblyConversionPlan plan,
+        AssemblyProbeResult result,
+        string issueText)
+    {
+        if (plan.CanConvert)
+        {
+            return plan.IsNested
+                ? $"解析完成：{result.Occurrences.Count} 个实例、{plan.Parts.Count} 个唯一零件、"
+                    + $"{plan.SubAssemblyCount} 个子装配，最大 {plan.MaxDepth} 层、{plan.RelationCount} 条装配关系；按层级生成嵌套装配"
+                : $"解析完成：{result.Occurrences.Count} 个实例、{plan.Parts.Count} 个唯一零件；最终输出会展平";
+        }
+
+        return string.IsNullOrWhiteSpace(issueText)
+            ? $"解析完成，但有 {plan.BlockingIssues.Count} 个前置错误"
+            : $"解析完成，但有 {plan.BlockingIssues.Count} 个前置错误：{issueText}";
     }
 }

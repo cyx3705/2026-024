@@ -24,6 +24,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     private string _sourceAssemblyPath = string.Empty;
     private string _partDirectory = string.Empty;
     private MappingContentOption _selectedMappingContent = MappingContentOption.Available[0];
+    private bool _suppressMappingContentChange;
     private ConversionSourceKind _sourceKind;
     private string _xtDirectory = string.Empty;
     private string _solidWorksDirectory = string.Empty;
@@ -66,24 +67,32 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         get => _selectedMappingContent;
         set
         {
-            ArgumentNullException.ThrowIfNull(value);
+            if (value is null || _suppressMappingContentChange)
+                return;
             if (IsBusy || EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, value))
                 return;
 
-            ApplyMappingContentChange(value);
-            OnPropertyChanged(nameof(PrimaryActionText));
-            OnPropertyChanged(nameof(PartsPanelTitle));
-            OnPropertyChanged(nameof(OperationText));
-            OnPropertyChanged(nameof(IsAssemblyMode));
-            OnPropertyChanged(nameof(IsRenameMode));
-            OnPropertyChanged(nameof(ShowConversionOptions));
-            OnPropertyChanged(nameof(SourcePartColumnHeader));
-            OnPropertyChanged(nameof(IsPartDirectoryMode));
-            OnPropertyChanged(nameof(CanProbe));
-            OnPropertyChanged(nameof(CanConvert));
-            OnPropertyChanged(nameof(CanStrip));
-            OnPropertyChanged();
-            NotifySourceChanged();
+            _suppressMappingContentChange = true;
+            try
+            {
+                ApplyMappingContentChange(value);
+                OnPropertyChanged(nameof(PrimaryActionText));
+                OnPropertyChanged(nameof(PartsPanelTitle));
+                OnPropertyChanged(nameof(OperationText));
+                OnPropertyChanged(nameof(IsAssemblyMode));
+                OnPropertyChanged(nameof(IsRenameMode));
+                OnPropertyChanged(nameof(ShowConversionOptions));
+                OnPropertyChanged(nameof(SourcePartColumnHeader));
+                OnPropertyChanged(nameof(IsPartDirectoryMode));
+                OnPropertyChanged(nameof(CanProbe));
+                OnPropertyChanged(nameof(CanConvert));
+                OnPropertyChanged(nameof(CanStrip));
+                NotifySourceChanged();
+            }
+            finally
+            {
+                _suppressMappingContentChange = false;
+            }
         }
     }
 
@@ -341,9 +350,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         var trimmed = path.Trim();
         var option = MappingContentOption.ForAssemblyFile(trimmed)
             ?? throw new InvalidOperationException("只支持 Solid Edge .asm 或 SolidWorks .SLDASM 装配体。");
-        if (!(SelectedMappingContent.IsAssemblySource
-              && SelectedMappingContent.SourceFormat == option.SourceFormat))
-            SelectMappingContentForSource(option.Kind);
         ClearSourceResults();
         ResetOutputDirectories();
         _sourceAssemblyPath = Path.GetFullPath(trimmed);
@@ -351,6 +357,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         SetSourceKind(ConversionSourceKind.Assembly);
         RebuildMates = false;
         UpdateAssemblyOutputPaths();
+        if (!(SelectedMappingContent.IsAssemblySource
+              && SelectedMappingContent.SourceFormat == option.SourceFormat))
+            SelectMappingContentForSource(option.Kind);
         StatusText = "正在准备解析装配体";
         NotifySourceChanged();
     }
@@ -565,7 +574,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 result, customXtDirectory: null, customSolidWorksDirectory: null, sourceFormat);
             var sourceHash = ComputeSha256(result.SourceAssemblyPath);
             QueueUiUpdate(() => ApplyProbeResult(result, plan, sourceHash));
-            _lastOperationSucceeded = true;
         }
         finally
         {
@@ -756,20 +764,23 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         AssemblyOutputPath = plan.AssemblyOutputPath;
         AssemblyTree.Add(AssemblyTreeNode.Build(result, plan.Nodes));
         var regeneratesExisting = RegeneratesExistingOutputs;
-        foreach (var candidate in plan.Parts)
-            Parts.Add(new ConversionFileRow(candidate, regeneratesExisting));
-
         var issueText = plan.BlockingIssues.Count == 0
             ? string.Empty
             : string.Join("；", plan.BlockingIssues.Select(issue => $"[{issue.ErrorClass}] {issue.Message}"));
+        foreach (var candidate in plan.Parts)
+            Parts.Add(new ConversionFileRow(candidate, regeneratesExisting));
+        if (plan.BlockingIssues.Count > 0)
+        {
+            foreach (var row in Parts)
+            {
+                row.Status = "受阻";
+                row.Detail = issueText;
+            }
+        }
         WarningSummary = string.Join("；", plan.Warnings.Concat(
             string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
-        StatusText = plan.CanConvert
-            ? plan.IsNested
-                ? $"解析完成：{result.Occurrences.Count} 个实例、{plan.Parts.Count} 个唯一零件、"
-                    + $"{plan.SubAssemblyCount} 个子装配，最大 {plan.MaxDepth} 层、{plan.RelationCount} 条装配关系；按层级生成嵌套装配"
-                : $"解析完成：{result.Occurrences.Count} 个实例、{plan.Parts.Count} 个唯一零件；最终输出会展平"
-            : $"解析完成，但有 {plan.BlockingIssues.Count} 个前置错误";
+        StatusText = FormatProbeStatus(plan, result, issueText);
+        _lastOperationSucceeded = plan.CanConvert;
         ApplyRenamePreview();
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanRebuildMates));
@@ -782,7 +793,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         _mateOutcome = workerEvent.Mate ?? workerEvent.Assembly?.Mate ?? _mateOutcome;
         if (workerEvent.JobId is null)
         {
-            StatusText = ConversionProgressPresenter.FormatMessage(workerEvent);
+            // Completed 会盖掉 ApplyProbeResult 写好的前置错误，控制台看起来像解析成功。
+            if (workerEvent.Stage != ConversionStage.Completed)
+                StatusText = ConversionProgressPresenter.FormatMessage(workerEvent);
             return;
         }
         var row = Parts.FirstOrDefault(item => item.Id == workerEvent.JobId);
@@ -904,15 +917,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         OnPropertyChanged(nameof(ShowConversionOptions));
         OnPropertyChanged(nameof(CanProbe));
         OnPropertyChanged(nameof(CanConvert));
-    }
-
-    private void SelectMappingContentForSource(MappingContent kind)
-    {
-        var selected = MappingContentOption.Available.Single(option => option.Kind == kind);
-        if (EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, selected))
-            return;
-        _selectedMappingContent = selected;
-        OnPropertyChanged(nameof(SelectedMappingContent));
     }
 
     private void NotifySourceChanged()

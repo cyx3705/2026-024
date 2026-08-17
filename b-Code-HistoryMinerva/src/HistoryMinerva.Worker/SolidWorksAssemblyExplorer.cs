@@ -238,13 +238,14 @@ internal static class SolidWorksAssemblyExplorer
     private static AssemblyChild ReadChild(SolidWorksInteropBridge interop, object component)
     {
         var name = interop.GetComponentName(component);
-        var sourcePath = NormalizePath(interop.GetComponentPath(component));
+        var sourcePath = ResolveComponentPath(interop, component);
         var isSubAssembly = ConversionPathLayout.HasExtension(
             sourcePath, ConversionPathLayout.SolidWorksAssemblyExtension);
         var hidden = TryGet(() => interop.GetComponentVisibility(component), ComponentVisible) != ComponentVisible;
+        var isVirtual = TryGet(() => interop.IsComponentVirtual(component), false);
         var diagnostics = new List<string>();
         if (!File.Exists(sourcePath))
-            diagnostics.Add("引用不存在");
+            diagnostics.Add(isVirtual ? "引用不存在（虚拟件）" : "引用不存在");
         if (hidden)
             diagnostics.Add("隐藏件");
 
@@ -267,16 +268,19 @@ internal static class SolidWorksAssemblyExplorer
         var id = interop.GetComponentName(component);
         var separator = id.LastIndexOf('/');
         var parentId = separator < 0 ? null : id[..separator];
-        var sourcePath = NormalizePath(interop.GetComponentPath(component));
+        var sourcePath = ResolveComponentPath(interop, component);
         var isSubAssembly = ConversionPathLayout.HasExtension(
             sourcePath, ConversionPathLayout.SolidWorksAssemblyExtension);
         var isSuppressed = TryGet(() => interop.IsComponentSuppressed(component), false);
         var hidden = TryGet(() => interop.GetComponentVisibility(component), ComponentVisible) != ComponentVisible;
+        var isVirtual = TryGet(() => interop.IsComponentVirtual(component), false);
         var diagnostics = new List<string>();
         if (!File.Exists(sourcePath))
         {
-            diagnostics.Add("引用不存在");
-            warnings.Add($"未解析引用：{sourcePath}");
+            diagnostics.Add(isVirtual ? "引用不存在（虚拟件）" : "引用不存在");
+            warnings.Add(isVirtual
+                ? $"未解析虚拟件：{id}"
+                : $"未解析引用：{sourcePath}");
         }
         if (hidden)
             diagnostics.Add("隐藏件");
@@ -658,8 +662,22 @@ internal static class SolidWorksAssemblyExplorer
         (direction[0] * transform[2]) + (direction[1] * transform[5]) + (direction[2] * transform[8]),
     ];
 
-    private static string NormalizePath(string path)
-        => string.IsNullOrWhiteSpace(path) ? string.Empty : Path.GetFullPath(path);
+    /// <summary>
+    /// GetPathName 可能是缺失文件、直接给出的 <c>.lnk</c>，或虚拟件空路径。
+    /// 先跟快捷方式，再尝试已加载模型的路径；都不存在时原样返回，由计划器拦未解析引用。
+    /// </summary>
+    private static string ResolveComponentPath(SolidWorksInteropBridge interop, object component)
+    {
+        var resolved = CadPathResolver.ResolveExisting(interop.GetComponentPath(component));
+        if (File.Exists(resolved))
+            return resolved;
+
+        var model = TryGet(() => interop.GetComponentModelDoc(component), (object?)null);
+        if (model is null)
+            return resolved;
+        var fromModel = CadPathResolver.ResolveExisting(interop.GetPathName(model));
+        return File.Exists(fromModel) ? fromModel : resolved;
+    }
 
     private static byte[] ComputeSha256(string path)
     {
