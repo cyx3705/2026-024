@@ -75,12 +75,8 @@ public sealed class MappingRuntimePaths
 
             for (; directory is not null; directory = directory.Parent)
             {
-                var localPackage = Path.Combine(
-                    directory.FullName,
-                    $"z-{HistoryMinervaIdentity.Name}",
-                    HistoryMinervaIdentity.WorkerFileName);
-                if (File.Exists(localPackage))
-                    yield return localPackage;
+                foreach (var candidate in EnumeratePackageWorkers(directory.FullName))
+                    yield return candidate;
 
                 if (!LooksLikeLibraryRoot(directory.FullName)
                     && !Directory.Exists(Path.Combine(directory.FullName, "HistoryVesta.git")))
@@ -98,17 +94,40 @@ public sealed class MappingRuntimePaths
 
                 foreach (var project in projects)
                 {
-                    var candidate = Path.Combine(
-                        project,
-                        $"z-{HistoryMinervaIdentity.Name}",
-                        HistoryMinervaIdentity.WorkerFileName);
-                    if (File.Exists(candidate))
+                    foreach (var candidate in EnumeratePackageWorkers(project))
                         yield return candidate;
                 }
 
                 yield break;
             }
         }
+    }
+
+    private static IEnumerable<string> EnumeratePackageWorkers(string root)
+    {
+        var worker = HistoryMinervaIdentity.WorkerFileName;
+        var legacyRoot = Path.Combine(root, $"z-{HistoryMinervaIdentity.Name}");
+        if (Directory.Exists(legacyRoot))
+            yield return Path.Combine(legacyRoot, worker);
+
+        var publishRoot = Path.Combine(root, "z-Publish");
+        if (!Directory.Exists(publishRoot))
+            yield break;
+
+        yield return Path.Combine(publishRoot, worker);
+
+        IEnumerable<string> versioned;
+        try
+        {
+            versioned = Directory.EnumerateDirectories(publishRoot, HistoryMinervaIdentity.Name + "-v*");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            yield break;
+        }
+
+        foreach (var package in versioned)
+            yield return Path.Combine(package, worker);
     }
 
     /// <summary>

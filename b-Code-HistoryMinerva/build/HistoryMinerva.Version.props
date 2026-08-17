@@ -3,7 +3,14 @@
   <PropertyGroup>
     <HistoryMinervaVersion>4.3.17</HistoryMinervaVersion>
     <MinimumHistoryVulcanVersion>3.11.1</MinimumHistoryVulcanVersion>
-    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-Publish</HistoryVulcanPackageRoot>
+    <HistoryVulcanPublishRoot Condition="'$(HistoryVulcanPublishRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-Publish</HistoryVulcanPublishRoot>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(HistoryVulcanPackageRoot)' == ''">
+    <_HistoryVulcanVersionedManifest Include="$(HistoryVulcanPublishRoot)\HistoryVulcan-v*\manifest.json" />
+  </ItemGroup>
+  <PropertyGroup>
+    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == '' and Exists('$(HistoryVulcanPublishRoot)\manifest.json')">$(HistoryVulcanPublishRoot)</HistoryVulcanPackageRoot>
+    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == '' and '@(_HistoryVulcanVersionedManifest)' != ''">@(_HistoryVulcanVersionedManifest->'%(RootDir)%(Directory)')</HistoryVulcanPackageRoot>
     <HistoryVulcanHostRoot Condition="'$(HistoryVulcanHostRoot)' == ''">$(HistoryVulcanPackageRoot)\host</HistoryVulcanHostRoot>
     <HistoryVulcanManifestPath>$(HistoryVulcanPackageRoot)\manifest.json</HistoryVulcanManifestPath>
     <HistoryVulcanCorePath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HistoryVulcanCorePath>

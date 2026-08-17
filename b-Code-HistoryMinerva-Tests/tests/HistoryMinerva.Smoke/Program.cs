@@ -2529,9 +2529,13 @@ static void TestUiModuleRegistration(string root)
             StringComparer.OrdinalIgnoreCase),
         "Worker 定位必须包含 HistoryVulcan HistoryMinerva 部署槽");
     True(runtimePaths.WorkerCandidates().Any(path =>
-            path.EndsWith(
-                Path.Combine($"z-{HistoryMinervaIdentity.Name}", HistoryMinervaIdentity.WorkerFileName),
-                StringComparison.OrdinalIgnoreCase)),
+        {
+            var normalized = path.Replace('/', Path.DirectorySeparatorChar);
+            return normalized.Contains(
+                    $"{Path.DirectorySeparatorChar}z-Publish{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase)
+                && normalized.EndsWith(HistoryMinervaIdentity.WorkerFileName, StringComparison.OrdinalIgnoreCase);
+        }),
         "Worker 定位必须包含正式 z-Publish 发布包回退路径");
     Equal(HistoryMinervaIdentity.Name, "HistoryMinerva", "部署槽字面量必须与权威源一致");
     Equal("HistoryMinerva.Worker.exe", HistoryMinervaIdentity.WorkerFileName, "Worker 已合并为单个 HistoryMinerva.Worker.exe");
