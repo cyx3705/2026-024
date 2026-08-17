@@ -58,6 +58,7 @@ try
     TestAssemblyTransformVerifierCatchesWrongFrame();
     TestAssemblyPlannerNesting(root);
     TestAssemblyPlannerRejectsBrokenGraph(root);
+    TestSolidWorksFlexibleSubAssemblyPlanning(root);
     TestAssemblyNodeReuse(root);
     TestMateGeometryMatching();
     TestMateTypeMapping();
@@ -650,7 +651,7 @@ static void TestConversionCommandBusOutcomes(string root)
         True(!result.Success && result.Message.Contains("模拟 Worker 失败", StringComparison.Ordinal),
             "Worker 异常不得被吞成成功结果");
         True(SpinWait.SpinUntil(
-                () => log.Entries.Any(entry =>
+                () => log.Snapshot().Any(entry =>
                     entry.Category.Equals("cmd:progress:minerva:conversion", StringComparison.OrdinalIgnoreCase)
                     && entry.Message.Contains("总线进度样本", StringComparison.Ordinal)),
                 TimeSpan.FromSeconds(3)),
@@ -1270,6 +1271,18 @@ static void TestAssemblyTransformVerifierWithRotation()
     Equal(2, result.CheckedCount, "两层各一个实例，应核验两条");
     True(result.IsConsistent, $"带旋转的复合应当一致，最大偏差 {result.MaxDeviation}");
     True(result.MaxDeviation <= AssemblyTransformVerifier.Tolerance, "偏差必须在 1e-9 以内");
+
+    True(AssemblyTransformVerifier.TryInverse(subLocal, out var inverseSub), "带旋转的父级矩阵必须可逆");
+    True(
+        AssemblyTransformVerifier.MaxAbsDifference(
+            AssemblyTransformVerifier.Multiply(subLocal, inverseSub),
+            AssemblyTransformVerifier.Identity()) <= AssemblyTransformVerifier.Tolerance,
+        "矩阵乘自己的逆必须回到单位阵");
+    True(
+        AssemblyTransformVerifier.MaxAbsDifference(
+            AssemblyTransformVerifier.Multiply(leafWorld, inverseSub),
+            leafLocal) <= AssemblyTransformVerifier.Tolerance,
+        "在位局部矩阵必须等于 世界 × Inverse(父世界)");
 }
 
 /// <summary>参考系用错时必须当场超差——这正是本版唯一的静默错误源。</summary>
@@ -1284,6 +1297,17 @@ static void TestAssemblyTransformVerifierCatchesWrongFrame()
     True(!result.IsConsistent, "参考系用错必须被检出");
     Equal(1, result.Mismatches.Count, "应当只有叶零件那一条超差");
     True(Math.Abs(result.MaxDeviation - 0.238) < 1e-9, $"偏差应等于漏掉的父级平移，实得 {result.MaxDeviation}");
+
+    var reconciled = AssemblyTransformReconciler.Reconcile(probe);
+    Equal(0, reconciled.Conflicts.Count, "单实例柔性差异不是冲突");
+    True(reconciled.AdjustedOccurrenceIds.Contains("Sub:1/Leaf:1"), "必须改写叶零件的在位局部矩阵");
+    var leaf = reconciled.Probe.Documents!.Single(item => item.SourceAssemblyPath.EndsWith("Sub.asm", StringComparison.OrdinalIgnoreCase))
+        .Children.Single();
+    True(
+        AssemblyTransformVerifier.MaxAbsDifference(leaf.LocalTransform, Translation(0, 0.006, 0))
+        <= AssemblyTransformVerifier.Tolerance,
+        "在位局部平移必须是世界减去父级平移");
+    True(AssemblyTransformVerifier.Verify(reconciled.Probe).IsConsistent, "按在位姿态改写后必须与世界矩阵一致");
 }
 
 static AssemblyProbeResult MakeProbe(double[] subLocal, double[] leafLocal, double[] subWorld, double[] leafWorld)
@@ -1416,6 +1440,96 @@ static void TestAssemblyPlannerRejectsBrokenGraph(string root)
     True(!wrongPlan.CanConvert, "参考系不一致必须阻断转换");
     True(wrongPlan.BlockingIssues.Any(issue => issue.ErrorClass == ConversionErrorClass.ComponentTransformFailed),
         "参考系不一致必须报 ComponentTransformFailed");
+}
+
+/// <summary>
+/// SolidWorks 柔性子装配：单独打开时是默认行程，总装里是伸出后的在位姿态。
+/// 计划器必须按总装世界矩阵生成，而不是把柔性差异当成参考系错误。
+/// 同一子装配出现两种在位姿态时仍阻断。
+/// </summary>
+static void TestSolidWorksFlexibleSubAssemblyPlanning(string root)
+{
+    var directory = Path.Combine(root, "sw-flex");
+    var output = Path.Combine(directory, "SW");
+    Directory.CreateDirectory(output);
+    string F(string name)
+    {
+        var path = Path.Combine(directory, name);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, name);
+        return path;
+    }
+
+    var top = F("0-罩子装配.SLDASM");
+    var sub = F(Path.Combine("气缸", "CRE-25.SLDASM"));
+    var pin = F(Path.Combine("气缸", "CRE-25_pin.SLDPRT"));
+    var cylinder = F(Path.Combine("气缸", "CRE-25_cylinder.SLDPRT"));
+
+    var flexProbe = new AssemblyProbeResult(
+        top,
+        [
+            new AssemblyOccurrence("CRE-25-1", null, sub, true, false, false, Translation(0, 0, 0), null),
+            new AssemblyOccurrence("CRE-25-1/CRE-25_pin-1", "CRE-25-1", pin, false, false, false, Translation(0, 0, 0.315), null),
+            new AssemblyOccurrence("CRE-25-1/CRE-25_cylinder-1", "CRE-25-1", cylinder, false, false, false, Translation(0, 0, 0.00592), null),
+        ],
+        [pin, cylinder],
+        0, 0, 0, 0, [],
+        [
+            new AssemblyDocumentReading(top, [Sub("CRE-25-1", sub, 0, 0, 0)], []),
+            new AssemblyDocumentReading(
+                sub,
+                [Part("CRE-25_pin-1", pin, 0, 0, 0), Part("CRE-25_cylinder-1", cylinder, 0, 0, 0)],
+                [],
+                [new AssemblyRelation(sub, 0, "IMate2", "CRE-25_pin-1", "CRE-25_cylinder-1", null, null)]),
+        ]);
+
+    var flexPlan = AssemblyPlanner.Create(flexProbe, null, output, ConversionSourceFormat.SolidWorks);
+    True(flexPlan.CanConvert, "柔性子装配应按总装在位姿态转换：" + string.Join("；", flexPlan.BlockingIssues.Select(item => item.Message)));
+    True(flexPlan.Warnings.Any(item => item.Contains("在位姿态", StringComparison.Ordinal)),
+        "必须告知用户已按总装实际姿态生成，而不是默认行程");
+    Equal(0, flexPlan.RelationCount, "改写过的柔性子装配不得再重建其内部配合");
+    var creNode = flexPlan.Nodes!.Single(node => node.SourceAssemblyPath.Equals(sub, StringComparison.OrdinalIgnoreCase));
+    var pinChild = creNode.Children.Single(child => child.Name == "CRE-25_pin-1");
+    True(
+        AssemblyTransformVerifier.MaxAbsDifference(pinChild.LocalTransform, Translation(0, 0, 0.315))
+        <= AssemblyTransformVerifier.Tolerance,
+        "嵌套生成必须使用活塞杆在总装中的伸出位置");
+
+    var rigidProbe = flexProbe with
+    {
+        Occurrences =
+        [
+            new AssemblyOccurrence("CRE-25-1", null, sub, true, false, false, Translation(0, 0, 0), null),
+            new AssemblyOccurrence("CRE-25-1/CRE-25_pin-1", "CRE-25-1", pin, false, false, false, Translation(0, 0, 0), null),
+            new AssemblyOccurrence("CRE-25-1/CRE-25_cylinder-1", "CRE-25-1", cylinder, false, false, false, Translation(0, 0, 0), null),
+        ],
+    };
+    var rigidPlan = AssemblyPlanner.Create(rigidProbe, null, output, ConversionSourceFormat.SolidWorks);
+    True(rigidPlan.CanConvert, "刚性格局一致时必须仍可转换");
+    True(!rigidPlan.Warnings.Any(item => item.Contains("在位姿态", StringComparison.Ordinal)),
+        "刚性格局不得发出柔性改写警告");
+    Equal(1, rigidPlan.RelationCount, "未改写时必须保留子装配内部配合");
+
+    var conflictProbe = new AssemblyProbeResult(
+        top,
+        [
+            new AssemblyOccurrence("CRE-25-1", null, sub, true, false, false, Translation(0, 0, 0), null),
+            new AssemblyOccurrence("CRE-25-1/CRE-25_pin-1", "CRE-25-1", pin, false, false, false, Translation(0, 0, 0.315), null),
+            new AssemblyOccurrence("CRE-25-2", null, sub, true, false, false, Translation(1, 0, 0), null),
+            new AssemblyOccurrence("CRE-25-2/CRE-25_pin-1", "CRE-25-2", pin, false, false, false, Translation(1, 0, 0.1), null),
+        ],
+        [pin],
+        0, 0, 0, 0, [],
+        [
+            new AssemblyDocumentReading(top, [Sub("CRE-25-1", sub, 0, 0, 0), Sub("CRE-25-2", sub, 1, 0, 0)], []),
+            new AssemblyDocumentReading(sub, [Part("CRE-25_pin-1", pin, 0, 0, 0)], []),
+        ]);
+    var conflictPlan = AssemblyPlanner.Create(conflictProbe, null, output, ConversionSourceFormat.SolidWorks);
+    True(!conflictPlan.CanConvert, "同一柔性子装配的两种行程必须阻断");
+    True(conflictPlan.BlockingIssues.Any(issue =>
+            issue.ErrorClass == ConversionErrorClass.ComponentTransformFailed
+            && issue.Message.Contains("多种在位姿态", StringComparison.Ordinal)),
+        "冲突原因必须说明无法写入同一个输出文件");
 }
 
 /// <summary>§3.7：装配产物必须比它递归依赖的每一个文件都新，否则拒绝复用。</summary>
@@ -3032,7 +3146,10 @@ static void TestAssemblyActiveRunDisposal(string root)
     True(!dispose.IsCompleted, "装配 ViewModel Dispose 必须等待 Worker 收束");
     True(dispose.Wait(TimeSpan.FromSeconds(3)), "装配 ViewModel 必须在取消完成后释放");
     True(cancellationObserved && workerExited.IsSet, "装配生命周期必须传播取消并等待 Worker 退出");
-    True(run.IsCanceled, "Dispose 返回前装配操作任务必须完成并保留取消语义");
+    True(SpinWait.SpinUntil(() => run.IsCompleted, TimeSpan.FromSeconds(1)),
+        "Dispose 返回前装配操作任务必须完成");
+    True(run.IsCanceled || run.Exception?.GetBaseException() is OperationCanceledException,
+        "Dispose 返回前装配操作任务必须完成并保留取消语义");
     Throws<OperationCanceledException>(() => run.GetAwaiter().GetResult());
     Throws<ObjectDisposedException>(() => viewModel.ProbeAsync().GetAwaiter().GetResult());
 }
@@ -3429,18 +3546,26 @@ sealed class RecordingSettingsService(string moduleDirectory) : ISettingsService
 
 sealed class RecordingShellLog : IShellLog
 {
-    public List<ShellLogEntry> Entries { get; } = [];
+    private readonly object _gate = new();
+    private readonly List<ShellLogEntry> _entries = [];
+
+    public IReadOnlyList<ShellLogEntry> Entries => Snapshot();
 
     public event EventHandler<ShellLogEntry>? EntryAdded;
 
     public void Log(ShellLogLevel level, string category, string message)
     {
         var entry = new ShellLogEntry(DateTime.Now, level, category, message);
-        Entries.Add(entry);
+        lock (_gate)
+            _entries.Add(entry);
         EntryAdded?.Invoke(this, entry);
     }
 
-    public IReadOnlyList<ShellLogEntry> Snapshot() => Entries.ToArray();
+    public IReadOnlyList<ShellLogEntry> Snapshot()
+    {
+        lock (_gate)
+            return _entries.ToArray();
+    }
 }
 
 sealed class CallbackDisposable(Action callback) : IDisposable

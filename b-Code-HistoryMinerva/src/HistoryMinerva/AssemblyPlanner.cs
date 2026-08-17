@@ -179,8 +179,32 @@ public static class AssemblyPlanner
         if (hiddenCount > 0)
             warnings.Add($"{hiddenCount} 个隐藏实例仍会插入，并保持普通可见组件。");
 
-        var graph = BuildGraph(probe, sourceAssemblyPath, swDirectory, issues);
-        VerifyTransforms(probe, issues);
+        var plannedProbe = probe;
+        var skipTransformVerify = false;
+        if (sourceFormat == ConversionSourceFormat.SolidWorks)
+        {
+            var reconciled = AssemblyTransformReconciler.Reconcile(probe);
+            plannedProbe = reconciled.Probe;
+            if (reconciled.Conflicts.Count > 0)
+            {
+                skipTransformVerify = true;
+                issues.Add(new AssemblyPlanIssue(
+                    ConversionErrorClass.ComponentTransformFailed,
+                    "同一子装配在总装中有多种在位姿态，无法写入同一个输出文件："
+                    + string.Join("；", reconciled.Conflicts.Take(5))));
+            }
+            if (reconciled.AdjustedOccurrenceIds.Count > 0)
+            {
+                warnings.Add(
+                    $"已按总装中的在位姿态生成 {reconciled.AdjustedOccurrenceIds.Count} 个柔性子件（"
+                    + string.Join("；", reconciled.AdjustedOccurrenceIds.Take(5))
+                    + "），不再使用单独打开子装配时的默认位置。");
+            }
+        }
+
+        var graph = BuildGraph(plannedProbe, sourceAssemblyPath, swDirectory, issues);
+        if (!skipTransformVerify)
+            VerifyTransforms(plannedProbe, issues);
         CheckAssemblyNameConflicts(graph, issues);
         ReportExistingAssemblyOutputs(graph, assemblyOutputPath, warnings);
         warnings.Add(graph is { Nodes.Count: > 0 }
@@ -195,12 +219,12 @@ public static class AssemblyPlanner
             swDirectory,
             assemblyOutputPath,
             parts,
-            probe.Occurrences,
+            plannedProbe.Occurrences,
             issues,
             warnings.Distinct(StringComparer.Ordinal).ToArray(),
             graph?.Nodes,
             graph?.MaxDepth ?? 1,
-            (probe.Documents ?? [])
+            (plannedProbe.Documents ?? [])
                 .SelectMany(document => document.Relations ?? [])
                 .ToArray());
     }
@@ -233,7 +257,8 @@ public static class AssemblyPlanner
 
     /// <summary>
     /// V3.3 §3.3.1：用世界矩阵与局部矩阵互相印证。参考系用错不会抛异常，只会静默错位，
-    /// 所以必须在触碰 CAD 之前把它拦住。
+    /// 所以必须在触碰 CAD 之前把它拦住。SolidWorks 源会先按总装在位姿态改写局部矩阵，
+    /// 再做本校验；改写后仍超差的才阻断。
     /// </summary>
     private static void VerifyTransforms(AssemblyProbeResult probe, ICollection<AssemblyPlanIssue> issues)
     {

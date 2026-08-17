@@ -38,7 +38,8 @@
         <member name="M:HistoryMinerva.AssemblyPlanner.VerifyTransforms(HistoryMinerva.Contracts.AssemblyProbeResult,System.Collections.Generic.ICollection{HistoryMinerva.AssemblyPlanIssue})">
             <summary>
             V3.3 §3.3.1：用世界矩阵与局部矩阵互相印证。参考系用错不会抛异常，只会静默错位，
-            所以必须在触碰 CAD 之前把它拦住。
+            所以必须在触碰 CAD 之前把它拦住。SolidWorks 源会先按总装在位姿态改写局部矩阵，
+            再做本校验；改写后仍超差的才阻断。
             </summary>
         </member>
         <member name="M:HistoryMinerva.AssemblyPlanner.CheckAssemblyNameConflicts(HistoryMinerva.AssemblyGraph,System.Collections.Generic.ICollection{HistoryMinerva.AssemblyPlanIssue})">
@@ -48,6 +49,14 @@
             <summary>
             已有装配产物不再是硬阻断。与 V3.0.2 的零件口径一致：转换时校验时间，
             安全的直接复用，过期或为空的报错让用户自己移走，从不覆盖用户文件。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.AssemblyTransformReconciler">
+            <summary>
+            SolidWorks 柔性子装配：单独打开子装配读到的局部矩阵，往往是默认行程；
+            总装 <c>GetComponents(false)</c> 给出的世界矩阵才是当前在位姿态。
+            本类用世界矩阵反算在位局部矩阵，供嵌套生成使用，而不是把柔性差异当成参考系错误。
+            同一子装配在总装里出现两种在位姿态时无法写入同一个输出文件，仍报冲突。
             </summary>
         </member>
         <member name="T:HistoryMinerva.AssemblyTransformVerifier">
@@ -69,6 +78,12 @@
             
              顺序写反或只把平移相加，在无旋转的样件上都能"通过"——所以验收样件必须带旋转。
              </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyTransformVerifier.TryInverse(System.Collections.Generic.IReadOnlyList{System.Double},System.Double[]@)">
+            <summary>
+            行主序 4×4 求逆。父级世界矩阵可逆时，子级在位局部矩阵为
+            <c>局部 = 世界 × Inverse(父世界)</c>。
+            </summary>
         </member>
         <member name="M:HistoryMinerva.AssemblyTreeNode.Build(HistoryMinerva.Contracts.AssemblyProbeResult,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyNode})">
             <param name="probe">装配探查返回的实例清单。</param>
@@ -246,36 +261,6 @@
             <summary>
             SWuse 生命周期占位。4.2.0 起独立 SWuse 窗口已移除（待打磨后再回归）；
             建模能力保留在 HistoryMinerva.Worker 协议层。映射停靠页由 HistoryMinervaUiModule 注册。
-            </summary>
-        </member>
-        <member name="T:XamlGeneratedNamespace.GeneratedInternalTypeHelper">
-            <summary>
-            GeneratedInternalTypeHelper
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.CreateInstance(System.Type,System.Globalization.CultureInfo)">
-            <summary>
-            CreateInstance
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.GetPropertyValue(System.Reflection.PropertyInfo,System.Object,System.Globalization.CultureInfo)">
-            <summary>
-            GetPropertyValue
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.SetPropertyValue(System.Reflection.PropertyInfo,System.Object,System.Object,System.Globalization.CultureInfo)">
-            <summary>
-            SetPropertyValue
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.CreateDelegate(System.Type,System.Object,System.String)">
-            <summary>
-            CreateDelegate
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.AddEventHandler(System.Reflection.EventInfo,System.Object,System.Delegate)">
-            <summary>
-            AddEventHandler
             </summary>
         </member>
     </members>
