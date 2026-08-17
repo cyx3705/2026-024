@@ -62,9 +62,8 @@ internal static class ConversionWorkerProgram
         var reporter = new WorkerReporter(request.BatchId, JsonOptions);
         try
         {
-            // SolidWorks 源没有导出这一步：源零件直接进整备管线。
             var exported = request.SourceFormat == ConversionSourceFormat.SolidWorks
-                ? request.Jobs
+                ? SolidWorksXtExporter.Export(request, reporter, cancellationToken)
                 : SolidEdgeExporter.Export(request, reporter, cancellationToken);
             var failed = request.Jobs.Count - exported.Count;
             failed += SolidWorksPartImportIsolation.Import(request, exported, reporter, cancellationToken);
@@ -99,16 +98,6 @@ internal static class ConversionWorkerProgram
                 request.FeatureRecognitionTimeoutSeconds,
                 request.ContinueWhenRecognitionFails,
                 request.SourceFormat);
-            if (request.SourceFormat == ConversionSourceFormat.SolidWorks)
-            {
-                return SolidWorksPartPreparer.Prepare(
-                    batchRequest,
-                    [request.Job],
-                    reporter,
-                    cancellationToken,
-                    useDedicatedSession: request.UseDedicatedSession) == 0 ? 0 : 1;
-            }
-
             return SolidWorksImporter.Import(
                 batchRequest,
                 [request.Job],

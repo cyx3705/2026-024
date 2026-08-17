@@ -19,8 +19,6 @@ internal static class AssemblyConverter
             request.FeatureRecognitionTimeoutSeconds,
             ContinueWhenRecognitionFails: true,
             SourceFormat: request.SourceFormat);
-        var usesParasolid = ConversionPathLayout.UsesParasolidHandoff(request.SourceFormat);
-
         var reusePlan = AssemblyPartReusePlanner.Create(
             request.PartJobs, cancellationToken, request.RecognizeFeatures, request.SourceFormat);
         foreach (var job in reusePlan.RegeneratedForRecognition)
@@ -45,18 +43,23 @@ internal static class AssemblyConverter
             reporter.Report(
                 job.Id,
                 ConversionStage.Skipped,
-                $"复用已有 XT，跳过 Solid Edge 导出：{job.XtPath}",
+                $"复用已有 XT，跳过导出：{job.XtPath}",
                 artifact: ConversionArtifactKind.Xt,
                 reuseKind: ReuseKind.ExistingXt);
         }
 
-        // SolidWorks 源没有导出这一步：源零件本身就能进整备管线。
-        var exported = !usesParasolid || reusePlan.NeedsExport.Count == 0
-            ? reusePlan.NeedsExport
-            : SolidEdgeExporter.Export(
-                partRequest with { Jobs = reusePlan.NeedsExport },
-                reporter,
-                cancellationToken);
+        IReadOnlyList<ConversionJob> exported;
+        if (reusePlan.NeedsExport.Count == 0)
+        {
+            exported = reusePlan.NeedsExport;
+        }
+        else
+        {
+            var exportRequest = partRequest with { Jobs = reusePlan.NeedsExport };
+            exported = request.SourceFormat == ConversionSourceFormat.SolidWorks
+                ? SolidWorksXtExporter.Export(exportRequest, reporter, cancellationToken)
+                : SolidEdgeExporter.Export(exportRequest, reporter, cancellationToken);
+        }
         var importJobs = reusePlan.ImportFromExistingXt.Concat(exported).ToArray();
         // 为识别而重做的零件，其 SLDPRT 就在原地；不放开覆盖会被
         // WorkerRequestValidator 以「输出已经存在」拦下。其余零件本来就没有 SLDPRT，

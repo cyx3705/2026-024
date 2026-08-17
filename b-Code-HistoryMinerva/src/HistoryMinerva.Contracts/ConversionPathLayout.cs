@@ -38,7 +38,7 @@ public static class ConversionPathLayout
     public const string SolidWorksPartExtension = ".SLDPRT";
     public const string SolidWorksAssemblyExtension = ".SLDASM";
 
-    /// <summary>源零件扩展名。SW 自整备管线的源就是 <c>.SLDPRT</c> 本身。</summary>
+    /// <summary>源零件扩展名。SW 特征整备的源就是 <c>.SLDPRT</c> 本身。</summary>
     public static string GetSourcePartExtension(ConversionSourceFormat format)
         => format == ConversionSourceFormat.SolidWorks ? SolidWorksPartExtension : SolidEdgePartExtension;
 
@@ -46,9 +46,12 @@ public static class ConversionPathLayout
     public static string GetSourceAssemblyExtension(ConversionSourceFormat format)
         => format == ConversionSourceFormat.SolidWorks ? SolidWorksAssemblyExtension : SolidEdgeAssemblyExtension;
 
-    /// <summary>该源格式是否经过 Parasolid 中转。SW 自整备管线不产生 XT。</summary>
+    /// <summary>
+    /// 该源格式是否经过交付用 Parasolid 中转。Solid Edge 与 SolidWorks 特征整备都先落到
+    /// <c>XT/</c> 再导入识别；属性整备改名不走本布局。
+    /// </summary>
     public static bool UsesParasolidHandoff(ConversionSourceFormat format)
-        => format == ConversionSourceFormat.SolidEdge;
+        => format is ConversionSourceFormat.SolidEdge or ConversionSourceFormat.SolidWorks;
 
     /// <summary>
     /// 该源格式是否可能留下 V3.0 时代的旧平铺产物（产物与源同目录、同基名）。

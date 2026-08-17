@@ -593,7 +593,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             throw new InvalidDataException("源装配体在解析后发生变化，请重新解析后再转换。");
 
         _validateEnvironment(sourceFormat);
-        // SW 自整备没有中转件，不建空的 XT 目录。
         ExternalOutputLayout.EnsureDirectories(
             ConversionPathLayout.UsesParasolidHandoff(sourceFormat) ? plan.XtDirectory : null,
             plan.SolidWorksDirectory);

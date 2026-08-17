@@ -1815,7 +1815,7 @@ static void TestSolidWorksSelfPipelineContracts()
     Equal(ConversionPathLayout.SolidWorksAssemblyExtension,
         ConversionPathLayout.GetSourceAssemblyExtension(ConversionSourceFormat.SolidWorks), "SW 源装配是 .SLDASM");
     True(ConversionPathLayout.UsesParasolidHandoff(ConversionSourceFormat.SolidEdge), "SE 经 XT 中转");
-    True(!ConversionPathLayout.UsesParasolidHandoff(ConversionSourceFormat.SolidWorks), "SW 自整备没有中转件");
+    True(ConversionPathLayout.UsesParasolidHandoff(ConversionSourceFormat.SolidWorks), "SW 特征整备也经交付用 XT 中转");
 
     // 缺省值是兼容性的全部依据：V3.x 写下的请求 JSON 没有 sourceFormat 字段，
     // 反序列化后必须仍是 Solid Edge，否则历史请求会被当成 SW 源执行。
@@ -2124,7 +2124,9 @@ static void TestSolidWorksSelfPipelinePlanning(string root)
 {
     var source = Path.Combine(root, "sw-self");
     var output = Path.Combine(source, "SW");
+    var xtDirectory = Path.Combine(source, ConversionPathLayout.XtDirectoryName);
     Directory.CreateDirectory(output);
+    Directory.CreateDirectory(xtDirectory);
     var partPath = Path.Combine(source, "件A.SLDPRT");
     File.WriteAllText(partPath, "part");
     var assemblyPath = Path.Combine(source, "顶层.SLDASM");
@@ -2148,6 +2150,10 @@ static void TestSolidWorksSelfPipelinePlanning(string root)
     Equal(1, plan.Parts.Count, "唯一零件应当有一个");
     Equal(1, plan.RelationCount, "固定组件关系要带进计划");
     Equal(Path.Combine(output, "件A.SLDPRT"), plan.Parts[0].SolidWorksPath, "产物落在输出目录，与源同名不同目录");
+    Equal(
+        Path.Combine(xtDirectory, "件A.x_t"),
+        plan.Parts[0].XtPath,
+        "SW 特征整备必须规划交付用 XT");
     Equal(Path.Combine(output, "顶层.SLDASM"), plan.AssemblyOutputPath, "装配产物落在输出目录");
 
     // 输出目录指回源目录时，产物就是源文件本身——必须在计划阶段拦住，绝不动用户的原件。
@@ -2157,13 +2163,13 @@ static void TestSolidWorksSelfPipelinePlanning(string root)
         "阻断原因要说清是产物会覆盖源零件");
 
     // 校验器也要独立拦一次：Worker 不能依赖界面已经拦过。
-    var selfJob = new ConversionJob("件A", partPath, string.Empty, partPath);
+    var xtPath = Path.Combine(xtDirectory, "件A.x_t");
+    var selfJob = new ConversionJob("件A", partPath, xtPath, partPath);
     Throws<InvalidDataException>(() => WorkerRequestValidator.Validate(new BatchRequest(
         "b", ConversionMode.External, [selfJob], Overwrite: true,
         SourceFormat: ConversionSourceFormat.SolidWorks)));
 
-    // SW 源没有 XT：XtPath 留空也必须能通过校验。
-    var validJob = new ConversionJob("件A", partPath, string.Empty, Path.Combine(output, "件A.SLDPRT"));
+    var validJob = new ConversionJob("件A", partPath, xtPath, Path.Combine(output, "件A.SLDPRT"));
     WorkerRequestValidator.Validate(new BatchRequest(
         "b", ConversionMode.External, [validJob], Overwrite: true,
         SourceFormat: ConversionSourceFormat.SolidWorks));
@@ -2216,6 +2222,10 @@ static void TestSolidWorksSelfPipelineDefaultDirectories(string root)
         Path.Combine(source, ConversionPathLayout.SolidWorksDirectoryName, "件A.SLDPRT"),
         plan.Parts[0].SolidWorksPath,
         "产物必须落在 SW 子目录，不能被回退路径改写回源零件");
+    Equal(
+        Path.Combine(source, ConversionPathLayout.XtDirectoryName, "件A.x_t"),
+        plan.Parts[0].XtPath,
+        "默认布局下 SW 特征整备也必须落到 XT 子目录");
 
     File.WriteAllText(Path.Combine(source, ConversionPathLayout.XtDirectoryName), "not-a-directory");
     var xtFilePlan = AssemblyPlanner.Create(
@@ -2223,7 +2233,10 @@ static void TestSolidWorksSelfPipelineDefaultDirectories(string root)
         customXtDirectory: null,
         customSolidWorksDirectory: null,
         ConversionSourceFormat.SolidWorks);
-    True(xtFilePlan.CanConvert, "SW 自整备不使用 XT，源目录里的 XT 文件不得挡住转换");
+    True(!xtFilePlan.CanConvert, "SW 特征整备要建 XT 目录，源目录里的 XT 文件必须挡住转换");
+    True(
+        xtFilePlan.BlockingIssues.Any(issue => issue.ErrorClass == ConversionErrorClass.OutputNotWritable),
+        "XT 文件占用目录名必须归为输出不可写");
 
     // Solid Edge 源的旧平铺产物是真实存在的，放宽 SW 不能把它一并关掉。
     var seSource = Path.Combine(root, "se-legacy-flat");
@@ -2255,26 +2268,27 @@ static void TestSolidWorksSelfPipelineDefaultDirectories(string root)
 }
 
 /// <summary>
-/// 界面校验器必须与 Worker 校验器同口径。此前它写死 .par / .asm，SW 自整备在按下转换的
-/// 瞬间就被判死；XT 校验也一样——自整备没有中转件，XT 目录是故意不建的。
+/// 界面校验器必须与 Worker 校验器同口径。此前它写死 .par / .asm，SW 特征整备在按下转换的
+/// 瞬间就被判死。两种源都要校验交付用 XT。
 /// </summary>
 static void TestPreflightValidatorAcceptsSolidWorksSource(string root)
 {
     var source = Path.Combine(root, "preflight-sw");
     var output = Path.Combine(source, "SW");
+    var xtDirectory = Path.Combine(source, ConversionPathLayout.XtDirectoryName);
     Directory.CreateDirectory(output);
+    Directory.CreateDirectory(xtDirectory);
     var partPath = Path.Combine(source, "件A.SLDPRT");
     File.WriteAllText(partPath, "part");
     var assemblyPath = Path.Combine(source, "顶层.SLDASM");
     File.WriteAllText(assemblyPath, "assembly");
 
-    // XtPath 留空、XT 目录根本不存在，这是自整备的正常形态。
-    var job = new ConversionJob("件A", partPath, string.Empty, Path.Combine(output, "件A.SLDPRT"));
+    var xtPath = Path.Combine(xtDirectory, "件A.x_t");
+    var job = new ConversionJob("件A", partPath, xtPath, Path.Combine(output, "件A.SLDPRT"));
     PreflightValidator.ValidateJobs([job], overwrite: false, ConversionSourceFormat.SolidWorks);
 
-    // 产物真的指回源零件时，界面这一侧也要独立拦一次。
     Throws<InvalidDataException>(() => PreflightValidator.ValidateJobs(
-        [new ConversionJob("件A", partPath, string.Empty, partPath)],
+        [new ConversionJob("件A", partPath, xtPath, partPath)],
         overwrite: true,
         ConversionSourceFormat.SolidWorks));
 
@@ -2690,6 +2704,35 @@ static void TestNativeSolidWorksPartRecognition(string root)
         "识别失败应重新载入压平后的导入体");
     True(SolidWorksPartPreparer.ShouldFallBackToSourceCopy(degraded with { GeometryChanged = true }),
         "几何被改坏才允许退回源副本");
+
+    var xtDirectory = Path.Combine(root, "native-sw-xt");
+    var swDirectory = Path.Combine(root, "native-sw-out");
+    Directory.CreateDirectory(xtDirectory);
+    Directory.CreateDirectory(swDirectory);
+    var sourcePart = Path.Combine(root, "native-sw-xt-source.SLDPRT");
+    File.WriteAllText(sourcePart, "part");
+    File.SetLastWriteTimeUtc(sourcePart, DateTime.UtcNow.AddMinutes(-5));
+    var xtJob = new ConversionJob(
+        "阀体",
+        sourcePart,
+        Path.Combine(xtDirectory, "阀体.x_t"),
+        Path.Combine(swDirectory, "阀体.SLDPRT"));
+    var needsExport = AssemblyPartReusePlanner.Create(
+        [xtJob], CancellationToken.None, recognizeFeatures: true, ConversionSourceFormat.SolidWorks);
+    Equal(1, needsExport.NeedsExport.Count, "没有 XT 时 SW 特征整备必须先导出");
+    Equal(0, needsExport.ImportFromExistingXt.Count, "没有 XT 不得跳过导出直接识别");
+    WriteValidXt(xtJob.XtPath);
+    File.SetLastWriteTimeUtc(xtJob.XtPath, DateTime.UtcNow.AddMinutes(2));
+    var importFromXt = AssemblyPartReusePlanner.Create(
+        [xtJob], CancellationToken.None, recognizeFeatures: true, ConversionSourceFormat.SolidWorks);
+    Equal(0, importFromXt.NeedsExport.Count, "已有 XT 时不得再导出");
+    Equal(1, importFromXt.ImportFromExistingXt.Count, "已有 XT 时第二步必须走导入识别");
+    Equal(
+        "导出 XT",
+        ConversionProgressPresenter.GetRowStatus(
+            new WorkerEvent("b", "阀体", ConversionStage.SolidWorksExport, "正在从 SolidWorks 零件导出 Parasolid。"),
+            "排队"),
+        "导出步骤必须显示为导出 XT");
 
     var directory = Path.Combine(root, "native-sw-prep");
     Directory.CreateDirectory(directory);
