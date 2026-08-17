@@ -14,7 +14,7 @@ $moduleRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = Split-Path -Parent $moduleRoot
 $projectsRoot = Split-Path -Parent $projectRoot
 $historyVulcanPackageRoot = if ([string]::IsNullOrWhiteSpace($HistoryVulcanPackageRoot)) {
-    Join-Path $projectsRoot '2026-023-HistoryVulcan\z-HistoryVulcan'
+    Join-Path $projectsRoot '2026-023-HistoryVulcan\z-Publish'
 }
 else {
     [IO.Path]::GetFullPath($HistoryVulcanPackageRoot)
@@ -23,6 +23,10 @@ $historyVulcanManifestPath = Join-Path $historyVulcanPackageRoot 'manifest.json'
 $historyVulcanCorePath = Join-Path $historyVulcanPackageRoot 'host\HistoryVulcan.Core.dll'
 $moduleProject = Join-Path $moduleRoot 'src\HistoryMinerva\HistoryMinerva.csproj'
 $moduleManifestPath = Join-Path $moduleRoot 'module.manifest.json'
+$packageDocuments = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'b-Office\package') -Filter '*.md' -File)
+if ($packageDocuments.Count -eq 0) {
+    throw 'b-Office/package must contain at least one Markdown document'
+}
 $versionPropsPath = Join-Path $moduleRoot 'build\HistoryMinerva.Version.props'
 
 foreach ($required in @($historyVulcanManifestPath, $historyVulcanCorePath, $moduleProject, $moduleManifestPath, $versionPropsPath)) {
@@ -100,17 +104,17 @@ foreach ($file in $runtimeFiles) {
 # Candidates are generated outside product sources. The publish script validates and
 # atomically promotes this immutable candidate to the formal Z directory.
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path $projectRoot 'z-Publish\current\HistoryMinerva'
+    $OutputRoot = Join-Path $projectRoot 'z-Publish'
 }
-$OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
+$candidateRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 $projectPrefix = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd('\') + '\'
-if (-not $OutputRoot.StartsWith($projectPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Package output must stay inside the HistoryMinerva project: $OutputRoot"
+if (-not $candidateRoot.StartsWith($projectPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Package output must stay inside the HistoryMinerva project: $candidateRoot"
 }
-if (Test-Path -LiteralPath $OutputRoot) {
-    Remove-Item -LiteralPath $OutputRoot -Recurse -Force
-}
-$null = New-Item -ItemType Directory -Path $OutputRoot
+$transactionRoot = Join-Path ([IO.Path]::GetTempPath()) ('HistoryMinerva.Package.' + [Guid]::NewGuid().ToString('N'))
+$OutputRoot = Join-Path $transactionRoot 'candidate'
+$candidateBackup = Join-Path $transactionRoot 'previous'
+$null = New-Item -ItemType Directory -Force -Path $OutputRoot, $candidateBackup
 
 foreach ($file in $runtimeFiles) {
     Copy-Item -LiteralPath (Join-Path $buildOutput $file) -Destination (Join-Path $OutputRoot $file)
@@ -126,7 +130,7 @@ $snapshot = [ordered]@{
     module = 'HistoryMinerva'
     moduleVersion = $moduleVersion
     historyVulcanVersion = $actualHostVersion
-    historyVulcanSource = '../2026-023-HistoryVulcan/z-HistoryVulcan'
+    historyVulcanSource = '../2026-023-HistoryVulcan/z-Publish'
 }
 $snapshotJson = $snapshot | ConvertTo-Json -Depth 4
 [System.IO.File]::WriteAllText(
@@ -134,9 +138,15 @@ $snapshotJson = $snapshot | ConvertTo-Json -Depth 4
     $snapshotJson + [Environment]::NewLine,
     [System.Text.UTF8Encoding]::new($false))
 
+$docsRoot = Join-Path $OutputRoot 'docs'
+$null = New-Item -ItemType Directory -Force -Path $docsRoot
+foreach ($document in $packageDocuments) {
+    Copy-Item -LiteralPath $document.FullName -Destination (Join-Path $docsRoot $document.Name)
+}
+
 # Git stores package JSON/XML with LF. Normalize before hashing so a clean checkout
 # preserves exactly the bytes declared by SHA256SUMS.
-foreach ($textFile in Get-ChildItem -LiteralPath $OutputRoot -File |
+foreach ($textFile in Get-ChildItem -LiteralPath $OutputRoot -File -Recurse |
              Where-Object { $_.Extension -in @('.json', '.xml') }) {
     $text = [System.IO.File]::ReadAllText($textFile.FullName, [System.Text.UTF8Encoding]::new($false))
     $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
@@ -148,10 +158,14 @@ if ($privateHostDlls.Count -ne 0) {
     throw "HistoryMinerva package must not carry HistoryVulcan DLLs: $($privateHostDlls.Name -join ', ')"
 }
 
-$hashLines = Get-ChildItem -LiteralPath $OutputRoot -File |
+$outputPrefix = [IO.Path]::GetFullPath($OutputRoot).TrimEnd('\') + '\'
+$hashLines = Get-ChildItem -LiteralPath $OutputRoot -File -Recurse |
     Where-Object { $_.Name -ne 'SHA256SUMS' } |
-    Sort-Object Name |
-    ForEach-Object { "{0} *{1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash, $_.Name }
+    Sort-Object FullName |
+    ForEach-Object {
+        $relative = $_.FullName.Substring($outputPrefix.Length).Replace('\', '/')
+        "{0}  {1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash, $relative
+    }
 [System.IO.File]::WriteAllLines(
     (Join-Path $OutputRoot 'SHA256SUMS'),
     $hashLines,
@@ -161,15 +175,17 @@ $expectedPackageFiles = @($runtimeFiles + @(
     'module.manifest.json',
     'historyvulcan.snapshot.json',
     'SHA256SUMS'
-) | Sort-Object)
-$actualPackageFiles = @(Get-ChildItem -LiteralPath $OutputRoot -File | ForEach-Object Name | Sort-Object)
+) + @($packageDocuments | ForEach-Object { "docs/$($_.Name)" }) | Sort-Object)
+$actualPackageFiles = @(Get-ChildItem -LiteralPath $OutputRoot -File -Recurse | ForEach-Object {
+    $_.FullName.Substring($outputPrefix.Length).Replace('\', '/')
+} | Sort-Object)
 if ((($expectedPackageFiles | Sort-Object) -join "`n") -cne (($actualPackageFiles | Sort-Object) -join "`n")) {
     throw "Candidate package file boundary mismatch. Expected=[$($expectedPackageFiles -join ', ')] Actual=[$($actualPackageFiles -join ', ')]"
 }
 
 $declaredHashes = @{}
 foreach ($line in [IO.File]::ReadAllLines((Join-Path $OutputRoot 'SHA256SUMS'))) {
-    $match = [regex]::Match($line, '^(?<hash>[A-Fa-f0-9]{64}) \*(?<file>.+)$')
+    $match = [regex]::Match($line, '^(?<hash>[A-Fa-f0-9]{64})  (?<file>.+)$')
     if (-not $match.Success) {
         throw "Invalid SHA256SUMS line: $line"
     }
@@ -180,12 +196,47 @@ if ((($hashTargets | Sort-Object) -join "`n") -cne ((@($declaredHashes.Keys) | S
     throw "Candidate SHA256SUMS coverage differs from the package file set."
 }
 foreach ($file in $hashTargets) {
-    $actualHash = (Get-FileHash -LiteralPath (Join-Path $OutputRoot $file) -Algorithm SHA256).Hash
+    $actualHash = (Get-FileHash -LiteralPath (Join-Path $OutputRoot $file.Replace('/', '\')) -Algorithm SHA256).Hash
     if ($declaredHashes[$file] -ne $actualHash) {
         throw "Candidate SHA256 mismatch: $file"
     }
 }
 
-Write-Host "HistoryMinerva $moduleVersion package created: $OutputRoot"
+$movedPrevious = [Collections.Generic.List[string]]::new()
+$movedCandidate = [Collections.Generic.List[string]]::new()
+New-Item -ItemType Directory -Force -Path $candidateRoot | Out-Null
+try {
+    foreach ($item in @(Get-ChildItem -LiteralPath $candidateRoot -Force |
+            Where-Object { $_.Name -ne 'history' })) {
+        Move-Item -LiteralPath $item.FullName -Destination $candidateBackup
+        $movedPrevious.Add($item.Name)
+    }
+    foreach ($item in @(Get-ChildItem -LiteralPath $OutputRoot -Force)) {
+        Move-Item -LiteralPath $item.FullName -Destination $candidateRoot
+        $movedCandidate.Add($item.Name)
+    }
+}
+catch {
+    foreach ($name in $movedCandidate) {
+        $path = Join-Path $candidateRoot $name
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Recurse -Force
+        }
+    }
+    foreach ($name in $movedPrevious) {
+        $path = Join-Path $candidateBackup $name
+        if (Test-Path -LiteralPath $path) {
+            Move-Item -LiteralPath $path -Destination $candidateRoot
+        }
+    }
+    throw
+}
+finally {
+    if (Test-Path -LiteralPath $transactionRoot) {
+        Remove-Item -LiteralPath $transactionRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Host "HistoryMinerva $moduleVersion package created: $candidateRoot"
 Write-Host "HistoryVulcan $actualHostVersion candidate provenance recorded."
 Write-Host "Candidate file boundary and $($hashTargets.Count) SHA256 entries verified."

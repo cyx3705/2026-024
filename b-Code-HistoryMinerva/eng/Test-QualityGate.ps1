@@ -203,13 +203,13 @@ if (@([regex]::Matches($uiSource, 'RegisterToolWindow\(')).Count -ne 1 -or
     Add-Violation 'HistoryMinerva UI must register exactly one identity-backed center window'
 }
 
-# The formal snapshot may lag the source version, but its own manifest, file set and hashes are immutable.
-$formalRoot = Join-Path $root 'z-HistoryMinerva'
+# The root candidate must align with source; history is a separate immutable subtree.
+$formalRoot = Join-Path $root 'z-Publish'
 $formalManifestPath = Join-Path $formalRoot 'module.manifest.json'
 $checksumPath = Join-Path $formalRoot 'SHA256SUMS'
 if (-not (Test-Path -LiteralPath $formalManifestPath -PathType Leaf) -or
     -not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
-    Add-Violation 'z-HistoryMinerva formal manifest or SHA256SUMS is missing'
+    Add-Violation 'z-Publish candidate manifest or SHA256SUMS is missing'
 }
 else {
     $formalManifest = [IO.File]::ReadAllText($formalManifestPath) | ConvertFrom-Json
@@ -222,17 +222,17 @@ else {
         'SHA256SUMS'
     )
     $actualFormalFiles = @(Get-ChildItem -LiteralPath $formalRoot -File | ForEach-Object Name)
-    Assert-SameSet 'z-HistoryMinerva top-level file boundary' $expectedFormalFiles $actualFormalFiles
+    Assert-SameSet 'z-Publish top-level file boundary' $expectedFormalFiles $actualFormalFiles
 
     $docsRoot = Join-Path $formalRoot 'docs'
     if (Test-Path -LiteralPath $docsRoot) {
         if (-not (Test-Path -LiteralPath $docsRoot -PathType Container)) {
-            Add-Violation 'z-HistoryMinerva/docs must be a directory of Markdown'
+            Add-Violation 'z-Publish/docs must be a directory of Markdown'
         }
         else {
             foreach ($item in @(Get-ChildItem -LiteralPath $docsRoot -Recurse -File)) {
                 if ([IO.Path]::GetExtension($item.Name) -ne '.md') {
-                    Add-Violation "z-HistoryMinerva/docs may contain only Markdown: $($item.Name)"
+                    Add-Violation "z-Publish/docs may contain only Markdown: $($item.Name)"
                 }
             }
         }
@@ -248,27 +248,31 @@ else {
         $declaredHashes[$match.Groups['file'].Value.Replace('\', '/')] = $match.Groups['hash'].Value.ToUpperInvariant()
     }
     $formalPrefix = [IO.Path]::GetFullPath($formalRoot).TrimEnd('\') + '\'
+    $historyPrefix = $formalPrefix + 'history\'
     $hashTargets = @(Get-ChildItem -LiteralPath $formalRoot -File -Recurse |
-        Where-Object Name -ne 'SHA256SUMS' |
+        Where-Object {
+            $_.Name -ne 'SHA256SUMS' -and
+            -not $_.FullName.StartsWith($historyPrefix, [StringComparison]::OrdinalIgnoreCase)
+        } |
         ForEach-Object { $_.FullName.Substring($formalPrefix.Length).Replace('\', '/') })
-    Assert-SameSet 'z-HistoryMinerva SHA256SUMS coverage' $hashTargets @($declaredHashes.Keys)
+    Assert-SameSet 'z-Publish SHA256SUMS coverage' $hashTargets @($declaredHashes.Keys)
     foreach ($file in $hashTargets) {
         $actualHash = (Get-FileHash -LiteralPath (Join-Path $formalRoot ($file.Replace('/', '\'))) -Algorithm SHA256).Hash
         if ($declaredHashes.ContainsKey($file) -and $declaredHashes[$file] -ne $actualHash) {
-            Add-Violation "z-HistoryMinerva hash mismatch: $file"
+            Add-Violation "z-Publish hash mismatch: $file"
         }
     }
     $formalSnapshot = [IO.File]::ReadAllText((Join-Path $formalRoot 'historyvulcan.snapshot.json')) | ConvertFrom-Json
     if ([string]$formalSnapshot.moduleVersion -ne [string]$formalManifest.version -or
         ($null -ne $formalSnapshot.historyVulcanVersion -and
          [string]$formalSnapshot.historyVulcanVersion -notmatch '^\d+\.\d+\.\d+$')) {
-        Add-Violation 'z-HistoryMinerva snapshot metadata is invalid or differs from its own manifest'
+        Add-Violation 'z-Publish snapshot metadata is invalid or differs from its own manifest'
     }
 }
 
 # Verify the exact sibling host snapshot, not only its assembly version.
 $vulcanRoot = if ([string]::IsNullOrWhiteSpace($HistoryVulcanPackageRoot)) {
-    [IO.Path]::GetFullPath((Join-Path $root '..\2026-023-HistoryVulcan\z-HistoryVulcan'))
+    [IO.Path]::GetFullPath((Join-Path $root '..\2026-023-HistoryVulcan\z-Publish'))
 }
 else {
     [IO.Path]::GetFullPath($HistoryVulcanPackageRoot)

@@ -1,7 +1,7 @@
 # HistoryMinerva
 
 HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块。当前源码为 `4.3.17`，正式
-`z-HistoryMinerva` 在下次发布前仍为 `4.3.16`。前身 Mapping 与 SWuse
+`z-Publish` 在下次发布前仍为 `4.3.16`。前身 Mapping 与 SWuse
 两个模块经破坏性重构合并为一个发布单元：纯前端 + 纯后端。
 
 - **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（`.par → .SLDPRT`、`.asm → .SLDASM`、
@@ -15,7 +15,7 @@ HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块。当前源
 
 内部程序集、命名空间与 JSON 协议统一为 `HistoryMinerva.*` / `SWuse.*`，不保留旧转换模块的兼容别名；
 对外模块名为 `HistoryMinerva`，指令域与 MCP 前缀为 `minerva`，
-发布目录为单一 `z-HistoryMinerva`（清单与运行产物同处）。
+发布目录为单一 `z-Publish`（清单与运行产物同处）。
 
 用户界面只配置两件事：转换来源与转换内容。内部使用 Parasolid `.x_t` 和独立 Worker 完成
 CAD COM 自动化；源 CAD 文件保持只读，产物写入来源目录下的 `XT/` 与 `SW/`。
@@ -31,7 +31,7 @@ CAD COM 自动化；源 CAD 文件保持只读，产物写入来源目录下的 
 | 验证方式 | [`b-Office/current/验证合同.md`](./b-Office/current/验证合同.md) |
 | 生产模块源码 | [`b-Code-HistoryMinerva/README.md`](./b-Code-HistoryMinerva/README.md) |
 | 独立测试与 CAD 门禁 | [`b-Code-HistoryMinerva-Tests/README.md`](./b-Code-HistoryMinerva-Tests/README.md) |
-| 最新正式模块清单（当前 4.3.7） | [`z-HistoryMinerva/module.manifest.json`](./z-HistoryMinerva/module.manifest.json) |
+| 最新正式模块清单（当前 4.3.7） | [`z-Publish/module.manifest.json`](./z-Publish/module.manifest.json) |
 | 模块对外 API | [`b-Office/package/模块API.md`](./b-Office/package/模块API.md) |
 | 模块合并计划（4.1.0） | [`b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md`](./b-Office/history/42-V4.1.0-HistoryMinerva模块合并计划.md) |
 | SWuse V0.1 设计档案 | [`b-Office/history/swuse-v0.1/docs`](./b-Office/history/swuse-v0.1/docs) |
