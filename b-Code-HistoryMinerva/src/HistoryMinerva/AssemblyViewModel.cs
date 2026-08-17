@@ -180,12 +180,14 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     }
 
     /// <summary>
-    /// 已有产物这一轮会不会被重做。装配转换把全部唯一零件都交给 Worker，而 Worker 在开启
-    /// 识别时对已有 SLDPRT 一律重做（<c>AssemblyPartReusePlanner</c>），所以此时"已存在"
-    /// 不该再挡住用户。零件文件夹模式不同：它按 <c>HasExistingOutput</c> 过滤作业，
-    /// 已有产物是真的会被跳过，那里的"已存在"依然成立。
+    /// 已有产物这一轮会不会被重做。装配转换把全部唯一零件都交给 Worker。SolidWorks
+    /// 特征整备对已有 SLDPRT 一律重做（先 XT 再识别，不看原零件有没有特征）；Solid Edge
+    /// 只在开启识别时重做。零件文件夹模式按 <c>HasExistingOutput</c> 过滤作业，
+    /// 已有产物是真的会被跳过。
     /// </summary>
-    private bool RegeneratesExistingOutputs => IsAssemblyMode && RecognizeFeatures;
+    private bool RegeneratesExistingOutputs
+        => IsAssemblyMode
+           && (RecognizeFeatures || SourceFormat == ConversionSourceFormat.SolidWorks);
 
     private void ApplyRegenerationToRows()
     {

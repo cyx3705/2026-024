@@ -41,14 +41,10 @@ internal static class AssemblyPartReusePlanner
 
             if (File.Exists(job.SolidWorksPath))
             {
-                // 现场事故（307 实例 / 54 零件的装配体）：`SW\` 目录里有上一轮留下的哑实体
-                // SLDPRT，复用判据只看"存在 + 非空 + 不比源旧"，与识别开关无关，
-                // 于是 54 个零件全被判定"已转换、跳过"，一个都没进导入管线——
-                // 用户开了特征识别，却一个特征都识别不出来。
-                //
-                // 已有 SLDPRT 里是否含特征，不打开文档就无法判断；而打开的代价
-                // 与重新导入相当。因此开启识别时一律重做：识别本来就必须先导入。
-                if (recognizeFeatures)
+                // SolidWorks 特征整备不看原零件有没有特征，也不复用上一轮 SLDPRT：
+                // 那份产物可能是源特征树拷贝。一律重做：先 XT，再导入识别。
+                // Solid Edge 仍只在开启识别时重做；关掉识别才能复用已有 SLDPRT。
+                if (sourceFormat == ConversionSourceFormat.SolidWorks || recognizeFeatures)
                 {
                     regenerated.Add(job);
                 }

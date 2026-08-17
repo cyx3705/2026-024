@@ -2679,31 +2679,16 @@ static void TestRecognitionSemanticGuard()
 }
 
 /// <summary>
-/// 特征整备必须吃普通 SW 零件，不能只吃哑实体。FeatureWorks 只认导入体，
-/// 所以普通零件也要先压平；切到特征整备时默认打开识别。
+/// 特征整备不检测原零件有没有特征。已有 SLDPRT 也必须先转 XT 再识别；
+/// 切到特征整备时默认打开识别。
 /// </summary>
 static void TestNativeSolidWorksPartRecognition(string root)
 {
-    var nativeTree = new FeatureTreeEntry[] { new("Boss-Extrude1", "Extrusion") };
-    var dumbTree = new FeatureTreeEntry[] { new("Imported1", "BaseBody") };
-    True(SolidWorksPartPreparer.RequiresParasolidFlattenBeforeRecognition(nativeTree),
-        "普通 SW 零件也必须压平后再识别，不能因没有导入体而跳过");
-    True(SolidWorksPartPreparer.RequiresParasolidFlattenBeforeRecognition(dumbTree),
-        "哑实体仍走 Parasolid 往返");
-    True(SolidWorksPartPreparer.DescribeRecognitionPrep(3, 0)
-            .Contains("普通 SolidWorks 零件", StringComparison.Ordinal),
-        "没有导入体时必须说清这是普通零件、将先压平");
-    True(SolidWorksPartPreparer.DescribeRecognitionPrep(0, 1)
-            .Contains("导入体", StringComparison.Ordinal),
-        "哑实体的说明仍要落到导入体上");
-
     var degraded = new FeatureOutcome(0, false, 0, 0, [], true, 0, "会话未激活");
-    True(!SolidWorksPartPreparer.ShouldFallBackToSourceCopy(degraded),
-        "识别失败必须保留 XT 导入体，不得退回源零件原来的特征树");
     True(SolidWorksPartPreparer.ShouldKeepFlattenedImport(degraded),
         "识别失败应重新载入压平后的导入体");
-    True(SolidWorksPartPreparer.ShouldFallBackToSourceCopy(degraded with { GeometryChanged = true }),
-        "几何被改坏才允许退回源副本");
+    True(SolidWorksPartPreparer.ShouldKeepFlattenedImport(degraded with { GeometryChanged = true }),
+        "几何被改坏也必须保留 XT 导入体，不得退回源零件原来的特征树");
 
     var xtDirectory = Path.Combine(root, "native-sw-xt");
     var swDirectory = Path.Combine(root, "native-sw-out");
@@ -2717,6 +2702,14 @@ static void TestNativeSolidWorksPartRecognition(string root)
         sourcePart,
         Path.Combine(xtDirectory, "阀体.x_t"),
         Path.Combine(swDirectory, "阀体.SLDPRT"));
+    File.WriteAllText(xtJob.SolidWorksPath, "old-native-tree");
+    File.SetLastWriteTimeUtc(xtJob.SolidWorksPath, DateTime.UtcNow.AddMinutes(2));
+    var skipNative = AssemblyPartReusePlanner.Create(
+        [xtJob], CancellationToken.None, recognizeFeatures: false, ConversionSourceFormat.SolidWorks);
+    Equal(0, skipNative.ReusableSolidWorksParts.Count, "SW 特征整备不得复用上一轮 SLDPRT，不论原零件有没有特征");
+    Equal(1, skipNative.NeedsExport.Count, "没有 XT 时必须先导出，不能跳过洗特征");
+    Equal(1, skipNative.RegeneratedForRecognition.Count, "已有 SLDPRT 必须标成重做");
+
     var needsExport = AssemblyPartReusePlanner.Create(
         [xtJob], CancellationToken.None, recognizeFeatures: true, ConversionSourceFormat.SolidWorks);
     Equal(1, needsExport.NeedsExport.Count, "没有 XT 时 SW 特征整备必须先导出");

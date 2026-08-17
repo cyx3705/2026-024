@@ -1,7 +1,7 @@
 # HistoryMinerva
 
-HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块。当前源码为 `4.3.16`，正式
-`z-HistoryMinerva` 在下次发布前仍为 `4.3.15`。前身 Mapping 与 SWuse
+HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 模块。当前源码为 `4.3.17`，正式
+`z-HistoryMinerva` 在下次发布前仍为 `4.3.16`。前身 Mapping 与 SWuse
 两个模块经破坏性重构合并为一个发布单元：纯前端 + 纯后端。
 
 - **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（`.par → .SLDPRT`、`.asm → .SLDASM`、
