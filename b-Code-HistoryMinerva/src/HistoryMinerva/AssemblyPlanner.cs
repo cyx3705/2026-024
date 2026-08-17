@@ -82,7 +82,6 @@ public static class AssemblyPlanner
                 $"装配体有 {probe.UnresolvedCount} 个未解析引用，转换已阻止{suffix}"));
         }
 
-        // SW 自整备不建 XT/。源目录里若有叫 XT 的文件，不得当成输出目录冲突。
         if (ConversionPathLayout.UsesParasolidHandoff(sourceFormat))
             CheckDirectoryNameConflict(xtDirectory, issues);
         CheckDirectoryNameConflict(swDirectory, issues);
@@ -127,7 +126,6 @@ public static class AssemblyPlanner
         var parts = supportedParts.Select(path =>
         {
             var paths = ConversionPathLayout.ResolvePartPaths(path, xtDirectory, swDirectory, sourceDirectory);
-            // SW 自整备管线没有中转件：产物是否已存在只看 SLDPRT。
             var exists = File.Exists(paths.SolidWorksPath)
                 || allowLegacySolidWorks && File.Exists(paths.LegacySolidWorksPath)
                 || usesParasolid && (File.Exists(paths.XtPath)

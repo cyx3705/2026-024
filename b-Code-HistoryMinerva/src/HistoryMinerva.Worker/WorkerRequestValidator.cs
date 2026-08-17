@@ -18,7 +18,6 @@ internal static class WorkerRequestValidator
             if (usesParasolid)
                 ValidatePath(job.XtPath, ConversionPathLayout.GetExtension(ConversionArtifactKind.Xt), mustExist: false);
             ValidatePath(job.SolidWorksPath, ConversionPathLayout.GetExtension(ConversionArtifactKind.SolidWorksPart), mustExist: false);
-            // SW 源没有中转件，只有 SLDPRT 一个输出要查重。
             if (usesParasolid && !outputs.Add(Path.GetFullPath(job.XtPath)))
                 throw new InvalidDataException($"批次中存在重复输出：{job.Id}");
             if (!outputs.Add(Path.GetFullPath(job.SolidWorksPath)))
@@ -43,7 +42,6 @@ internal static class WorkerRequestValidator
             request.Job.SourcePath,
             ConversionPathLayout.GetSourcePartExtension(request.SourceFormat),
             mustExist: true);
-        // SW 源的输入就是源零件本身，不存在必须已经在场的 XT。
         if (ConversionPathLayout.UsesParasolidHandoff(request.SourceFormat))
             ValidatePath(request.Job.XtPath, ConversionPathLayout.GetExtension(ConversionArtifactKind.Xt), mustExist: true);
         ValidatePath(request.Job.SolidWorksPath, ConversionPathLayout.GetExtension(ConversionArtifactKind.SolidWorksPart), mustExist: false);
