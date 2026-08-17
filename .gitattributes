@@ -466,3 +466,6 @@ z-Package-Mapping/SE2SW.xml text eol=lf whitespace=-trailing-space
 *.zw1 filter=lfs diff=lfs merge=lfs -text
 *._ text eol=lf
 # HistoryJanus managed end
+
+# Published package hashes cover exact bytes; Git must not normalize package content.
+z-Publish/** binary
