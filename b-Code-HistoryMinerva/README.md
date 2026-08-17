@@ -2,9 +2,9 @@
 
 > 对外模块：`HistoryMinerva` / `historyminerva`
 >
-> 当前源码、候选与正式 `z-HistoryMinerva` 快照版本：`4.3.2`
+> 当前源码、候选与正式 `z-Publish` 快照版本：`4.3.2`
 >
-> 最新正式清单：`../z-HistoryMinerva/module.manifest.json`
+> 最新正式清单：`../z-Publish/module.manifest.json`
 
 4.2.1 破坏性重构：Mapping 与 SWuse 合并为单一模块，纯前后端分离。
 内部程序集、Worker 路由协议与命名空间统一为 `HistoryMinerva.*` / `SWuse.*`，对外显示、窗口、
@@ -33,9 +33,9 @@ dotnet build .\HistoryMinerva.sln -c Release --no-restore -warnaserror -p:NuGetA
 dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.Smoke\HistoryMinerva.Smoke.csproj -c Release -p:NuGetAudit=false
 ```
 
-生产工程直接引用 `2026-023-HistoryVulcan/z-HistoryVulcan/host/HistoryVulcan.Core.dll` 3.4.0，宿主 DLL 不随模块包复制。
+生产工程直接引用 `2026-023-HistoryVulcan/z-Publish/host/HistoryVulcan.Core.dll` 3.4.0，宿主 DLL 不随模块包复制。
 只修改 `build/HistoryMinerva.Version.props` 后，通过 `eng/Update-HistoryMinervaManifest.ps1` 同步清单版本；正式包由
-`eng/Build-HistoryMinervaPackage.ps1` 生成；正式提升（含写入 `z-HistoryMinerva/docs/`）由
+`eng/Build-HistoryMinervaPackage.ps1` 生成；正式提升（含写入 `z-Publish/docs/`）由
 `2026-019-HistoryDiana/b-Code/Publish-OneHistoryModule.ps1 -Module HistoryMinerva` 负责。
 （双槽安装并退役 Mapping、SWuse 与历史转换模块槽）。只读命令域为 `historyminerva`。
 

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <HistoryMinervaVersion>4.3.17</HistoryMinervaVersion>
     <MinimumHistoryVulcanVersion>3.11.1</MinimumHistoryVulcanVersion>
-    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-HistoryVulcan</HistoryVulcanPackageRoot>
+    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-Publish</HistoryVulcanPackageRoot>
     <HistoryVulcanHostRoot Condition="'$(HistoryVulcanHostRoot)' == ''">$(HistoryVulcanPackageRoot)\host</HistoryVulcanHostRoot>
     <HistoryVulcanManifestPath>$(HistoryVulcanPackageRoot)\manifest.json</HistoryVulcanManifestPath>
     <HistoryVulcanCorePath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HistoryVulcanCorePath>
