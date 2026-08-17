@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using HistoryVulcan.Core.Commands;
 using HistoryMinerva.Contracts;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Windows;
@@ -42,6 +43,28 @@ public partial class AssemblyView : UserControl, IDisposable
     internal double SourceColumnWidth => SourceColumn.ActualWidth;
     internal double ContentColumnWidth => ContentColumn.ActualWidth;
 
+    private bool _mappingContentUserPicking;
+
+    private void OnMappingContentDropDownOpened(object sender, EventArgs e)
+        => _mappingContentUserPicking = true;
+
+    private void OnMappingContentDropDownClosed(object sender, EventArgs e)
+    {
+        _mappingContentUserPicking = false;
+        if (MappingContentSelector.SelectedItem is MappingContentOption option)
+            _viewModel.SelectedMappingContent = option;
+    }
+
+    private void OnMappingContentSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_mappingContentUserPicking || MappingContentSelector.IsDropDownOpen)
+            return;
+        if (MappingContentSelector.SelectedItem is MappingContentOption option
+            && EqualityComparer<MappingContentOption>.Default.Equals(option, _viewModel.SelectedMappingContent))
+            return;
+        MappingContentSelector.SelectedItem = _viewModel.SelectedMappingContent;
+    }
+
     private async void OnChooseSourceClick(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanEdit)
@@ -72,7 +95,7 @@ public partial class AssemblyView : UserControl, IDisposable
         if (dialog.ShowDialog(Window.GetWindow(this)) == true)
         {
             _viewModel.SetSourceFile(dialog.FileName);
-            if (_commandBus is not null)
+            if (_commandBus is not null && _viewModel.CanProbe)
                 await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.probe", HistoryMinervaIdentity.Name + ":UI");
         }
     }
