@@ -18,7 +18,7 @@ public enum ConversionSourceFormat
     /// <summary>Solid Edge `.par` / `.asm`：导出 Parasolid 后导入 SolidWorks。</summary>
     SolidEdge,
 
-    /// <summary>SolidWorks `.SLDPRT` / `.SLDASM`：零件就地整备，不经过 XT 往返。</summary>
+    /// <summary>SolidWorks `.SLDPRT` / `.SLDASM`：先严格导出 Parasolid `.x_t`，再导入识别。</summary>
     SolidWorks,
 }
 
@@ -102,8 +102,7 @@ public static class FeatureRecognitionPolicy
 }
 
 /// <param name="XtPath">
-/// Parasolid 中转件。只有 <see cref="ConversionSourceFormat.SolidEdge"/> 会用到它；
-/// SW 自整备管线没有中转件，该字段留空字符串，由校验与复用判定按源格式跳过。
+/// Parasolid 中转件。Solid Edge 与 SolidWorks 特征整备都先落到此路径，再导入 SolidWorks。
 /// </param>
 public sealed record ConversionJob(
     string Id,
@@ -141,7 +140,7 @@ public sealed record PartImportRequest(
     // V3.6.5：上一次尝试里 FeatureWorks 崩了就置为 true，子 Worker 会自己启动一个
     // 专属 SolidWorks 进程，而不是再附着回那个已经损坏的会话。
     bool UseDedicatedSession = false,
-    // V4.3：源格式。SolidWorks 时子 Worker 走"复制 SLDPRT 再就地识别"，不读 XT。
+    // V4.3：源格式。SolidWorks 时子 Worker 从已导出的 XT 导入识别，不打开源零件。
     ConversionSourceFormat SourceFormat = ConversionSourceFormat.SolidEdge);
 
 /// <summary>V2.0 单个零件的特征识别与草图定义结果，随 Completed 事件回传。</summary>
@@ -338,7 +337,7 @@ public sealed record AssemblyBatchRequest(
     IReadOnlyList<AssemblyNode>? Nodes = null,
     // V3.5：全部层的装配关系，按 SourceAssemblyPath 分派到各层。
     IReadOnlyList<AssemblyRelation>? Relations = null,
-    // V4.3：源格式。SolidWorks 时零件阶段走就地整备，装配阶段与 Solid Edge 共用同一条实现。
+    // V4.3：源格式。SolidWorks 时零件阶段先严格导出 XT 再导入识别，装配阶段与 Solid Edge 共用同一条实现。
     ConversionSourceFormat SourceFormat = ConversionSourceFormat.SolidEdge);
 
 /// <summary>

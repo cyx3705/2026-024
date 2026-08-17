@@ -131,8 +131,6 @@ public static class PreflightValidator
                 throw new FileNotFoundException("源文件不存在或不是绝对路径。", job.SourcePath);
             if (!ConversionPathLayout.HasExtension(job.SourcePath, sourcePartExtension))
                 throw new InvalidDataException($"输入不是 {sourcePartExtension} 文件：{job.SourcePath}");
-            // SW 自整备没有中转件：XtPath 是空串，XT 目录也故意没有建起来
-            // （ExternalOutputLayout.EnsureDirectories 传的是 null），不能按输出去校验。
             if (usesParasolid)
                 ValidateOutput(job.XtPath, ConversionArtifactKind.Xt, overwrite, outputs, allowExistingOutputs);
             ValidateOutput(job.SolidWorksPath, ConversionArtifactKind.SolidWorksPart, overwrite, outputs, allowExistingOutputs);
