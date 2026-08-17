@@ -32,9 +32,10 @@
       "b-Code-HistoryMinerva/**/bin",
       "b-Code-HistoryMinerva/**/obj",
       "b-Code-HistoryMinerva-Tests/**/bin",
-      "b-Code-HistoryMinerva-Tests/**/obj"
+      "b-Code-HistoryMinerva-Tests/**/obj",
+      "z-Publish/current"
     ],
-    "archiveRoots": ["b-Office/history"],
+    "archiveRoots": ["b-Office/history", "z-Publish"],
     "allowedRootDirectoryPrefixes": ["a-", "b-", "z-"]
   },
   "documents": {
@@ -66,7 +67,7 @@
   ],
   "contextExclusions": [
     "b-Office/history/**",
-    "b-Publish/**",
+    "z-Publish/**",
     "**/bin/**",
     "**/obj/**",
     "**/node_modules/**",

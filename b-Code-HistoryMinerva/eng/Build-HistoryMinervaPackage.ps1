@@ -100,7 +100,7 @@ foreach ($file in $runtimeFiles) {
 # Candidates are generated outside product sources. The publish script validates and
 # atomically promotes this immutable candidate to the formal Z directory.
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path $projectRoot 'b-Publish\current\HistoryMinerva'
+    $OutputRoot = Join-Path $projectRoot 'z-Publish\current\HistoryMinerva'
 }
 $OutputRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 $projectPrefix = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd('\') + '\'
