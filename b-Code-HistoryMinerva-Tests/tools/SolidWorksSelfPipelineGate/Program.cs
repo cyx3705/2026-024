@@ -123,7 +123,7 @@ internal static class Program
 
         report.NodeCount = plan.Nodes?.Count ?? 0;
         report.MaxDepth = plan.MaxDepth;
-        Directory.CreateDirectory(outputDirectory);
+        ExternalOutputLayout.EnsureDirectories(plan.XtDirectory, plan.SolidWorksDirectory);
 
         // ---- 3. 转换 ----
         var jobs = plan.Parts

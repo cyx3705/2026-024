@@ -76,8 +76,13 @@ internal static class FileProbe
         // Latin1 保持字节一一对应；只解析 ASCII 标记，规避本地化 DATE 字段中的 ANSI 字节。
         var text = Encoding.Latin1.GetString(header, 0, read);
         var format = ReadField(text, "FORMAT=");
-        if (!string.Equals(format, "text", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(format, "binary", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Parasolid 输出不是文本格式，FORMAT={format}。");
+        var looksLikeTransmitText = text.TrimStart().StartsWith("**", StringComparison.Ordinal)
+            && text.Contains("PARASOLID", StringComparison.OrdinalIgnoreCase);
+        if (!string.Equals(format, "text", StringComparison.OrdinalIgnoreCase) && !looksLikeTransmitText)
             throw new InvalidDataException($"Parasolid 输出不是文本格式，FORMAT={format ?? "<missing>"}。");
+        format = "text";
 
         string? schema = null;
         const string modellerMarker = "modeller version";
