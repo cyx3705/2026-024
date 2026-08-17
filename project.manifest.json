@@ -11,7 +11,7 @@
     "title": "HistoryMinerva CAD 模块（Mapping 前端 + 合并 Worker 后端）",
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active",
-    "version": "4.3.15",
+    "version": "4.3.17",
     "branch": "2026-024-HistoryMinerva"
   },
   "historyVulcanHost": {
@@ -32,9 +32,10 @@
       "b-Code-HistoryMinerva/**/bin",
       "b-Code-HistoryMinerva/**/obj",
       "b-Code-HistoryMinerva-Tests/**/bin",
-      "b-Code-HistoryMinerva-Tests/**/obj"
+      "b-Code-HistoryMinerva-Tests/**/obj",
+      "z-Publish/current"
     ],
-    "archiveRoots": ["b-Office/history"],
+    "archiveRoots": ["b-Office/history", "z-Publish"],
     "allowedRootDirectoryPrefixes": ["a-", "b-", "z-"]
   },
   "documents": {
@@ -66,7 +67,7 @@
   ],
   "contextExclusions": [
     "b-Office/history/**",
-    "b-Publish/**",
+    "z-Publish/**",
     "**/bin/**",
     "**/obj/**",
     "**/node_modules/**",

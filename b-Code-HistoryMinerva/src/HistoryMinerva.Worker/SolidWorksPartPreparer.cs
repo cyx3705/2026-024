@@ -5,14 +5,9 @@ namespace HistoryMinerva.Worker;
 /// <summary>
 /// V4.3：SolidWorks 源零件的"整备"。
 ///
-/// 源已经是 <c>.SLDPRT</c>，没有格式转换可做——要做的只有一件事：
-/// 把源零件复制到输出目录，在**副本**上跑既有的 FeatureWorks 识别与草图完全定义，存盘。
-/// 源文件从头到尾只被读取一次（<c>File.Copy</c>），SolidWorks 永远打不开它。
-///
-/// 特征整备始终先把副本导出临时 <c>.x_t</c> 再导回成导入体（先转 XT）。
-/// FeatureWorks 只认导入体，在导回的文档上识别。识别失败或未启用识别时，
-/// 产物保留压平后的导入体，不得退回源零件原来的特征树。
-/// 只有几何被改坏时才退回源文件逐字节副本。
+/// 源已经是 <c>.SLDPRT</c>。特征整备不检测原零件有没有特征树：副本一律导出
+/// 交付用 <c>.x_t</c>，再 <c>LoadFile4</c> 成导入体后按开关识别。识别失败也保留
+/// 导入体，不得把源零件原来的特征树拷回去。
 ///
 /// 工作副本用 <see cref="TemporaryOutput.For"/> 的唯一临时名打开，因此它的文档标题
 /// 绝不会和会话里可能开着的同名源零件相撞（<c>swFileWithSameTitleAlreadyOpen</c>），
@@ -204,23 +199,7 @@ internal static class SolidWorksPartPreparer
             if (identityFailure is not null)
                 throw new InvalidDataException(identityFailure);
 
-            var sourceTree = interop.ReadTopLevelFeatureTree(model);
-            reporter.Report(
-                job.Id,
-                ConversionStage.FeatureRecognition,
-                DescribeRecognitionPrep(
-                    FeatureRecognizer.CountBuiltSolidFeatures(sourceTree),
-                    FeatureRecognizer.CountResidualImportedBodies(sourceTree)));
-            if (!RequiresParasolidFlattenBeforeRecognition(sourceTree))
-                throw new InvalidOperationException("特征整备必须先压平，不能跳过普通 SolidWorks 零件。");
-
-            // ---- 先转 XT 成导入体，再视开关识别 ----
-            //
-            // FeatureWorks 只认导入体。直接对已有特征树调用 RecognizeFeatureAutomatic
-            // 必然返回 0，还会把 SetAdvancedOptions=false 误判成"会话未激活"。
-            // 普通 SW 零件和哑实体一样先导出 .x_t、再 LoadFile4 导回来。
-            // 往返会丢掉源特征树、配置和属性；识别失败时保留这份导入体，
-            // 不得把源零件原来的特征树拷回去——否则"先转 XT"等于没做。
+            // 不读源特征树、不按导入体/普通零件分叉：一律先转 XT 再识别。
             xtPath = Path.ChangeExtension(temporaryPath, ".x_t");
             SolidWorksXtExporter.SaveAsParasolid(interop, model, xtPath, cancellationToken);
             interop.CloseDocument(title);
@@ -238,27 +217,6 @@ internal static class SolidWorksPartPreparer
                     request,
                     (stage, message) => reporter.Report(job.Id, stage, message),
                     cancellationToken);
-
-                if (ShouldFallBackToSourceCopy(featureOutcome))
-                {
-                    TryClose(interop, model);
-                    ComRelease.Final(model);
-                    model = null;
-                    reporter.Report(
-                        job.Id,
-                        ConversionStage.FeatureRecognition,
-                        DescribeFallback(featureOutcome),
-                        errorClass: SolidWorksImporter.ClassifyRejectedRecognition(featureOutcome));
-                    File.Copy(job.SourcePath, temporaryPath, overwrite: false);
-                    CommitCopy(
-                        job,
-                        ref temporaryPath,
-                        request.Overwrite,
-                        cancellationToken,
-                        reporter,
-                        featureOutcome with { DegradedToDumbSolid = true });
-                    return true;
-                }
 
                 if (ShouldKeepFlattenedImport(featureOutcome))
                 {
@@ -337,69 +295,16 @@ internal static class SolidWorksPartPreparer
     }
 
     /// <summary>
-    /// 开启识别时，源零件是否必须先压平为导入体。哑实体和普通 SW 零件都要：
-    /// FeatureWorks 不能作用在已有特征树上。
-    /// </summary>
-    internal static bool RequiresParasolidFlattenBeforeRecognition(
-        IReadOnlyList<FeatureTreeEntry> sourceTree)
-    {
-        ArgumentNullException.ThrowIfNull(sourceTree);
-        return true;
-    }
-
-    internal static string DescribeRecognitionPrep(int existingSolidFeatures, int importedBodies)
-        => importedBodies == 0
-            ? $"源零件是普通 SolidWorks 零件（{existingSolidFeatures} 个造型特征），没有导入体；先压平为导入体。"
-            : $"源零件含 {importedBodies} 处导入体，经 Parasolid 往返压平。";
-
-    /// <summary>把已经就位的副本改名成最终产物，并报告完成。</summary>
-    private static void CommitCopy(
-        ConversionJob job,
-        ref string? temporaryPath,
-        bool overwrite,
-        CancellationToken cancellationToken,
-        WorkerReporter reporter,
-        FeatureOutcome? featureOutcome,
-        string? completionNote = null)
-    {
-        var output = FileProbe.WaitForStableNonEmptyFile(temporaryPath!, cancellationToken);
-        TemporaryOutput.Commit(temporaryPath!, job.SolidWorksPath, overwrite);
-        temporaryPath = null;
-        reporter.Report(
-            job.Id,
-            ConversionStage.Completed,
-            completionNote is not null
-                ? $"跳过整备：{completionNote}"
-                : $"整备完成，SolidWorks 零件 {output.Length} 字节。{DescribeFeatures(featureOutcome)}",
-            errorClass: featureOutcome is null
-                ? ConversionErrorClass.None
-                : SolidWorksImporter.ClassifyRejectedRecognition(featureOutcome),
-            feature: featureOutcome,
-            artifact: ConversionArtifactKind.SolidWorksPart);
-    }
-
-    /// <summary>
-    /// 只有几何被改坏才退回源文件副本。识别失败、未激活或语义不合规时，
-    /// 保留 Parasolid 压平后的导入体——那才是「先转 XT」的产物。
-    /// </summary>
-    internal static bool ShouldFallBackToSourceCopy(FeatureOutcome outcome)
-        => outcome.GeometryChanged;
-
-    /// <summary>
-    /// 识别结果不能交付，但压平后的导入体可以。丢弃 FeatureWorks 改过的文档，
-    /// 重新载入 XT，避免把错误特征树存盘。
+    /// 识别结果不能交付时，丢弃 FeatureWorks 改过的文档，重新载入 XT。
+    /// 几何被改坏、识别失败或语义不合规都走这条路，不得把源零件原来的特征树拷回去。
     /// </summary>
     internal static bool ShouldKeepFlattenedImport(FeatureOutcome outcome)
-        => !outcome.GeometryChanged && (outcome.DegradedToDumbSolid || outcome.SemanticMismatch);
-
-    private static string DescribeFallback(FeatureOutcome outcome)
-    {
-        var reason = string.IsNullOrWhiteSpace(outcome.Diagnostic) ? string.Empty : $"（{outcome.Diagnostic}）";
-        return $"特征识别改坏了几何，已回退为源零件副本。{reason}";
-    }
+        => outcome.GeometryChanged || outcome.DegradedToDumbSolid || outcome.SemanticMismatch;
 
     private static string DescribeKeepFlattened(FeatureOutcome outcome)
     {
+        if (outcome.GeometryChanged)
+            return "特征识别改坏了几何，已重新载入 Parasolid 导入体，未退回源零件特征树。";
         if (outcome.SemanticMismatch && !string.IsNullOrWhiteSpace(outcome.Diagnostic))
             return outcome.Diagnostic + " 已保留 Parasolid 压平后的导入体。";
         var reason = string.IsNullOrWhiteSpace(outcome.Diagnostic) ? string.Empty : $"（{outcome.Diagnostic}）";
