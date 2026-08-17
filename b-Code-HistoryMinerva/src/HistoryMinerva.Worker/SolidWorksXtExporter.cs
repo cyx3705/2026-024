@@ -33,6 +33,10 @@ internal static class SolidWorksXtExporter
     private const int DocumentTypePart = 1;
     private const int SaveAsCurrentVersion = 0;
     private const int SaveAsSilent = 1;
+    private const int SaveAsCopy = 2;
+    private const int SaveAsSilentCopy = SaveAsSilent | SaveAsCopy;
+    private const int ParasolidOutputVersionPreference = 89;
+    private const int ParasolidOutputVersionLatest = 0;
 
     /// <returns>成功导出 XT 的任务。失败项已通过 <paramref name="reporter"/> 如实上报并被剔除。</returns>
     public static IReadOnlyList<ConversionJob> Export(
@@ -265,10 +269,13 @@ internal static class SolidWorksXtExporter
         object? extension = null;
         try
         {
-            // SaveAs3 按扩展名选格式：.x_t 即 Parasolid 文本。
+            // 当前文档是零件。另存为 .x_t 必须带 Copy，否则 SW 会试图把活动文档
+            // 换成 Parasolid，会话偏好若是二进制就会写出非文本，校验报「格式导出失败」。
+            _ = interop.SetUserPreferenceInteger(
+                ParasolidOutputVersionPreference, ParasolidOutputVersionLatest);
             extension = interop.GetExtension(model);
             if (!interop.SaveAs3(
-                    extension, xtPath, SaveAsCurrentVersion, SaveAsSilent,
+                    extension, xtPath, SaveAsCurrentVersion, SaveAsSilentCopy,
                     out var saveErrors, out var saveWarnings)
                 || saveErrors != 0)
             {
