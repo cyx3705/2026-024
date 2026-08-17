@@ -24,11 +24,7 @@ internal static class SolidWorksPartImportIsolation
         CancellationToken cancellationToken)
     {
         if (!ShouldIsolate(request))
-        {
-            return request.SourceFormat == ConversionSourceFormat.SolidWorks
-                ? SolidWorksPartPreparer.Prepare(request, jobs, reporter, cancellationToken)
-                : SolidWorksImporter.Import(request, jobs, reporter, cancellationToken);
-        }
+            return SolidWorksImporter.Import(request, jobs, reporter, cancellationToken);
 
         var failed = 0;
         // 连续多少个零件识别到 0 个特征就判定"该 SolidWorks 会话未激活 FeatureWorks"。

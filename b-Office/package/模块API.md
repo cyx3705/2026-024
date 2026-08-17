@@ -1,7 +1,7 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva `4.3.15` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
-SolidWorks 自整备管线（哑实体与普通零件均压平识别）、属性整备改名/洗图号与 `minerva.*` 命令面均已在源码生效。
+本文件是 HistoryMinerva `4.3.16` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
+SolidWorks 特征整备先严格导出交付用 XT 再识别、属性整备改名/洗图号与 `minerva.*` 命令面均已在源码生效。
 构建与部署验收命令见 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用。
 
 ## 模块身份
@@ -52,8 +52,8 @@ SolidWorks 自整备管线（哑实体与普通零件均压平识别）、属性
 `--rename-assembly`，请求体为 `AssemblyRenameRequest`，只接受 SolidWorks。动词、事件与结果
 JSON 形态、退出码语义都不变；**不带该字段的历史请求仍按 Solid Edge 执行**。
 
-取 `SolidWorks` 时：源为 `.SLDASM` / `.SLDPRT`，不产生 `.x_t`，`ConversionJob.xtPath` 不被读取
-（可留空字符串），产物落在输出目录且不得与源文件同路径。装配关系新增 SolidWorks 侧接口名
+取 `SolidWorks` 时：源为 `.SLDASM` / `.SLDPRT`，先导出交付用 `.x_t` 再导入识别，
+`ConversionJob.xtPath` 必填且指向 `XT/` 下的中转件，产物落在 `SW/` 且不得与源文件同路径。装配关系新增 SolidWorks 侧接口名
 `SwFixedComponent` / `SwCoincident` / `SwConcentric` / `SwDistance`，未实测的类型以
 `SwMateType<n>` 形式如实带进报告。
 
@@ -64,10 +64,10 @@ JSON 形态、退出码语义都不变；**不带该字段的历史请求仍按 
 记录末尾追加可选 `stripBySpace`（缺省 false）：为 true 时按文件名第一个空格洗掉图号，不要求前缀。
 不产生 XT/SW 输出目录。图号规则见现行技术合同 REQ-008。
 
-### 普通 SolidWorks 零件整备（4.3.11）
+### 普通 SolidWorks 零件整备（4.3.11，4.3.16 改为两步）
 
-开启特征识别时，已有特征树的普通 `.SLDPRT` 与哑实体走同一条内部 Parasolid 往返，再交给 FeatureWorks。
-不得因源零件没有导入体而跳过。输出布局仍不建 `XT/` 目录。识别失败回退源文件副本。
+特征整备必须先把 `.SLDPRT` 严格导出为交付用 `.x_t`，再对 XT 做 FeatureWorks。不得因源零件没有导入体、
+未启用识别或识别失败而跳过导出。输出布局创建 `XT/` 目录。识别失败保留压平后的导入体。
 
 ## SWuse.Api 建模表面
 
