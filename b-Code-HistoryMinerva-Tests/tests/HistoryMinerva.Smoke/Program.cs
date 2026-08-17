@@ -2683,6 +2683,14 @@ static void TestNativeSolidWorksPartRecognition(string root)
             .Contains("导入体", StringComparison.Ordinal),
         "哑实体的说明仍要落到导入体上");
 
+    var degraded = new FeatureOutcome(0, false, 0, 0, [], true, 0, "会话未激活");
+    True(!SolidWorksPartPreparer.ShouldFallBackToSourceCopy(degraded),
+        "识别失败必须保留 XT 导入体，不得退回源零件原来的特征树");
+    True(SolidWorksPartPreparer.ShouldKeepFlattenedImport(degraded),
+        "识别失败应重新载入压平后的导入体");
+    True(SolidWorksPartPreparer.ShouldFallBackToSourceCopy(degraded with { GeometryChanged = true }),
+        "几何被改坏才允许退回源副本");
+
     var directory = Path.Combine(root, "native-sw-prep");
     Directory.CreateDirectory(directory);
     var assembly = Path.Combine(directory, "顶层.SLDASM");
