@@ -1,7 +1,7 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva `4.3.10` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
-SolidWorks 自整备管线、属性整备改名/洗图号与 `minerva.*` 命令面均已在源码生效。
+本文件是 HistoryMinerva `4.3.11` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
+SolidWorks 自整备管线（哑实体与普通零件均压平识别）、属性整备改名/洗图号与 `minerva.*` 命令面均已在源码生效。
 构建与部署验收命令见 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用。
 
 ## 模块身份
@@ -63,6 +63,11 @@ JSON 形态、退出码语义都不变；**不带该字段的历史请求仍按 
 `entries` 为就地改名清单（源与目标必须同目录、同扩展名）。只接受 `sourceFormat = SolidWorks`。
 记录末尾追加可选 `stripBySpace`（缺省 false）：为 true 时按文件名第一个空格洗掉图号，不要求前缀。
 不产生 XT/SW 输出目录。图号规则见现行技术合同 REQ-008。
+
+### 普通 SolidWorks 零件整备（4.3.11）
+
+开启特征识别时，已有特征树的普通 `.SLDPRT` 与哑实体走同一条内部 Parasolid 往返，再交给 FeatureWorks。
+不得因源零件没有导入体而跳过。输出布局仍不建 `XT/` 目录。识别失败回退源文件副本。
 
 ## SWuse.Api 建模表面
 

@@ -756,12 +756,19 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         AssemblyOutputPath = plan.AssemblyOutputPath;
         AssemblyTree.Add(AssemblyTreeNode.Build(result, plan.Nodes));
         var regeneratesExisting = RegeneratesExistingOutputs;
-        foreach (var candidate in plan.Parts)
-            Parts.Add(new ConversionFileRow(candidate, regeneratesExisting));
-
         var issueText = plan.BlockingIssues.Count == 0
             ? string.Empty
             : string.Join("；", plan.BlockingIssues.Select(issue => $"[{issue.ErrorClass}] {issue.Message}"));
+        foreach (var candidate in plan.Parts)
+            Parts.Add(new ConversionFileRow(candidate, regeneratesExisting));
+        if (plan.BlockingIssues.Count > 0)
+        {
+            foreach (var row in Parts)
+            {
+                row.Status = "受阻";
+                row.Detail = issueText;
+            }
+        }
         WarningSummary = string.Join("；", plan.Warnings.Concat(
             string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
         StatusText = plan.CanConvert
@@ -912,8 +919,16 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         if (EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, selected))
             return;
         _selectedMappingContent = selected;
+        SyncFeatureRecognitionDefault(kind);
         OnPropertyChanged(nameof(SelectedMappingContent));
+        OnPropertyChanged(nameof(IsRenameMode));
+        OnPropertyChanged(nameof(ShowConversionOptions));
+        OnPropertyChanged(nameof(PrimaryActionText));
+        OnPropertyChanged(nameof(SourcePartColumnHeader));
     }
+
+    private void SyncFeatureRecognitionDefault(MappingContent kind)
+        => RecognizeFeatures = kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly;
 
     private void NotifySourceChanged()
     {

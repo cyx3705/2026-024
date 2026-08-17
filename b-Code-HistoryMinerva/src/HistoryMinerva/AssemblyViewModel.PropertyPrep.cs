@@ -63,6 +63,7 @@ public sealed partial class AssemblyViewModel
         var keptPlan = _plan;
         var keptHash = _sourceHashAfterProbe;
         _selectedMappingContent = value;
+        SyncFeatureRecognitionDefault(value.Kind);
         if (keepAssembly)
         {
             ResetOutputDirectories();

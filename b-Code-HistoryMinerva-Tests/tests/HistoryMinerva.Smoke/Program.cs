@@ -84,6 +84,7 @@ try
     TestFeatureRecognitionSessionGuards();
     TestRecognitionGeometryGuard();
     TestRecognitionSemanticGuard();
+    TestNativeSolidWorksPartRecognition(root);
     TestImportIdentityAndSessionFaultGuards();
     Console.WriteLine("HistoryMinerva.Smoke: PASS");
 }
@@ -2537,6 +2538,97 @@ static void TestRecognitionSemanticGuard()
         "几何错误与语义错误必须保持不同分类");
     True(!SolidWorksImporter.ShouldReimportRejectedRecognition(null),
         "未执行识别时不得额外重导入");
+}
+
+/// <summary>
+/// 特征整备必须吃普通 SW 零件，不能只吃哑实体。FeatureWorks 只认导入体，
+/// 所以普通零件也要先压平；切到特征整备时默认打开识别。
+/// </summary>
+static void TestNativeSolidWorksPartRecognition(string root)
+{
+    var nativeTree = new FeatureTreeEntry[] { new("Boss-Extrude1", "Extrusion") };
+    var dumbTree = new FeatureTreeEntry[] { new("Imported1", "BaseBody") };
+    True(SolidWorksPartPreparer.RequiresParasolidFlattenBeforeRecognition(nativeTree),
+        "普通 SW 零件也必须压平后再识别，不能因没有导入体而跳过");
+    True(SolidWorksPartPreparer.RequiresParasolidFlattenBeforeRecognition(dumbTree),
+        "哑实体仍走 Parasolid 往返");
+    True(SolidWorksPartPreparer.DescribeRecognitionPrep(3, 0)
+            .Contains("普通 SolidWorks 零件", StringComparison.Ordinal),
+        "没有导入体时必须说清这是普通零件、将先压平");
+    True(SolidWorksPartPreparer.DescribeRecognitionPrep(0, 1)
+            .Contains("导入体", StringComparison.Ordinal),
+        "哑实体的说明仍要落到导入体上");
+
+    var directory = Path.Combine(root, "native-sw-prep");
+    Directory.CreateDirectory(directory);
+    var assembly = Path.Combine(directory, "顶层.SLDASM");
+    var part = Path.Combine(directory, "阀体.SLDPRT");
+    File.WriteAllText(assembly, "asm");
+    File.WriteAllText(part, "part");
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var probe = new AssemblyProbeResult(
+        assembly,
+        [new AssemblyOccurrence("阀体-1", null, part, false, false, false, identity, null)],
+        [part],
+        0, 0, 1, 0, [],
+        [
+            new AssemblyDocumentReading(assembly,
+            [
+                new AssemblyChild("阀体-1", part, false, false, identity),
+            ], []),
+        ]);
+    using var viewModel = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(probe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher);
+    True(!viewModel.RecognizeFeatures, "未选特征整备时不得默认打开识别");
+    viewModel.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly);
+    True(viewModel.RecognizeFeatures, "切到特征整备必须默认打开识别特征与草图");
+    viewModel.SetAssemblySource(assembly);
+    Equal(MappingContent.SolidWorksAssemblyToSolidWorksAssembly, viewModel.SelectedMappingContent.Kind,
+        "选 .SLDASM 且当前是特征整备时必须留在特征整备");
+    True(viewModel.RecognizeFeatures, "选完源装配后识别开关不得被关掉");
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(viewModel.CanConvert, "普通 SW 零件组成的装配解析成功后必须能转换");
+
+    var otherDir = Path.Combine(directory, "other");
+    Directory.CreateDirectory(otherDir);
+    var duplicate = Path.Combine(otherDir, "阀体.SLDPRT");
+    File.WriteAllText(duplicate, "dup");
+    var blockedProbe = new AssemblyProbeResult(
+        assembly,
+        [
+            new AssemblyOccurrence("阀体-1", null, part, false, false, false, identity, null),
+            new AssemblyOccurrence("阀体-2", null, duplicate, false, false, false, identity, null),
+        ],
+        [part, duplicate],
+        0, 0, 2, 0, [],
+        [
+            new AssemblyDocumentReading(assembly,
+            [
+                new AssemblyChild("阀体-1", part, false, false, identity),
+                new AssemblyChild("阀体-2", duplicate, false, false, identity),
+            ], []),
+        ]);
+    using var blocked = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(blockedProbe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher);
+    blocked.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly);
+    blocked.SetAssemblySource(assembly);
+    blocked.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(!blocked.CanConvert, "同名不同路径零件必须挡住转换装配体");
+    True(blocked.Parts.All(row => row.Status == "受阻"),
+        "前置错误必须写到零件行，不能只留在控制台");
+    True(blocked.Parts.Any(row => row.Detail.Contains("同名不同路径", StringComparison.Ordinal)
+                                  || row.Detail.Contains("同一输出", StringComparison.Ordinal)),
+        "零件行要写出挡住转换的原因");
 }
 
 static void TestUnifiedPartDirectoryFlow(string root)
