@@ -1,6 +1,6 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva `4.3.11` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
+本文件是 HistoryMinerva `4.3.12` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
 SolidWorks 自整备管线（哑实体与普通零件均压平识别）、属性整备改名/洗图号与 `minerva.*` 命令面均已在源码生效。
 构建与部署验收命令见 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用。
 

@@ -2583,6 +2583,24 @@ static void TestNativeSolidWorksPartRecognition(string root)
         static _ => { },
         Dispatcher.CurrentDispatcher);
     True(!viewModel.RecognizeFeatures, "未选特征整备时不得默认打开识别");
+    using (var fromParts = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(probe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher))
+    {
+        Equal(MappingContent.SolidEdgePartToSolidWorksPart, fromParts.SelectedMappingContent.Kind,
+            "默认转换内容是零件文件夹");
+        fromParts.SetAssemblySource(assembly);
+        Equal(MappingContent.SolidWorksAssemblyToSolidWorksAssembly, fromParts.SelectedMappingContent.Kind,
+            "选 .SLDASM 必须切到特征整备");
+        True(fromParts.CanProbe, "选完装配体后必须能解析");
+        True(!fromParts.StatusText.Contains("请选择转换来源", StringComparison.Ordinal),
+            $"选完装配体不得停在请选择转换来源，实得：{fromParts.StatusText}");
+        fromParts.SelectedMappingContent = null!;
+        True(fromParts.CanProbe, "ComboBox 瞬时清空不得丢掉已经选好的装配体");
+    }
+
     viewModel.SelectedMappingContent = MappingContentOption.Available
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly);
     True(viewModel.RecognizeFeatures, "切到特征整备必须默认打开识别特征与草图");

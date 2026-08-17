@@ -24,6 +24,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     private string _sourceAssemblyPath = string.Empty;
     private string _partDirectory = string.Empty;
     private MappingContentOption _selectedMappingContent = MappingContentOption.Available[0];
+    private bool _suppressMappingContentChange;
     private ConversionSourceKind _sourceKind;
     private string _xtDirectory = string.Empty;
     private string _solidWorksDirectory = string.Empty;
@@ -66,24 +67,32 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         get => _selectedMappingContent;
         set
         {
-            ArgumentNullException.ThrowIfNull(value);
+            if (value is null || _suppressMappingContentChange)
+                return;
             if (IsBusy || EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, value))
                 return;
 
-            ApplyMappingContentChange(value);
-            OnPropertyChanged(nameof(PrimaryActionText));
-            OnPropertyChanged(nameof(PartsPanelTitle));
-            OnPropertyChanged(nameof(OperationText));
-            OnPropertyChanged(nameof(IsAssemblyMode));
-            OnPropertyChanged(nameof(IsRenameMode));
-            OnPropertyChanged(nameof(ShowConversionOptions));
-            OnPropertyChanged(nameof(SourcePartColumnHeader));
-            OnPropertyChanged(nameof(IsPartDirectoryMode));
-            OnPropertyChanged(nameof(CanProbe));
-            OnPropertyChanged(nameof(CanConvert));
-            OnPropertyChanged(nameof(CanStrip));
-            OnPropertyChanged();
-            NotifySourceChanged();
+            _suppressMappingContentChange = true;
+            try
+            {
+                ApplyMappingContentChange(value);
+                OnPropertyChanged(nameof(PrimaryActionText));
+                OnPropertyChanged(nameof(PartsPanelTitle));
+                OnPropertyChanged(nameof(OperationText));
+                OnPropertyChanged(nameof(IsAssemblyMode));
+                OnPropertyChanged(nameof(IsRenameMode));
+                OnPropertyChanged(nameof(ShowConversionOptions));
+                OnPropertyChanged(nameof(SourcePartColumnHeader));
+                OnPropertyChanged(nameof(IsPartDirectoryMode));
+                OnPropertyChanged(nameof(CanProbe));
+                OnPropertyChanged(nameof(CanConvert));
+                OnPropertyChanged(nameof(CanStrip));
+                NotifySourceChanged();
+            }
+            finally
+            {
+                _suppressMappingContentChange = false;
+            }
         }
     }
 
@@ -341,9 +350,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         var trimmed = path.Trim();
         var option = MappingContentOption.ForAssemblyFile(trimmed)
             ?? throw new InvalidOperationException("只支持 Solid Edge .asm 或 SolidWorks .SLDASM 装配体。");
-        if (!(SelectedMappingContent.IsAssemblySource
-              && SelectedMappingContent.SourceFormat == option.SourceFormat))
-            SelectMappingContentForSource(option.Kind);
         ClearSourceResults();
         ResetOutputDirectories();
         _sourceAssemblyPath = Path.GetFullPath(trimmed);
@@ -351,6 +357,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         SetSourceKind(ConversionSourceKind.Assembly);
         RebuildMates = false;
         UpdateAssemblyOutputPaths();
+        if (!(SelectedMappingContent.IsAssemblySource
+              && SelectedMappingContent.SourceFormat == option.SourceFormat))
+            SelectMappingContentForSource(option.Kind);
         StatusText = "正在准备解析装配体";
         NotifySourceChanged();
     }
@@ -912,23 +921,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         OnPropertyChanged(nameof(CanProbe));
         OnPropertyChanged(nameof(CanConvert));
     }
-
-    private void SelectMappingContentForSource(MappingContent kind)
-    {
-        var selected = MappingContentOption.Available.Single(option => option.Kind == kind);
-        if (EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, selected))
-            return;
-        _selectedMappingContent = selected;
-        SyncFeatureRecognitionDefault(kind);
-        OnPropertyChanged(nameof(SelectedMappingContent));
-        OnPropertyChanged(nameof(IsRenameMode));
-        OnPropertyChanged(nameof(ShowConversionOptions));
-        OnPropertyChanged(nameof(PrimaryActionText));
-        OnPropertyChanged(nameof(SourcePartColumnHeader));
-    }
-
-    private void SyncFeatureRecognitionDefault(MappingContent kind)
-        => RecognizeFeatures = kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly;
 
     private void NotifySourceChanged()
     {

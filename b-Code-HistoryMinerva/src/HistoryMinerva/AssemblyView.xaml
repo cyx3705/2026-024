@@ -107,7 +107,10 @@
                                   Grid.Column="1"
                                   Margin="{DynamicResource Shell.Space.Gap}"
                                   ItemsSource="{Binding MappingContents}"
-                                  SelectedItem="{Binding SelectedMappingContent, Mode=TwoWay}"
+                                  SelectedItem="{Binding SelectedMappingContent, Mode=OneWay}"
+                                  DropDownOpened="OnMappingContentDropDownOpened"
+                                  DropDownClosed="OnMappingContentDropDownClosed"
+                                  SelectionChanged="OnMappingContentSelectionChanged"
                                   ToolTip="选择来源内容与目标文件类型"
                                   IsEnabled="{Binding CanEdit}">
                             <ComboBox.ItemTemplate>
