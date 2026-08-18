@@ -92,7 +92,6 @@ $expectedCadTools = @(
     'AssemblyProductionGate'
     'FeatureWorksBatchSmoke'
     'SolidWorksSelfPipelineGate'
-    'SWuse.CadGate'
 )
 $actualCadTools = @(Get-ChildItem -LiteralPath $cadToolRoot -Directory |
     Where-Object { Get-ChildItem -LiteralPath $_.FullName -File -Filter '*.csproj' } |
@@ -160,7 +159,7 @@ if (-not $commandRootMatch.Success) {
 else {
     $commandRoot = $commandRootMatch.Groups['root'].Value
 }
-$backendSource = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva\SWuseCommands.cs'))
+$backendSource = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva\WorkerCommands.cs'))
 $backendCommands = @(
     [regex]::Matches($backendSource, 'Command\("(?<method>[a-z][a-z0-9]*)"\)') |
         ForEach-Object { "$commandRoot.worker.$($_.Groups['method'].Value)" } |

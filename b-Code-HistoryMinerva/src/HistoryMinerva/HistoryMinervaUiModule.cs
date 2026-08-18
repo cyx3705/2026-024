@@ -30,7 +30,7 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
         context.Log.Info(HistoryMinervaIdentity.WindowId, $"Minerva UI 数据根：{_runtimePaths.ModuleDataDirectory}");
 
         // These are frontend commands. They are deliberately not MCP-callable;
-        // the backend worker/status surface is registered by SWuseCommands.
+        // the backend worker/status surface is registered by WorkerCommands.
         if (_shellUi is not null)
         {
             context.RegisterCommands(registry =>

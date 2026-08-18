@@ -32,7 +32,4 @@ public static class HistoryMinervaIdentity
 
     /// <summary>模块数据目录下的装配探查结果目录名。</summary>
     public const string ProbesDirectoryName = "probes";
-
-    /// <summary>用户文档目录下的默认建模工作区目录名。</summary>
-    public const string WorkspaceDirectoryName = Name + "Workspace";
 }
