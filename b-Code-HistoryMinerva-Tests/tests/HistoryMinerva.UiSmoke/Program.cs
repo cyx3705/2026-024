@@ -132,6 +132,42 @@ internal static class Program
             {
                 throw new InvalidOperationException("零件列表上方不得保留独立标题行。");
             }
+            var treeExpander = FindVisualChildren<Expander>(workspace).Single(expander =>
+                string.Equals(expander.Name, "AssemblyTreeExpander", StringComparison.Ordinal));
+            if (!expandOptions && treeExpander.IsExpanded)
+                throw new InvalidOperationException("装配结构必须默认收起。");
+            var partsGrid = FindVisualChildren<DataGrid>(workspace).Single(grid =>
+                string.Equals(grid.Name, "PartsDataGrid", StringComparison.Ordinal));
+            if (partsGrid.ActualWidth < workspace.ActualWidth * 0.75)
+                throw new InvalidOperationException("默认布局必须把零件表铺满正文宽度。");
+            if (!busy)
+            {
+                var originalMapping = workspace.UnifiedPage.ViewModel.SelectedMappingContent;
+                var switchedToAssembly = false;
+                if (workspace.UnifiedPage.ViewModel.IsPartDirectoryMode && folder is null && assemblyPath is null)
+                {
+                    workspace.UnifiedPage.ViewModel.SelectedMappingContent =
+                        workspace.UnifiedPage.ViewModel.MappingContents.First(option => option.IsAssemblySource);
+                    workspace.UpdateLayout();
+                    switchedToAssembly = true;
+                }
+
+                if (!workspace.UnifiedPage.ViewModel.IsPartDirectoryMode)
+                {
+                    if (!treeExpander.IsVisible)
+                        throw new InvalidOperationException("装配转换下装配结构必须作为可展开区出现。");
+                    if (!expandOptions && treeExpander.IsExpanded)
+                        throw new InvalidOperationException("装配转换下装配结构必须默认收起。");
+                    if (partsGrid.ActualWidth < workspace.ActualWidth * 0.75)
+                        throw new InvalidOperationException("装配转换默认也必须把零件表铺满正文宽度。");
+                }
+
+                if (switchedToAssembly)
+                {
+                    workspace.UnifiedPage.ViewModel.SelectedMappingContent = originalMapping;
+                    workspace.UpdateLayout();
+                }
+            }
             var optionsActionBar = FindVisualChildren<Grid>(workspace).Single(grid =>
                 string.Equals(grid.Name, "OptionsActionBar", StringComparison.Ordinal));
             var optionsList = FindVisualChildren<WrapPanel>(optionsActionBar).Single(panel =>

@@ -35,6 +35,8 @@ public partial class AssemblyView : UserControl, IDisposable
     {
         if (e.PropertyName is nameof(AssemblyViewModel.SourcePartColumnHeader) or null)
             SourcePartColumn.Header = _viewModel.SourcePartColumnHeader;
+        if (e.PropertyName is nameof(AssemblyViewModel.SelectedMappingContent) or null)
+            AssemblyTreeExpander.IsExpanded = false;
     }
 
     internal AssemblyViewModel ViewModel => _viewModel;
