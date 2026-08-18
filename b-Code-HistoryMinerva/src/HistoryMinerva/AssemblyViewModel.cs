@@ -575,6 +575,12 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             var plan = AssemblyPlanner.Create(
                 result, customXtDirectory: null, customSolidWorksDirectory: null, sourceFormat);
             var sourceHash = ComputeSha256(result.SourceAssemblyPath);
+            var issueText = plan.BlockingIssues.Count == 0
+                ? string.Empty
+                : string.Join("；", plan.BlockingIssues.Select(issue => $"[{issue.ErrorClass}] {issue.Message}"));
+            // 命令总线在 Dispatcher 排空前就会读这两个字段；先同步写好，避免把「正在解析」进度文案报成失败。
+            _lastOperationSucceeded = plan.CanConvert;
+            StatusText = FormatProbeStatus(plan, result, issueText);
             QueueUiUpdate(() => ApplyProbeResult(result, plan, sourceHash));
         }
         finally

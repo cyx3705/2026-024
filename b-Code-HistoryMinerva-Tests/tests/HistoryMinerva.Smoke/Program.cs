@@ -3287,8 +3287,11 @@ static void TestTemporaryOutput(string root)
     True(temporaryPath.EndsWith(".tmp.SLDPRT", StringComparison.OrdinalIgnoreCase),
         "临时输出必须保留 CAD 可识别的最终扩展名");
     File.WriteAllText(temporaryPath, "stable-output");
+    var lengthBeforeCommit = new FileInfo(temporaryPath).Length;
     TemporaryOutput.Commit(temporaryPath, finalPath);
     True(File.Exists(finalPath) && !File.Exists(temporaryPath), "提交必须把临时输出原子移动到正式路径");
+    Equal(lengthBeforeCommit, new FileInfo(finalPath).Length, "提交后只能读正式路径的长度");
+    Throws<FileNotFoundException>(() => _ = new FileInfo(temporaryPath).Length);
 }
 
 static void TestParasolidTextProbe(string root)

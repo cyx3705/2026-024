@@ -205,21 +205,22 @@ internal static class SolidWorksXtExporter
                 throw new InvalidDataException(identityFailure);
 
             // 与整备链路共用同一份导出实现：非空、稳定、且真的是 Parasolid 文本。
-            SaveAsParasolid(interop, model, temporaryXt, cancellationToken);
+            // 长度必须在 Commit 之前取：Move 之后临时路径已不存在，再读 FileInfo.Length
+            // 会把已经成功的 XT 报成 ExportFailed（现场 8 个零件全部导完，前端仍显示失败）。
+            var output = SaveAsParasolid(interop, model, temporaryXt, cancellationToken);
 
             interop.CloseDocument(title);
             title = string.Empty;
             ComRelease.Final(model);
             model = null;
 
-            var facts = new FileInfo(temporaryXt);
             TemporaryOutput.Commit(temporaryXt, job.XtPath, overwrite);
             temporaryXt = null;
 
             reporter.Report(
                 job.Id,
                 ConversionStage.SolidWorksExport,
-                $"Parasolid 导出完成，{facts.Length} 字节。",
+                $"Parasolid 导出完成，{output.Length} 字节。",
                 artifact: ConversionArtifactKind.Xt);
             return true;
         }
@@ -255,7 +256,7 @@ internal static class SolidWorksXtExporter
     /// 把**已经打开**的零件文档导出为 Parasolid 文本。调用方保有文档所有权，本方法不关闭它。
     /// 零件批次导出与装配链路共用这一份实现——导出失败判据只能有一套。
     /// </summary>
-    public static void SaveAsParasolid(
+    public static OutputFileFacts SaveAsParasolid(
         SolidWorksInteropBridge interop,
         object model,
         string xtPath,
@@ -285,7 +286,7 @@ internal static class SolidWorksXtExporter
         }
 
         _ = FileProbe.WaitForStableNonEmptyFile(xtPath, cancellationToken);
-        _ = FileProbe.VerifyParasolidText(xtPath, cancellationToken, TimeSpan.FromSeconds(5));
+        return FileProbe.VerifyParasolidText(xtPath, cancellationToken, TimeSpan.FromSeconds(5));
     }
 
     private static void TryClose(SolidWorksInteropBridge? interop, string title)

@@ -1,6 +1,6 @@
 # HistoryMinerva
 
-HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 转换模块。当前源码为 `4.4.0`。
+HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 转换模块。当前源码为 `4.4.1`。
 
 - **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（`.par → .SLDPRT`、`.asm → .SLDASM`、
   SolidWorks 特征整备与属性整备改名），模块名为 `HistoryMinerva`、命令域为 `minerva`（全部取自
