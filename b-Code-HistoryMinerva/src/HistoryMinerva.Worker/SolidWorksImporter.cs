@@ -515,6 +515,13 @@ internal static class SolidWorksImporter
     }
 
     /// <summary>
+    /// 识别结果不能交付时，丢弃 FeatureWorks 改过的文档，重新载入 XT。
+    /// 几何被改坏、识别失败或语义不合规都走这条路，不得把源零件原来的特征树拷回去。
+    /// </summary>
+    internal static bool ShouldKeepFlattenedImport(FeatureOutcome outcome)
+        => outcome.GeometryChanged || outcome.DegradedToDumbSolid || outcome.SemanticMismatch;
+
+    /// <summary>
     /// 导入身份校验：SolidWorks 交回的文档必须就是刚导入的那个 XT。
     ///
     /// 实测事故：FeatureWorks 的 COM 服务器故障后，后续 LoadFile4 会交回**上一件的文档**，

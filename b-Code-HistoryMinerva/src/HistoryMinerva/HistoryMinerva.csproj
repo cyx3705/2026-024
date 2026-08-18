@@ -41,9 +41,6 @@
       <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.dll" />
       <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.deps.json" />
       <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Worker.runtimeconfig.json" />
-      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\HistoryMinerva.Api.dll" />
-      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\Microsoft.CodeAnalysis.dll" />
-      <WorkerArtifact Include="..\HistoryMinerva.Worker\bin\$(Configuration)\net8.0-windows\win-x64\Microsoft.CodeAnalysis.CSharp.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(WorkerArtifact)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
   </Target>

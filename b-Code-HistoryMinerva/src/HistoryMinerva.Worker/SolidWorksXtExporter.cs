@@ -200,7 +200,7 @@ internal static class SolidWorksXtExporter
                 throw new InvalidDataException("SolidWorks 打开的副本不是零件文档。");
 
             title = interop.GetTitle(model);
-            var identityFailure = SolidWorksPartPreparer.DescribeIdentityFailure(workingCopy, title);
+            var identityFailure = SolidWorksImporter.DescribeImportIdentityFailure(workingCopy, title);
             if (identityFailure is not null)
                 throw new InvalidDataException(identityFailure);
 
@@ -253,10 +253,7 @@ internal static class SolidWorksXtExporter
 
     /// <summary>
     /// 把**已经打开**的零件文档导出为 Parasolid 文本。调用方保有文档所有权，本方法不关闭它。
-    ///
-    /// <see cref="SolidWorksPartPreparer"/> 的整备链路和上面的批量导出共用这一份实现——
-    /// 导出这一步的失败判据（SaveAs3 返回值、错误码、落盘稳定性、Parasolid 文本校验）
-    /// 只能有一套，否则两条路会在"什么算导出成功"上慢慢分叉。
+    /// 零件批次导出与装配链路共用这一份实现——导出失败判据只能有一套。
     /// </summary>
     public static void SaveAsParasolid(
         SolidWorksInteropBridge interop,

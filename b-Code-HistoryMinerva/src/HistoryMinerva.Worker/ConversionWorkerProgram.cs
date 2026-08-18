@@ -7,7 +7,7 @@ internal static class ConversionWorkerProgram
 {
     private static readonly JsonSerializerOptions JsonOptions = WorkerProtocol.CreateJsonOptions();
 
-    // 入口在 HistoryMinervaWorkerEntry.cs（STA），此处是被路由调用的 HistoryMinerva 处理链。
+    // 入口在 HistoryMinervaWorkerEntry.cs（STA）。只处理转换动词。
     internal static int Run(string[] args)
     {
         var paths = ReadPaths(args);

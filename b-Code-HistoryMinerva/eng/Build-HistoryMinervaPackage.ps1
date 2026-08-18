@@ -81,13 +81,10 @@ $runtimeFiles = @(
     'HistoryMinerva.dll',
     'HistoryMinerva.xml',
     'HistoryMinerva.Contracts.dll',
-    'HistoryMinerva.Api.dll',
     'HistoryMinerva.Worker.exe',
     'HistoryMinerva.Worker.dll',
     'HistoryMinerva.Worker.deps.json',
-    'HistoryMinerva.Worker.runtimeconfig.json',
-    'Microsoft.CodeAnalysis.dll',
-    'Microsoft.CodeAnalysis.CSharp.dll'
+    'HistoryMinerva.Worker.runtimeconfig.json'
 )
 $manifestRuntimeFiles = @([string]$moduleManifest.artifact, [string]$moduleManifest.docs) +
     @($moduleManifest.deps | ForEach-Object { [string]$_ })
