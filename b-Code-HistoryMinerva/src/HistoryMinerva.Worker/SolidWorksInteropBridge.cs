@@ -136,6 +136,18 @@ internal sealed class SolidWorksInteropBridge : IDisposable
         return saved;
     }
 
+    /// <summary>
+    /// <c>swUserPreferenceIntegerValue_e.swParasolidOutputVersion = 89</c>。
+    /// 导出 XT 前把版本钉成 latest，避免会话里残留的旧版本/二进制偏好写出非文本 Parasolid。
+    /// </summary>
+    public bool SetUserPreferenceInteger(int preference, int value)
+        => Convert.ToBoolean(Invoke(
+            _applicationInterface,
+            _application,
+            "SetUserPreferenceIntegerValue",
+            preference,
+            value));
+
     public void CloseDocument(string title)
         => Invoke(_applicationInterface, _application, "CloseDoc", title);
 

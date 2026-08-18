@@ -86,6 +86,7 @@ try
     TestRecognitionGeometryGuard();
     TestRecognitionSemanticGuard();
     TestNativeSolidWorksPartRecognition(root);
+    TestSolidWorksFeaturePrepBansSkipNativeTree(root);
     TestCadShortcutResolution(root);
     TestUnresolvedReferenceNamesPath(root);
     TestImportIdentityAndSessionFaultGuards();
@@ -996,8 +997,9 @@ static void TestAssemblyRetryRejectsUnsafeOutputs(string root)
     var invalidXt = CreateJob("invalid-xt");
     File.WriteAllText(invalidXt.XtPath, "not-parasolid");
     File.SetLastWriteTimeUtc(invalidXt.XtPath, sourceTime.AddMinutes(1));
-    Throws<ClassifiedConversionException>(() =>
-        AssemblyPartReusePlanner.Create([invalidXt], CancellationToken.None));
+    var reexport = AssemblyPartReusePlanner.Create([invalidXt], CancellationToken.None);
+    Equal(1, reexport.NeedsExport.Count, "已有 XT 若不是 Parasolid 文本必须重导，不得整批报格式失败");
+    Equal(0, reexport.ImportFromExistingXt.Count, "坏 XT 不得复用");
 
     var staleXt = CreateJob("stale-xt");
     WriteValidXt(staleXt.XtPath);
@@ -2826,6 +2828,73 @@ static void TestNativeSolidWorksPartRecognition(string root)
         "命令结果必须带上挡住转换的原因，不能只说有前置错误");
 }
 
+/// <summary>
+/// 特征整备禁止「源零件已有特征树所以跳过」。离线锁两件事：生产源码不得再写出这句，
+/// 计划器对每个 SW 零件都必须给出 XT/ 下的交付用 .x_t，且不得复用已有 SLDPRT。
+/// </summary>
+static void TestSolidWorksFeaturePrepBansSkipNativeTree(string root)
+{
+    string[] banned = ["源零件已有特征树", "跳过整备"];
+    var sourceRoot = Path.GetFullPath(Path.Combine(
+        Path.GetDirectoryName(LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "build", "HistoryMinerva.Version.props")))!,
+        "..",
+        "src"));
+    True(Directory.Exists(sourceRoot), $"生产源码根必须存在：{sourceRoot}");
+    var hits = new List<string>();
+    foreach (var file in Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories))
+    {
+        var relative = Path.GetRelativePath(sourceRoot, file);
+        if (relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(segment => segment is "bin" or "obj"))
+        {
+            continue;
+        }
+
+        var text = File.ReadAllText(file);
+        foreach (var phrase in banned)
+        {
+            if (text.Contains(phrase, StringComparison.Ordinal))
+                hits.Add($"{relative} → {phrase}");
+        }
+    }
+
+    Equal(0, hits.Count, "生产代码禁止跳过整备文案：" + string.Join("；", hits));
+
+    var xtDirectory = Path.Combine(root, ConversionPathLayout.XtDirectoryName);
+    var swDirectory = Path.Combine(root, ConversionPathLayout.SolidWorksDirectoryName);
+    Directory.CreateDirectory(xtDirectory);
+    Directory.CreateDirectory(swDirectory);
+    var sourcePart = Path.Combine(root, "gate-native.SLDPRT");
+    File.WriteAllText(sourcePart, "native-tree");
+    var job = new ConversionJob(
+        "密封",
+        sourcePart,
+        Path.Combine(xtDirectory, "密封.x_t"),
+        Path.Combine(swDirectory, "密封.SLDPRT"));
+    File.WriteAllText(job.SolidWorksPath, "previous-output");
+    foreach (var recognize in new[] { false, true })
+    {
+        var plan = AssemblyPartReusePlanner.Create(
+            [job], CancellationToken.None, recognize, ConversionSourceFormat.SolidWorks);
+        Equal(0, plan.ReusableSolidWorksParts.Count, $"识别={recognize} 时 SW 不得复用已有 SLDPRT");
+        True(plan.NeedsExport.Count + plan.ImportFromExistingXt.Count == 1,
+            $"识别={recognize} 时每个零件必须导出 XT 或从已有 XT 导入");
+        Equal(
+            ConversionPathLayout.XtDirectoryName,
+            Path.GetFileName(Path.GetDirectoryName(job.XtPath)),
+            "交付用 XT 必须落在 XT/ 目录");
+        True(
+            ConversionPathLayout.HasExtension(job.XtPath, ConversionArtifactKind.Xt),
+            "计划路径必须是 .x_t");
+    }
+
+    var skipEvent = new WorkerEvent("b", "密封", ConversionStage.Skipped, "源零件已有特征树");
+    var status = ConversionProgressPresenter.GetRowStatus(skipEvent, "排队");
+    True(!status.Contains("跳过整备", StringComparison.Ordinal)
+         && !status.Contains("源零件已有特征树", StringComparison.Ordinal),
+        $"界面状态不得复述跳过整备文案，实得：{status}");
+}
+
 static void TestCadShortcutResolution(string root)
 {
     var dir = Path.Combine(root, "cad-lnk");
@@ -3243,6 +3312,30 @@ static void TestParasolidTextProbe(string root)
     File.WriteAllText(binaryPath, "FORMAT=binary;\r\n");
     Throws<InvalidDataException>(() =>
         FileProbe.VerifyParasolidText(binaryPath, CancellationToken.None, TimeSpan.FromSeconds(3)));
+
+    var swTransmit = Path.Combine(root, "sw-transmit.x_t");
+    File.WriteAllText(
+        swTransmit,
+        "**ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz**************************\r\n"
+        + "**PARASOLID !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~0123456789**************************\r\n"
+        + "GUISE=transmit;\r\n");
+    Equal(
+        "text",
+        FileProbe.VerifyParasolidText(swTransmit, CancellationToken.None, TimeSpan.FromSeconds(3)).ParasolidFormat,
+        "SolidWorks 写出的 Parasolid 传输头即使没有 FORMAT=text 也必须认作文本");
+
+    var junkXt = Path.Combine(root, ConversionPathLayout.XtDirectoryName, "坏.x_t");
+    Directory.CreateDirectory(Path.GetDirectoryName(junkXt)!);
+    File.WriteAllText(junkXt, "not-parasolid");
+    var sourcePart = Path.Combine(root, "坏.SLDPRT");
+    File.WriteAllText(sourcePart, "part");
+    var swOut = Path.Combine(root, ConversionPathLayout.SolidWorksDirectoryName, "坏.SLDPRT");
+    Directory.CreateDirectory(Path.GetDirectoryName(swOut)!);
+    var junkJob = new ConversionJob("坏", sourcePart, junkXt, swOut);
+    var reexport = AssemblyPartReusePlanner.Create(
+        [junkJob], CancellationToken.None, recognizeFeatures: true, ConversionSourceFormat.SolidWorks);
+    Equal(1, reexport.NeedsExport.Count, "已有 XT 若不是 Parasolid 文本必须重导，不得整批报格式失败");
+    Equal(0, reexport.ImportFromExistingXt.Count, "坏 XT 不得复用");
 }
 
 static void TestFeatureRecognitionRetries()
