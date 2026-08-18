@@ -1,7 +1,7 @@
 ﻿<Project>
   <!-- 唯一可编辑的发布版本源。改这里，manifest 与程序集版本一起走。 -->
   <PropertyGroup>
-    <HistoryMinervaVersion>4.4.2</HistoryMinervaVersion>
+    <HistoryMinervaVersion>4.4.3</HistoryMinervaVersion>
     <MinimumHistoryVulcanVersion>3.11.1</MinimumHistoryVulcanVersion>
     <HistoryVulcanPublishRoot Condition="'$(HistoryVulcanPublishRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-Publish</HistoryVulcanPublishRoot>
   </PropertyGroup>

@@ -35,8 +35,10 @@ public partial class AssemblyView : UserControl, IDisposable
     {
         if (e.PropertyName is nameof(AssemblyViewModel.SourcePartColumnHeader) or null)
             SourcePartColumn.Header = _viewModel.SourcePartColumnHeader;
-        if (e.PropertyName is nameof(AssemblyViewModel.SelectedMappingContent) or null)
-            AssemblyTreeExpander.IsExpanded = false;
+        if (e.PropertyName is nameof(AssemblyViewModel.SelectedMappingContent)
+            or nameof(AssemblyViewModel.IsPartDirectoryMode)
+            or null)
+            CloseAssemblyTreeFlyout();
     }
 
     internal AssemblyViewModel ViewModel => _viewModel;
@@ -136,6 +138,26 @@ public partial class AssemblyView : UserControl, IDisposable
     {
         if (_commandBus is not null)
             await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.cancel", HistoryMinervaIdentity.Name + ":UI");
+    }
+
+    private void OnAssemblyTreeOpenClick(object sender, RoutedEventArgs e)
+    {
+        if (AssemblyTreeFlyout.Visibility == Visibility.Visible)
+            CloseAssemblyTreeFlyout();
+        else
+            OpenAssemblyTreeFlyout();
+    }
+
+    private void OpenAssemblyTreeFlyout()
+    {
+        AssemblyTreeFlyout.Visibility = Visibility.Visible;
+        AssemblyTreeOpenButton.Content = "收起";
+    }
+
+    private void CloseAssemblyTreeFlyout()
+    {
+        AssemblyTreeFlyout.Visibility = Visibility.Collapsed;
+        AssemblyTreeOpenButton.Content = "打开";
     }
 
     public void Dispose()

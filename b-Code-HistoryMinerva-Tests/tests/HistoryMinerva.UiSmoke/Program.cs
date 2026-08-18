@@ -132,10 +132,14 @@ internal static class Program
             {
                 throw new InvalidOperationException("零件列表上方不得保留独立标题行。");
             }
-            var treeExpander = FindVisualChildren<Expander>(workspace).Single(expander =>
-                string.Equals(expander.Name, "AssemblyTreeExpander", StringComparison.Ordinal));
-            if (!expandOptions && treeExpander.IsExpanded)
-                throw new InvalidOperationException("装配结构必须默认收起。");
+            if (FindVisualChildren<Expander>(workspace).Any())
+                throw new InvalidOperationException("装配结构不得再占用正文展开条。");
+            var treeFlyout = FindVisualChildren<Border>(workspace).Single(border =>
+                string.Equals(border.Name, "AssemblyTreeFlyout", StringComparison.Ordinal));
+            if (!expandOptions && treeFlyout.Visibility != Visibility.Collapsed)
+                throw new InvalidOperationException("装配结构必须默认从左侧收起。");
+            var openButton = FindVisualChildren<Button>(workspace).Single(button =>
+                string.Equals(button.Name, "AssemblyTreeOpenButton", StringComparison.Ordinal));
             var partsGrid = FindVisualChildren<DataGrid>(workspace).Single(grid =>
                 string.Equals(grid.Name, "PartsDataGrid", StringComparison.Ordinal));
             if (partsGrid.ActualWidth < workspace.ActualWidth * 0.75)
@@ -154,9 +158,12 @@ internal static class Program
 
                 if (!workspace.UnifiedPage.ViewModel.IsPartDirectoryMode)
                 {
-                    if (!treeExpander.IsVisible)
-                        throw new InvalidOperationException("装配转换下装配结构必须作为可展开区出现。");
-                    if (!expandOptions && treeExpander.IsExpanded)
+                    if (!openButton.IsVisible)
+                        throw new InvalidOperationException("装配转换下左下角必须提供打开装配结构的按钮。");
+                    var openPosition = openButton.TranslatePoint(new Point(0, 0), workspace);
+                    if (openPosition.X > workspace.ActualWidth / 2)
+                        throw new InvalidOperationException("打开装配结构的按钮必须放在选项区左侧。");
+                    if (!expandOptions && treeFlyout.Visibility != Visibility.Collapsed)
                         throw new InvalidOperationException("装配转换下装配结构必须默认收起。");
                     if (partsGrid.ActualWidth < workspace.ActualWidth * 0.75)
                         throw new InvalidOperationException("装配转换默认也必须把零件表铺满正文宽度。");
@@ -234,6 +241,8 @@ internal static class Program
             {
                 foreach (var expander in FindVisualChildren<Expander>(workspace))
                     expander.IsExpanded = true;
+                if (openButton.IsVisible)
+                    treeFlyout.Visibility = Visibility.Visible;
                 workspace.UpdateLayout();
             }
             var dpi = VisualTreeHelper.GetDpi(workspace);

@@ -145,54 +145,8 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="{DynamicResource Shell.Space.PadTight}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-
-            <Border x:Name="AssemblyTreeSection"
-                    Grid.Row="0"
-                    Margin="0,0,0,8"
-                    Background="{DynamicResource Shell.Brush.Surface}"
-                    BorderBrush="{DynamicResource Shell.Brush.Hairline}"
-                    BorderThickness="1"
-                    CornerRadius="{DynamicResource Shell.Radius.Inner}">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="Visibility" Value="Visible" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsPartDirectoryMode}" Value="True">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <Expander x:Name="AssemblyTreeExpander"
-                          IsExpanded="False"
-                          Background="Transparent"
-                          BorderThickness="0"
-                          FontFamily="{DynamicResource Shell.Font.Family}"
-                          FontSize="{DynamicResource Shell.Font.Body}"
-                          Foreground="{DynamicResource Shell.Brush.TextPrimary}"
-                          Padding="{DynamicResource Shell.Space.PadTight}">
-                    <Expander.Header>
-                        <TextBlock Style="{DynamicResource Shell.Text.Body}"
-                                   FontWeight="SemiBold"
-                                   Text="装配结构" />
-                    </Expander.Header>
-                    <TreeView x:Name="AssemblyTreeView"
-                              MaxHeight="200"
-                              ItemsSource="{Binding AssemblyTree}"
-                              Padding="{DynamicResource Shell.Space.PadTight}"
-                              Background="Transparent"
-                              Foreground="{DynamicResource Shell.Brush.TextPrimary}"
-                              BorderThickness="0" />
-                </Expander>
-            </Border>
-
-            <Border Grid.Row="1"
-                    Background="{DynamicResource Shell.Brush.Surface}"
+        <Grid x:Name="PartsHost" Grid.Row="1" Margin="{DynamicResource Shell.Space.PadTight}">
+            <Border Background="{DynamicResource Shell.Brush.Surface}"
                     BorderBrush="{DynamicResource Shell.Brush.Hairline}"
                     BorderThickness="1"
                     CornerRadius="{DynamicResource Shell.Radius.Inner}">
@@ -227,6 +181,33 @@
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>
+            <Border x:Name="AssemblyTreeFlyout"
+                    HorizontalAlignment="Left"
+                    Width="220"
+                    Visibility="Collapsed"
+                    Background="{DynamicResource Shell.Brush.Surface}"
+                    BorderBrush="{DynamicResource Shell.Brush.Hairline}"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource Shell.Radius.Inner}"
+                    Effect="{DynamicResource Shell.Shadow.Flyout}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top"
+                            Padding="{DynamicResource Shell.Space.PadTight}"
+                            Background="{DynamicResource Shell.Brush.SurfaceAlt}"
+                            BorderBrush="{DynamicResource Shell.Brush.Hairline}"
+                            BorderThickness="0,0,0,1">
+                        <TextBlock Style="{DynamicResource Shell.Text.Body}"
+                                   Text="装配结构"
+                                   FontWeight="SemiBold" />
+                    </Border>
+                    <TreeView x:Name="AssemblyTreeView"
+                              ItemsSource="{Binding AssemblyTree}"
+                              Padding="{DynamicResource Shell.Space.PadTight}"
+                              Background="Transparent"
+                              Foreground="{DynamicResource Shell.Brush.TextPrimary}"
+                              BorderThickness="0" />
+                </DockPanel>
+            </Border>
         </Grid>
 
         <Grid x:Name="OptionsActionBar"
@@ -239,6 +220,26 @@
             <WrapPanel x:Name="OptionsList"
                        Orientation="Horizontal"
                        VerticalAlignment="Center">
+                <Grid VerticalAlignment="Center">
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPartDirectoryMode}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <Button x:Name="AssemblyTreeOpenButton"
+                            MinWidth="64"
+                            MinHeight="{DynamicResource Shell.Size.Control}"
+                            Margin="{DynamicResource Shell.Space.Gap}"
+                            Content="打开"
+                            Click="OnAssemblyTreeOpenClick"
+                            VerticalAlignment="Center"
+                            ToolTip="从左侧打开装配结构" />
+                </Grid>
                 <TextBlock x:Name="OptionsLabelText"
                            Style="{DynamicResource Shell.Text.Body}"
                            FontWeight="SemiBold"
