@@ -70,12 +70,11 @@ internal static class AssemblyPartReusePlanner
                 {
                     throw;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    throw new ClassifiedConversionException(
-                        ConversionErrorClass.OutputFormatInvalid,
-                        $"已有 XT 无法安全复用：{job.XtPath}；{ex.Message}",
-                        ex);
+                    // 坏掉的 XT 必须重导，不能把「格式无效」当成整批失败。
+                    needsExport.Add(job);
+                    continue;
                 }
                 importFromXt.Add(job);
                 continue;

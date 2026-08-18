@@ -123,7 +123,7 @@ internal static class Program
 
         report.NodeCount = plan.Nodes?.Count ?? 0;
         report.MaxDepth = plan.MaxDepth;
-        Directory.CreateDirectory(outputDirectory);
+        ExternalOutputLayout.EnsureDirectories(plan.XtDirectory, plan.SolidWorksDirectory);
 
         // ---- 3. 转换 ----
         var jobs = plan.Parts
@@ -157,7 +157,10 @@ internal static class Program
         if (!string.Equals(sourceHashBefore, Sha256(assemblyPath), StringComparison.Ordinal))
             report.Failures.Add("源装配在转换后发生变化。");
 
-        // ---- 5. 核验产物 ----
+        // ---- 5. 每个零件都必须先落到交付用 XT，禁止「已有特征树所以跳过」----
+        VerifyXtHandoff(jobs, report);
+
+        // ---- 6. 核验产物 ----
         if (!File.Exists(plan.AssemblyOutputPath))
         {
             report.Failures.Add($"未生成装配产物：{plan.AssemblyOutputPath}");
@@ -165,6 +168,59 @@ internal static class Program
         }
 
         Verify(plan, jobs, probe, report);
+    }
+
+    /// <summary>
+    /// 特征整备的第一刀：Worker 事件不得声称跳过整备，每个任务都必须留下非空的交付用 .x_t。
+    /// 这一步不打开 SolidWorks，旧 Worker 漏掉 XT 时立刻失败。
+    /// </summary>
+    private static void VerifyXtHandoff(IReadOnlyList<ConversionJob> jobs, GateReport report)
+    {
+        foreach (var line in report.WorkerEvents)
+        {
+            if (line.Contains("跳过整备", StringComparison.Ordinal)
+                || line.Contains("源零件已有特征树", StringComparison.Ordinal))
+            {
+                report.Failures.Add($"Worker 事件禁止跳过整备：{line}");
+            }
+        }
+
+        foreach (var job in jobs)
+        {
+            var directoryName = Path.GetFileName(Path.GetDirectoryName(job.XtPath));
+            if (!string.Equals(directoryName, ConversionPathLayout.XtDirectoryName, StringComparison.OrdinalIgnoreCase)
+                || !ConversionPathLayout.HasExtension(job.XtPath, ConversionArtifactKind.Xt))
+            {
+                report.Failures.Add($"XT 路径必须是 {ConversionPathLayout.XtDirectoryName}/ 下的 .x_t：{job.XtPath}");
+            }
+
+            if (!File.Exists(job.XtPath))
+            {
+                report.Failures.Add($"未生成交付用 XT：{job.XtPath}");
+                continue;
+            }
+
+            if (new FileInfo(job.XtPath).Length == 0)
+            {
+                report.Failures.Add($"交付用 XT 为空：{job.XtPath}");
+                continue;
+            }
+
+            var head = ReadHead(job.XtPath, 512);
+            if (head.IndexOf("FORMAT=text", StringComparison.OrdinalIgnoreCase) < 0
+                && !head.TrimStart().StartsWith("**", StringComparison.Ordinal))
+            {
+                report.Failures.Add($"交付用 XT 不是 Parasolid 文本：{job.XtPath}");
+            }
+        }
+    }
+
+    private static string ReadHead(string path, int charCount)
+    {
+        using var reader = new StreamReader(path, Encoding.ASCII, detectEncodingFromByteOrderMarks: true);
+        var buffer = new char[charCount];
+        var read = reader.Read(buffer, 0, buffer.Length);
+        return new string(buffer, 0, read);
     }
 
     /// <summary>打开产物零件与产物装配，把"到底做成了什么"量出来。</summary>
@@ -210,6 +266,8 @@ internal static class Program
         result.Bytes = new FileInfo(job.SolidWorksPath).Length;
         result.IdenticalToSource = File.Exists(job.SourcePath)
             && string.Equals(Sha256(job.SourcePath), Sha256(job.SolidWorksPath), StringComparison.Ordinal);
+        if (result.IdenticalToSource)
+            report.Failures.Add($"零件产物与源文件相同，特征整备不得拷回源零件：{job.SolidWorksPath}");
 
         var errors = 0;
         var warnings = 0;
