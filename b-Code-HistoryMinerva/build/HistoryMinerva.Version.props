@@ -5,16 +5,10 @@
     <MinimumHistoryVulcanVersion>3.11.1</MinimumHistoryVulcanVersion>
     <HistoryVulcanPublishRoot Condition="'$(HistoryVulcanPublishRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-Publish</HistoryVulcanPublishRoot>
   </PropertyGroup>
-  <ItemGroup Condition="'$(HistoryVulcanPackageRoot)' == ''">
-    <_HistoryVulcanVersionedManifest Include="$(HistoryVulcanPublishRoot)\HistoryVulcan-v*\manifest.json" />
-  </ItemGroup>
   <PropertyGroup>
     <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == '' and Exists('$(HistoryVulcanPublishRoot)\manifest.json')">$(HistoryVulcanPublishRoot)</HistoryVulcanPackageRoot>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(HistoryVulcanPackageRoot)' == ''">
-    <HistoryVulcanPackageRoot>@(_HistoryVulcanVersionedManifest->'%(RootDir)%(Directory)')</HistoryVulcanPackageRoot>
-  </PropertyGroup>
-  <PropertyGroup>
+    <!-- Vulcan 4.0.0 keeps the current host snapshot flat at z-Publish. -->
+    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(HistoryVulcanPublishRoot)</HistoryVulcanPackageRoot>
     <HistoryVulcanHostRoot Condition="'$(HistoryVulcanHostRoot)' == ''">$(HistoryVulcanPackageRoot)\host</HistoryVulcanHostRoot>
     <HistoryVulcanManifestPath>$(HistoryVulcanPackageRoot)\manifest.json</HistoryVulcanManifestPath>
     <HistoryVulcanCorePath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HistoryVulcanCorePath>
