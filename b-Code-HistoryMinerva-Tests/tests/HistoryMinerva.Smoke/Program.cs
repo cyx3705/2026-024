@@ -11,7 +11,6 @@ using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
 using HistoryVulcan.Core.Storage;
-using HistoryVulcan.Core.Mcp;
 using HistoryVulcan.Extensibility.Mcp;
 using HistoryVulcan.Services.Modules;
 using System.Text.Json;
@@ -3327,6 +3326,7 @@ static void TestParasolidTextProbe(string root)
     var junkXt = Path.Combine(root, ConversionPathLayout.XtDirectoryName, "坏.x_t");
     Directory.CreateDirectory(Path.GetDirectoryName(junkXt)!);
     File.WriteAllText(junkXt, "not-parasolid");
+    File.SetLastWriteTimeUtc(junkXt, DateTime.UtcNow.AddMinutes(1));
     var sourcePart = Path.Combine(root, "坏.SLDPRT");
     File.WriteAllText(sourcePart, "part");
     var swOut = Path.Combine(root, ConversionPathLayout.SolidWorksDirectoryName, "坏.SLDPRT");

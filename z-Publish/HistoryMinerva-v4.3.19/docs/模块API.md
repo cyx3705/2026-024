@@ -1,6 +1,6 @@
 # HistoryMinerva 模块 API
 
-本文件是 HistoryMinerva `4.3.19` 源码与正式 `z-HistoryMinerva` 对外消费面的唯一合同；
+本文件是 HistoryMinerva `4.3.19` 源码与正式 `z-Publish` 对外消费面的唯一合同；
 SolidWorks 特征整备不检测原零件特征树、一律先转 XT 再识别，属性整备改名/洗图号与 `minerva.*` 命令面均已在源码生效。
 构建与部署验收命令见 `../current/验证合同.md`；NuGet 打包暂不开放，OHS 旧宿主已停用。
 
