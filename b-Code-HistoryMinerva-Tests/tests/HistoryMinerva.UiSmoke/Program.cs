@@ -20,13 +20,13 @@ internal static class Program
         {
             Source = new Uri(
                 dark
-                    ? "/HistoryVulcan.Shell;component/Themes/ShellTokens.Dark.xaml"
-                    : "/HistoryVulcan.Shell;component/Themes/ShellTokens.xaml",
+                    ? "/HistoryAurora;component/Themes/AuroraTokens.Dark.xaml"
+                    : "/HistoryAurora;component/Themes/AuroraTokens.xaml",
                 UriKind.Relative),
         });
         application.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
-            Source = new Uri("/HistoryVulcan.Shell;component/Themes/ShellControls.xaml", UriKind.Relative),
+            Source = new Uri("/HistoryAurora;component/Themes/AuroraControls.xaml", UriKind.Relative),
         });
         var sourcePath = LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "src", "HistoryMinerva", "AssemblyView.xaml"));
         if (Regex.IsMatch(File.ReadAllText(sourcePath), "#[0-9A-Fa-f]{6,8}", RegexOptions.CultureInvariant))
@@ -47,7 +47,7 @@ internal static class Program
         var busy = args.Contains("--busy", StringComparer.OrdinalIgnoreCase);
         var expandOptions = args.Contains("--expand-options", StringComparer.OrdinalIgnoreCase);
         var workspace = new HistoryMinervaWorkspaceView();
-        workspace.SetResourceReference(Control.BackgroundProperty, "Shell.Brush.Canvas");
+        workspace.SetResourceReference(Control.BackgroundProperty, "Aurora.Brush.Canvas");
         if (folder is not null)
             workspace.UnifiedPage.ViewModel.SetPartDirectory(folder);
         else if (assemblyPath is not null)
@@ -65,8 +65,8 @@ internal static class Program
             ResizeMode = ResizeMode.NoResize,
             Content = workspace,
         };
-        window.SetResourceReference(Window.BackgroundProperty, "Shell.Brush.Canvas");
-        window.SetResourceReference(Control.ForegroundProperty, "Shell.Brush.TextPrimary");
+        window.SetResourceReference(Window.BackgroundProperty, "Aurora.Brush.Canvas");
+        window.SetResourceReference(Control.ForegroundProperty, "Aurora.Brush.TextPrimary");
         var captureIndex = Array.FindIndex(args, item =>
             string.Equals(item, "--capture", StringComparison.OrdinalIgnoreCase));
         if (captureIndex >= 0 && captureIndex + 1 < args.Length)
@@ -131,6 +131,49 @@ internal static class Program
                     textBlock.Text is "零件" or "唯一零件"))
             {
                 throw new InvalidOperationException("零件列表上方不得保留独立标题行。");
+            }
+            if (FindVisualChildren<Expander>(workspace).Any())
+                throw new InvalidOperationException("装配结构不得再占用正文展开条。");
+            var treeFlyout = FindVisualChildren<Border>(workspace).Single(border =>
+                string.Equals(border.Name, "AssemblyTreeFlyout", StringComparison.Ordinal));
+            if (!expandOptions && treeFlyout.Visibility != Visibility.Collapsed)
+                throw new InvalidOperationException("装配结构必须默认从左侧收起。");
+            var openButton = FindVisualChildren<Button>(workspace).Single(button =>
+                string.Equals(button.Name, "AssemblyTreeOpenButton", StringComparison.Ordinal));
+            var partsGrid = FindVisualChildren<DataGrid>(workspace).Single(grid =>
+                string.Equals(grid.Name, "PartsDataGrid", StringComparison.Ordinal));
+            if (partsGrid.ActualWidth < workspace.ActualWidth * 0.75)
+                throw new InvalidOperationException("默认布局必须把零件表铺满正文宽度。");
+            if (!busy)
+            {
+                var originalMapping = workspace.UnifiedPage.ViewModel.SelectedMappingContent;
+                var switchedToAssembly = false;
+                if (workspace.UnifiedPage.ViewModel.IsPartDirectoryMode && folder is null && assemblyPath is null)
+                {
+                    workspace.UnifiedPage.ViewModel.SelectedMappingContent =
+                        workspace.UnifiedPage.ViewModel.MappingContents.First(option => option.IsAssemblySource);
+                    workspace.UpdateLayout();
+                    switchedToAssembly = true;
+                }
+
+                if (!workspace.UnifiedPage.ViewModel.IsPartDirectoryMode)
+                {
+                    if (!openButton.IsVisible)
+                        throw new InvalidOperationException("装配转换下左下角必须提供打开装配结构的按钮。");
+                    var openPosition = openButton.TranslatePoint(new Point(0, 0), workspace);
+                    if (openPosition.X > workspace.ActualWidth / 2)
+                        throw new InvalidOperationException("打开装配结构的按钮必须放在选项区左侧。");
+                    if (!expandOptions && treeFlyout.Visibility != Visibility.Collapsed)
+                        throw new InvalidOperationException("装配转换下装配结构必须默认收起。");
+                    if (partsGrid.ActualWidth < workspace.ActualWidth * 0.75)
+                        throw new InvalidOperationException("装配转换默认也必须把零件表铺满正文宽度。");
+                }
+
+                if (switchedToAssembly)
+                {
+                    workspace.UnifiedPage.ViewModel.SelectedMappingContent = originalMapping;
+                    workspace.UpdateLayout();
+                }
             }
             var optionsActionBar = FindVisualChildren<Grid>(workspace).Single(grid =>
                 string.Equals(grid.Name, "OptionsActionBar", StringComparison.Ordinal));
@@ -198,6 +241,8 @@ internal static class Program
             {
                 foreach (var expander in FindVisualChildren<Expander>(workspace))
                     expander.IsExpanded = true;
+                if (openButton.IsVisible)
+                    treeFlyout.Visibility = Visibility.Visible;
                 workspace.UpdateLayout();
             }
             var dpi = VisualTreeHelper.GetDpi(workspace);

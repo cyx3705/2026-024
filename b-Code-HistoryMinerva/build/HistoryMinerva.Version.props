@@ -1,9 +1,14 @@
 ﻿<Project>
   <!-- 唯一可编辑的发布版本源。改这里，manifest 与程序集版本一起走。 -->
   <PropertyGroup>
-    <HistoryMinervaVersion>4.3.17</HistoryMinervaVersion>
+    <HistoryMinervaVersion>4.4.3</HistoryMinervaVersion>
     <MinimumHistoryVulcanVersion>3.11.1</MinimumHistoryVulcanVersion>
-    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-Publish</HistoryVulcanPackageRoot>
+    <HistoryVulcanPublishRoot Condition="'$(HistoryVulcanPublishRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\2026-023-HistoryVulcan\z-Publish</HistoryVulcanPublishRoot>
+  </PropertyGroup>
+  <PropertyGroup>
+    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == '' and Exists('$(HistoryVulcanPublishRoot)\manifest.json')">$(HistoryVulcanPublishRoot)</HistoryVulcanPackageRoot>
+    <!-- Vulcan 4.0.0 keeps the current host snapshot flat at z-Publish. -->
+    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(HistoryVulcanPublishRoot)</HistoryVulcanPackageRoot>
     <HistoryVulcanHostRoot Condition="'$(HistoryVulcanHostRoot)' == ''">$(HistoryVulcanPackageRoot)\host</HistoryVulcanHostRoot>
     <HistoryVulcanManifestPath>$(HistoryVulcanPackageRoot)\manifest.json</HistoryVulcanManifestPath>
     <HistoryVulcanCorePath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HistoryVulcanCorePath>
