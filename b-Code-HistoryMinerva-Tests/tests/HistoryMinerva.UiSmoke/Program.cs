@@ -20,13 +20,13 @@ internal static class Program
         {
             Source = new Uri(
                 dark
-                    ? "/HistoryVulcan.Shell;component/Themes/ShellTokens.Dark.xaml"
-                    : "/HistoryVulcan.Shell;component/Themes/ShellTokens.xaml",
+                    ? "/HistoryAurora;component/Themes/AuroraTokens.Dark.xaml"
+                    : "/HistoryAurora;component/Themes/AuroraTokens.xaml",
                 UriKind.Relative),
         });
         application.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
-            Source = new Uri("/HistoryVulcan.Shell;component/Themes/ShellControls.xaml", UriKind.Relative),
+            Source = new Uri("/HistoryAurora;component/Themes/AuroraControls.xaml", UriKind.Relative),
         });
         var sourcePath = LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "src", "HistoryMinerva", "AssemblyView.xaml"));
         if (Regex.IsMatch(File.ReadAllText(sourcePath), "#[0-9A-Fa-f]{6,8}", RegexOptions.CultureInvariant))
@@ -47,7 +47,7 @@ internal static class Program
         var busy = args.Contains("--busy", StringComparer.OrdinalIgnoreCase);
         var expandOptions = args.Contains("--expand-options", StringComparer.OrdinalIgnoreCase);
         var workspace = new HistoryMinervaWorkspaceView();
-        workspace.SetResourceReference(Control.BackgroundProperty, "Shell.Brush.Canvas");
+        workspace.SetResourceReference(Control.BackgroundProperty, "Aurora.Brush.Canvas");
         if (folder is not null)
             workspace.UnifiedPage.ViewModel.SetPartDirectory(folder);
         else if (assemblyPath is not null)
@@ -65,8 +65,8 @@ internal static class Program
             ResizeMode = ResizeMode.NoResize,
             Content = workspace,
         };
-        window.SetResourceReference(Window.BackgroundProperty, "Shell.Brush.Canvas");
-        window.SetResourceReference(Control.ForegroundProperty, "Shell.Brush.TextPrimary");
+        window.SetResourceReference(Window.BackgroundProperty, "Aurora.Brush.Canvas");
+        window.SetResourceReference(Control.ForegroundProperty, "Aurora.Brush.TextPrimary");
         var captureIndex = Array.FindIndex(args, item =>
             string.Equals(item, "--capture", StringComparison.OrdinalIgnoreCase));
         if (captureIndex >= 0 && captureIndex + 1 < args.Length)
