@@ -212,16 +212,35 @@ if (-not (Test-Path -LiteralPath $formalManifestPath -PathType Leaf) -or
 }
 else {
     $formalManifest = [IO.File]::ReadAllText($formalManifestPath) | ConvertFrom-Json
+    $expectedRuntimeFiles = @(
+        'HistoryMinerva.dll',
+        'HistoryMinerva.xml',
+        'HistoryMinerva.Contracts.dll',
+        'HistoryMinerva.Worker.exe',
+        'HistoryMinerva.Worker.dll',
+        'HistoryMinerva.Worker.deps.json',
+        'HistoryMinerva.Worker.runtimeconfig.json'
+    )
     $expectedFormalFiles = @(
-        [string]$formalManifest.artifact
-        [string]$formalManifest.docs
-        @($formalManifest.deps | ForEach-Object { [string]$_ })
+        $expectedRuntimeFiles
         'module.manifest.json'
         'historyvulcan.snapshot.json'
         'SHA256SUMS'
     )
     $actualFormalFiles = @(Get-ChildItem -LiteralPath $formalRoot -File | ForEach-Object Name)
     Assert-SameSet 'z-Publish top-level file boundary' $expectedFormalFiles $actualFormalFiles
+    $formalDeps = @($formalManifest.deps | ForEach-Object { [string]$_ })
+    if ('HistoryMinerva.Contracts.dll' -notin $formalDeps) {
+        Add-Violation 'z-Publish deps must include HistoryMinerva.Contracts.dll'
+    }
+    foreach ($dep in $formalDeps) {
+        if ($dep -notmatch '\.dll$') {
+            Add-Violation "z-Publish deps must be managed assemblies: $dep"
+        }
+        if ($dep -notin $expectedRuntimeFiles) {
+            Add-Violation "z-Publish dep is not a package payload: $dep"
+        }
+    }
 
     $docsRoot = Join-Path $formalRoot 'docs'
     if (Test-Path -LiteralPath $docsRoot) {

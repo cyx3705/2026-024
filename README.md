@@ -1,6 +1,6 @@
 # HistoryMinerva
 
-HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 转换模块。当前源码为 `4.4.3`。
+HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 转换模块。当前源码为 `4.4.4`。
 
 - **前端**：`HistoryMinerva.dll`——中央停靠页 `Minerva`（`.par → .SLDPRT`、`.asm → .SLDASM`、
   SolidWorks 特征整备与属性整备改名），模块名为 `HistoryMinerva`、命令域为 `minerva`（全部取自
@@ -22,7 +22,7 @@ HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 转换模块。当
 | 验证方式 | [`b-Office/current/验证合同.md`](./b-Office/current/验证合同.md) |
 | 生产模块源码 | [`b-Code-HistoryMinerva/README.md`](./b-Code-HistoryMinerva/README.md) |
 | 独立测试与 CAD 门禁 | [`b-Code-HistoryMinerva-Tests/README.md`](./b-Code-HistoryMinerva-Tests/README.md) |
-| 模块清单权威源（当前 4.4.3） | [`b-Code-HistoryMinerva/module.manifest.json`](./b-Code-HistoryMinerva/module.manifest.json) |
+| 模块清单权威源（当前 4.4.4） | [`b-Code-HistoryMinerva/module.manifest.json`](./b-Code-HistoryMinerva/module.manifest.json) |
 | 模块对外 API | [`b-Office/package/模块API.md`](./b-Office/package/模块API.md) |
 | SWuse V0.1 历史档案 | [`b-Office/history/swuse-v0.1/docs`](./b-Office/history/swuse-v0.1/docs) |
 

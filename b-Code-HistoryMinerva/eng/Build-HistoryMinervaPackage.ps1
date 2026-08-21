@@ -86,10 +86,19 @@ $runtimeFiles = @(
     'HistoryMinerva.Worker.deps.json',
     'HistoryMinerva.Worker.runtimeconfig.json'
 )
-$manifestRuntimeFiles = @([string]$moduleManifest.artifact, [string]$moduleManifest.docs) +
-    @($moduleManifest.deps | ForEach-Object { [string]$_ })
-if ((($runtimeFiles | Sort-Object) -join "`n") -cne (($manifestRuntimeFiles | Sort-Object) -join "`n")) {
-    throw "Module manifest runtime file set differs from the package contract."
+# deps 只列宿主要装进 ALC 的托管程序集。Worker.exe / json 是进程载荷，
+# 写进 deps 会被 Vulcan LoadFromStream 成「Bad IL format」，整个模块被跳过。
+$manifestDeps = @($moduleManifest.deps | ForEach-Object { [string]$_ })
+foreach ($dep in $manifestDeps) {
+    if ($dep -notmatch '\.dll$') {
+        throw "module.manifest.json deps must be managed assemblies, not payload files: $dep"
+    }
+    if ($dep -notin $runtimeFiles) {
+        throw "module.manifest.json dep is not in the package contract: $dep"
+    }
+}
+if ('HistoryMinerva.Contracts.dll' -notin $manifestDeps) {
+    throw 'module.manifest.json deps must include HistoryMinerva.Contracts.dll'
 }
 foreach ($file in $runtimeFiles) {
     $source = Join-Path $buildOutput $file
