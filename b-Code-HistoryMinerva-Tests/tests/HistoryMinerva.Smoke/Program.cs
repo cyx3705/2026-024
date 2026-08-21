@@ -126,6 +126,18 @@ static void TestSharedContractsAndVersion()
     Equal(expected, typeof(WorkerRequestValidator).Assembly.GetName().Version?.ToString(3), "Worker 程序集版本必须来自唯一版本源");
     Equal(expected, new ModuleInfo().Version, "模块运行时版本不得另存字符串副本");
     Equal(expected, ReadVersionFromSourceManifest(), "源码注册清单版本必须与版本真源一致");
+    var manifestDeps = ReadDepsFromSourceManifest();
+    Equal(
+        "HistoryMinerva.Contracts.dll",
+        string.Join(",", manifestDeps),
+        "deps 只能列出宿主要装进 ALC 的托管程序集；Worker 载荷不得列入");
+    foreach (var dep in manifestDeps)
+    {
+        True(
+            dep.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            && !dep.EndsWith(".exe", StringComparison.OrdinalIgnoreCase),
+            $"deps 条目必须是托管 DLL: {dep}");
+    }
     Equal(HistoryMinervaIdentity.Name, new ModuleInfo().ModuleName, "模块名必须来自 HistoryMinervaIdentity 权威源");
     Equal(HistoryMinervaIdentity.Name, HistoryMinervaIdentity.CommandDomain, "命令域必须与模块名同根（宿主按 ModuleName 反射生成）");
     Equal("HistoryMinerva", HistoryMinervaIdentity.Name, "权威源模块名字面量必须为 HistoryMinerva");
@@ -367,6 +379,15 @@ static string ReadVersionFromSourceManifest()
     return document.RootElement.GetProperty("version").GetString() ?? string.Empty;
 }
 
+static string[] ReadDepsFromSourceManifest()
+{
+    var path = LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "module.manifest.json"));
+    using var document = JsonDocument.Parse(File.ReadAllText(path));
+    return document.RootElement.GetProperty("deps").EnumerateArray()
+        .Select(item => item.GetString() ?? string.Empty)
+        .ToArray();
+}
+
 static string LocateRepoFile(string relative)
 {
     var repositoryRoot = Assembly.GetEntryAssembly()!
@@ -525,6 +546,8 @@ static void TestVulcanModuleHostSurface(string root)
     var commandNames = registry.All().Select(command => command.Name).ToArray();
     Equal(5, commandNames.Count(name => name.StartsWith("minerva.worker.", StringComparison.OrdinalIgnoreCase)),
         "the real Vulcan ModuleHost must register all five Minerva worker commands");
+    Equal(4, commandNames.Count(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)),
+        "ModuleHost must register conversion commands during Attach, before ShellUi exists");
     True(!commandNames.Any(name => name.StartsWith("HistoryMinerva.", StringComparison.OrdinalIgnoreCase)),
         "the real Vulcan ModuleHost must not synthesize the legacy HistoryMinerva command surface");
 
@@ -533,6 +556,11 @@ static void TestVulcanModuleHostSurface(string root)
     {
         True(tools.Any(tool => tool.CommandName.Equals(name, StringComparison.OrdinalIgnoreCase)),
             $"MCP schema must include {name}");
+    }
+    foreach (var name in commandNames.Where(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)))
+    {
+        True(registry.TryGet(name, out var conversion) && conversion.RequiresUiThread && !conversion.AllowMcpExecution,
+            $"{name} must be registered on the host bus as a UI-thread, MCP-blocked command");
     }
 
     var result = bus.ExecuteAsync("minerva.worker.status", "Smoke").GetAwaiter().GetResult();
@@ -2504,10 +2532,13 @@ static void TestUiModuleRegistration(string root)
     var serviceModule = new HistoryMinervaUiModule();
     serviceModule.Attach(serviceContext);
     serviceModule.CreateUi();
-    True(!serviceContext.Registry.TryGet("minerva.conversion.run", out _)
-         && !serviceContext.Registry.TryGet("minerva.conversion.strip", out _)
-         && !serviceContext.Registry.TryGet("minerva.conversion.cancel", out _),
-        "无 ShellUi 的服务宿主不得重复注册页面状态命令");
+    True(serviceContext.Registry.TryGet("minerva.conversion.probe", out var serviceProbe)
+         && serviceContext.Registry.TryGet("minerva.conversion.run", out _)
+         && serviceContext.Registry.TryGet("minerva.conversion.strip", out _)
+         && serviceContext.Registry.TryGet("minerva.conversion.cancel", out _),
+        "无 ShellUi 时仍须在 Attach 注册转换指令，否则热重载后页面报未知指令");
+    True(serviceProbe.RequiresUiThread && !serviceProbe.AllowMcpExecution,
+        "无 ShellUi 登记的转换指令仍禁止 MCP");
 
     var runtimePaths = new MappingRuntimePaths(dataRoot, moduleRoot);
     Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, HistoryMinervaIdentity.RequestsDirectoryName),

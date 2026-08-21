@@ -29,55 +29,53 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
         _runtimePaths = new MappingRuntimePaths(context.DataDirectory, context.Settings.Get("module.dir"));
         context.Log.Info(HistoryMinervaIdentity.WindowId, $"Minerva UI 数据根：{_runtimePaths.ModuleDataDirectory}");
 
-        // These are frontend commands. They are deliberately not MCP-callable;
-        // the backend worker/status surface is registered by WorkerCommands.
-        if (_shellUi is not null)
+        // Must register during Attach. Vulcan FinalizeMetas runs before CreateUi
+        // injects ShellUi, so gating on _shellUi drops conversion commands after
+        // reload and the page reports 未知指令.
+        context.RegisterCommands(registry =>
         {
-            context.RegisterCommands(registry =>
+            registry.Register(new CommandDescriptor
             {
-                registry.Register(new CommandDescriptor
-                {
-                    Name = HistoryMinervaIdentity.CommandRoot + ".conversion.probe",
-                    CommandClass = "conversion",
-                    Summary = "通过命令总线探查当前选择的 Minerva 装配体",
-                    Example = "minerva.conversion.probe",
-                    Readonly = true,
-                    RequiresUiThread = true,
-                    AllowMcpExecution = false,
-                    Handler = ProbeCurrentAsync,
-                });
-                registry.Register(new CommandDescriptor
-                {
-                    Name = HistoryMinervaIdentity.CommandRoot + ".conversion.run",
-                    CommandClass = "conversion",
-                    Summary = "通过命令总线执行当前选择的 Minerva 转换",
-                    Example = "minerva.conversion.run",
-                    RequiresUiThread = true,
-                    AllowMcpExecution = false,
-                    Handler = ConvertCurrentAsync,
-                });
-                registry.Register(new CommandDescriptor
-                {
-                    Name = HistoryMinervaIdentity.CommandRoot + ".conversion.strip",
-                    CommandClass = "conversion",
-                    Summary = "通过命令总线按空格洗掉当前装配体的图号",
-                    Example = "minerva.conversion.strip",
-                    RequiresUiThread = true,
-                    AllowMcpExecution = false,
-                    Handler = StripCurrentAsync,
-                });
-                registry.Register(new CommandDescriptor
-                {
-                    Name = HistoryMinervaIdentity.CommandRoot + ".conversion.cancel",
-                    CommandClass = "conversion",
-                    Summary = "取消当前 Minerva 转换或探查",
-                    Example = "minerva.conversion.cancel",
-                    RequiresUiThread = true,
-                    AllowMcpExecution = false,
-                    Handler = CommandDescriptor.Sync(CancelCurrent),
-                });
+                Name = HistoryMinervaIdentity.CommandRoot + ".conversion.probe",
+                CommandClass = "conversion",
+                Summary = "通过命令总线探查当前选择的 Minerva 装配体",
+                Example = "minerva.conversion.probe",
+                Readonly = true,
+                RequiresUiThread = true,
+                AllowMcpExecution = false,
+                Handler = ProbeCurrentAsync,
             });
-        }
+            registry.Register(new CommandDescriptor
+            {
+                Name = HistoryMinervaIdentity.CommandRoot + ".conversion.run",
+                CommandClass = "conversion",
+                Summary = "通过命令总线执行当前选择的 Minerva 转换",
+                Example = "minerva.conversion.run",
+                RequiresUiThread = true,
+                AllowMcpExecution = false,
+                Handler = ConvertCurrentAsync,
+            });
+            registry.Register(new CommandDescriptor
+            {
+                Name = HistoryMinervaIdentity.CommandRoot + ".conversion.strip",
+                CommandClass = "conversion",
+                Summary = "通过命令总线按空格洗掉当前装配体的图号",
+                Example = "minerva.conversion.strip",
+                RequiresUiThread = true,
+                AllowMcpExecution = false,
+                Handler = StripCurrentAsync,
+            });
+            registry.Register(new CommandDescriptor
+            {
+                Name = HistoryMinervaIdentity.CommandRoot + ".conversion.cancel",
+                CommandClass = "conversion",
+                Summary = "取消当前 Minerva 转换或探查",
+                Example = "minerva.conversion.cancel",
+                RequiresUiThread = true,
+                AllowMcpExecution = false,
+                Handler = CommandDescriptor.Sync(CancelCurrent),
+            });
+        });
     }
 
     public void CreateUi()
