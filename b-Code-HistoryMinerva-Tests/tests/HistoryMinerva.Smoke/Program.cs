@@ -2487,9 +2487,13 @@ static void TestUiModuleRegistration(string root)
             $"{registeredCommand.Name} 必须是需要 UI 线程的写命令");
         True(!registeredCommand.AllowMcpExecution,
             $"{registeredCommand.Name} 不得允许 MCP 执行");
-        Equal(CommandExecutionSite.Frontend,
-            FrontendCommandCapability.From(registeredCommand, "module:" + HistoryMinervaIdentity.Name).CreateProxy().ExecutionSite,
-            $"{registeredCommand.Name} 发布到服务目录后必须成为前端命令");
+        // 原先这里还断言「投影成服务目录里的前端代理后 ExecutionSite 必须是 Frontend」。
+        // 界面变成宿主内模块（DEC-008）之后代理链路整条消失，FrontendCommandCapability
+        // 与 ExecutionSite 已先后从宿主删除，这条断言随之无对象可断。
+        //
+        // 注意它留下的空缺：AllowMcpExecution=false 曾经**只有**配合 ExecutionSite=Frontend
+        // 才真的挡住 MCP。字段没了之后，上面那条断言只是在验本模块自己写下的值，
+        // 挡不挡得住由宿主的暴露策略说了算——见宿主侧「暴露级」那一轮。
     }
 
     Exception? uiFailure = null;
