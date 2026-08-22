@@ -43,7 +43,6 @@ public sealed class WorkerCommands : IModuleContextAware
             Summary = summary,
             Example = name,
             Readonly = true,
-            AllowMcpExecution = true,
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok(handler())),
         };
 

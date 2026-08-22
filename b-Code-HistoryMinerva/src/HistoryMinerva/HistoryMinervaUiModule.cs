@@ -42,7 +42,6 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
                 Example = "minerva.conversion.probe",
                 Readonly = true,
                 RequiresUiThread = true,
-                AllowMcpExecution = false,
                 Handler = ProbeCurrentAsync,
             });
             registry.Register(new CommandDescriptor
@@ -52,7 +51,6 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
                 Summary = "通过命令总线执行当前选择的 Minerva 转换",
                 Example = "minerva.conversion.run",
                 RequiresUiThread = true,
-                AllowMcpExecution = false,
                 Handler = ConvertCurrentAsync,
             });
             registry.Register(new CommandDescriptor
@@ -62,7 +60,6 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
                 Summary = "通过命令总线按空格洗掉当前装配体的图号",
                 Example = "minerva.conversion.strip",
                 RequiresUiThread = true,
-                AllowMcpExecution = false,
                 Handler = StripCurrentAsync,
             });
             registry.Register(new CommandDescriptor
@@ -72,7 +69,6 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
                 Summary = "取消当前 Minerva 转换或探查",
                 Example = "minerva.conversion.cancel",
                 RequiresUiThread = true,
-                AllowMcpExecution = false,
                 Handler = CommandDescriptor.Sync(CancelCurrent),
             });
         });

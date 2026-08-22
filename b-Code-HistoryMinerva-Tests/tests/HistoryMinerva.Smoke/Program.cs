@@ -512,8 +512,8 @@ static void TestCommandSurface(string root)
              })
     {
         True(context.Registry.TryGet(name, out var descriptor), $"missing explicit command {name}");
-        True(descriptor.Readonly && descriptor.AllowMcpExecution,
-            $"{name} must be a read-only MCP-safe backend command");
+        True(descriptor.Readonly,
+            $"{name} must be a read-only backend command");
     }
     True(!context.Registry.All().Any(command =>
             command.Name.StartsWith("HistoryMinerva.", StringComparison.OrdinalIgnoreCase)),
@@ -559,8 +559,8 @@ static void TestVulcanModuleHostSurface(string root)
     }
     foreach (var name in commandNames.Where(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)))
     {
-        True(registry.TryGet(name, out var conversion) && conversion.RequiresUiThread && !conversion.AllowMcpExecution,
-            $"{name} must be registered on the host bus as a UI-thread, MCP-blocked command");
+        True(registry.TryGet(name, out var conversion) && conversion.RequiresUiThread,
+            $"{name} must be registered on the host bus as a UI-thread command");
     }
 
     var result = bus.ExecuteAsync("minerva.worker.status", "Smoke").GetAwaiter().GetResult();
@@ -2479,22 +2479,23 @@ static void TestUiModuleRegistration(string root)
         "HistoryVulcan frontend must register minerva.conversion.probe");
     True(context.Registry.TryGet("minerva.conversion.strip", out var strip),
         "HistoryVulcan 前端必须注册 minerva.conversion.strip");
-    True(probe.Readonly && probe.RequiresUiThread && !probe.AllowMcpExecution,
-        "minerva.conversion.probe must be a frontend-only read command");
+    True(probe.Readonly && probe.RequiresUiThread,
+        "minerva.conversion.probe must be a UI-thread read command");
     foreach (var registeredCommand in new[] { convert, cancel, strip })
     {
         True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
             $"{registeredCommand.Name} 必须是需要 UI 线程的写命令");
-        True(!registeredCommand.AllowMcpExecution,
-            $"{registeredCommand.Name} 不得允许 MCP 执行");
-        // 原先这里还断言「投影成服务目录里的前端代理后 ExecutionSite 必须是 Frontend」。
-        // 界面变成宿主内模块（DEC-008）之后代理链路整条消失，FrontendCommandCapability
-        // 与 ExecutionSite 已先后从宿主删除，这条断言随之无对象可断。
-        //
-        // 注意它留下的空缺：AllowMcpExecution=false 曾经**只有**配合 ExecutionSite=Frontend
-        // 才真的挡住 MCP。字段没了之后，上面那条断言只是在验本模块自己写下的值，
-        // 挡不挡得住由宿主的暴露策略说了算——见宿主侧「暴露级」那一轮。
     }
+
+    // 本轮又删掉两条断言：ExecutionSite=Frontend 的代理投影，以及 AllowMcpExecution=false。
+    //
+    // 两者都随宿主字段一并消失，而且**它们本来就没在挡任何东西**：
+    // AllowMcpExecution 只有配合 ExecutionSite=Frontend 才起作用，而界面变成宿主内
+    // 模块（DEC-008）之后全仓无人设置 Frontend——所以这四条转换指令一直是 MCP 可见的，
+    // 与这里曾经写下的「不得允许 MCP 执行」正好相反。
+    //
+    // 宿主 4.8.0 起，不对远端暴露要在描述符上写 HiddenReason 并给出理由。
+    // **这四条要不要加是本模块的决定，尚未做出**；在做出之前，行为与迁移前一致。
 
     Exception? uiFailure = null;
     var uiThread = new Thread(() =>
@@ -2541,8 +2542,8 @@ static void TestUiModuleRegistration(string root)
          && serviceContext.Registry.TryGet("minerva.conversion.strip", out _)
          && serviceContext.Registry.TryGet("minerva.conversion.cancel", out _),
         "无 ShellUi 时仍须在 Attach 注册转换指令，否则热重载后页面报未知指令");
-    True(serviceProbe.RequiresUiThread && !serviceProbe.AllowMcpExecution,
-        "无 ShellUi 登记的转换指令仍禁止 MCP");
+    True(serviceProbe.RequiresUiThread,
+        "无 ShellUi 登记的转换指令仍需 UI 线程");
 
     var runtimePaths = new MappingRuntimePaths(dataRoot, moduleRoot);
     Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, HistoryMinervaIdentity.RequestsDirectoryName),
