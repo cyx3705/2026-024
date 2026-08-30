@@ -108,6 +108,15 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 AllowUnspecifiedParameters = true,
                 Handler = CommandDescriptor.Sync(SetContent),
             });
+            registry.Register(new CommandDescriptor
+            {
+                Name = HistoryMinervaIdentity.CommandRoot + ".ui.options",
+                CommandClass = "ui",
+                Summary = "设置 Minerva 转换选项",
+                RequiresUiThread = true,
+                AllowUnspecifiedParameters = true,
+                Handler = CommandDescriptor.Sync(SetOption),
+            });
         });
     }
 
@@ -208,6 +217,48 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         return CommandResult.Ok("已设置 Minerva 转换内容。");
     }
 
+    private CommandResult SetOption(CommandContext command)
+    {
+        var option = command.GetString("option")?.Trim().ToLowerInvariant();
+        var value = command.GetString("value")?.Trim();
+        if (string.IsNullOrWhiteSpace(option) || string.IsNullOrWhiteSpace(value))
+            return CommandResult.Fail("需要 option 和 value");
+
+        var model = GetViewModel();
+        try
+        {
+            switch (option)
+            {
+                case "recognize":
+                    model.RecognizeFeatures = ParseSwitch(value);
+                    break;
+                case "continue":
+                    model.ContinueWhenPartFails = ParseSwitch(value);
+                    break;
+                case "mates":
+                    model.RebuildMates = ParseSwitch(value);
+                    break;
+                case "prefix":
+                    model.DrawingPrefix = value;
+                    break;
+                default:
+                    return CommandResult.Fail("未知转换选项");
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            return CommandResult.Fail(ex.Message);
+        }
+
+        return CommandResult.Ok("已更新 Minerva 转换选项。");
+    }
+
+    private static bool ParseSwitch(string value)
+        => value.Equals("开启", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("开", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("1", StringComparison.OrdinalIgnoreCase);
+
     private CommandResult Data(CommandContext command)
     {
         var view = command.GetString("view")?.Trim().ToLowerInvariant();
@@ -280,7 +331,25 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                       ] }
                     ]
                   },
-                  { "type": "table", "id": "status", "dataSource": { "command": "minerva.ui.data", "args": { "view": "status" } }, "columns": [ { "key": "key", "title": "项", "width": "90" }, { "key": "value", "title": "值", "width": "*" } ] },
+                  {
+                    "type": "panel",
+                    "id": "conversion-options",
+                    "text": "转换选项",
+                    "rows": [
+                      { "widgets": [
+                        { "kind": "textbox", "id": "recognize", "label": "识别特征与草图", "mode": "select", "options": [ "关闭", "开启" ], "value": "关闭", "flex": true },
+                        { "kind": "button", "action": "minerva.options.recognize", "text": "应用" },
+                        { "kind": "textbox", "id": "continue", "label": "失败继续", "mode": "select", "options": [ "关闭", "开启" ], "value": "开启", "flex": true },
+                        { "kind": "button", "action": "minerva.options.continue", "text": "应用" }
+                      ] },
+                      { "widgets": [
+                        { "kind": "textbox", "id": "mates", "label": "重建装配关系", "mode": "select", "options": [ "关闭", "开启" ], "value": "关闭", "flex": true },
+                        { "kind": "button", "action": "minerva.options.mates", "text": "应用" },
+                        { "kind": "textbox", "id": "prefix", "label": "图号前缀", "flex": true },
+                        { "kind": "button", "action": "minerva.options.prefix", "text": "应用" }
+                      ] }
+                    ]
+                  },
                   { "type": "table", "id": "parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [ { "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "detail", "title": "详情", "width": "*" }, { "key": "features", "title": "特征", "width": "70" }, { "key": "sketches", "title": "草图", "width": "70" } ] }
                 ]
               }
@@ -299,7 +368,11 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             { "id": "minerva.conversion.probe", "title": "解析装配体", "command": "minerva.conversion.probe", "summary": "解析当前装配体来源" },
             { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "summary": "执行当前转换" },
             { "id": "minerva.conversion.strip", "title": "洗图号", "command": "minerva.conversion.strip", "summary": "按空格清理图号" },
-            { "id": "minerva.conversion.cancel", "title": "取消", "command": "minerva.conversion.cancel", "summary": "取消当前操作" }
+            { "id": "minerva.conversion.cancel", "title": "取消", "command": "minerva.conversion.cancel", "summary": "取消当前操作" },
+            { "id": "minerva.options.recognize", "title": "应用识别选项", "command": "minerva.ui.options", "args": { "option": "recognize", "value": "{recognize}" }, "summary": "开启或关闭特征与草图识别" },
+            { "id": "minerva.options.continue", "title": "应用失败策略", "command": "minerva.ui.options", "args": { "option": "continue", "value": "{continue}" }, "summary": "设置零件失败时是否继续" },
+            { "id": "minerva.options.mates", "title": "应用装配关系", "command": "minerva.ui.options", "args": { "option": "mates", "value": "{mates}" }, "summary": "设置是否重建装配关系" },
+            { "id": "minerva.options.prefix", "title": "应用图号前缀", "command": "minerva.ui.options", "args": { "option": "prefix", "value": "{prefix}" }, "summary": "设置属性整备图号前缀" }
           ]
         }
         """;

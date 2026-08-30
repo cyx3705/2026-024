@@ -2511,6 +2511,15 @@ static void TestUiModuleRegistration(string root)
                 "Minerva 页面描述 owner 必须与模块身份一致");
             Equal(1, description.RootElement.GetProperty("pages").GetArrayLength(),
                 "Minerva 必须描述一个 Aurora 页面");
+            var pageJson = description.RootElement.GetProperty("pages")[0].GetRawText();
+            True(pageJson.Contains("conversion-options", StringComparison.Ordinal),
+                "Minerva 描述式页面必须包含转换选项面板");
+            True(!pageJson.Contains("\"id\": \"status\"", StringComparison.Ordinal),
+                "Minerva 页面不得再渲染状态摘要表");
+            True(pageJson.Contains("识别特征与草图", StringComparison.Ordinal)
+                && pageJson.Contains("失败继续", StringComparison.Ordinal)
+                && pageJson.Contains("重建装配关系", StringComparison.Ordinal),
+                "Minerva 转换选项必须包含识别、失败继续和装配关系设置");
             var actionsResult = context.Bus.ExecuteAsync("minerva.ui.actions", "UI").GetAwaiter().GetResult();
             var actionsJson = actionsResult.Data as string ?? actionsResult.Message;
             True(actionsResult.Success && actionsJson.TrimStart().StartsWith("{", StringComparison.Ordinal), "Aurora 动作声明必须返回 JSON 字符串");
