@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <HistoryClioRoot Condition="'$(HistoryClioRoot)' == ''">$([System.IO.Path]::GetFullPath('$(HistoryVulcanPackageRoot)\..\..'))</HistoryClioRoot>
-    <HistoryAuroraRuntimeRoot Condition="'$(HistoryAuroraRuntimeRoot)' == ''">$(HistoryClioRoot)\2026-026-HistoryAurora\b-Code-Studio\App\bin\Release\net8.0-windows</HistoryAuroraRuntimeRoot>
+    <HistoryAuroraRuntimeRoot Condition="'$(HistoryAuroraRuntimeRoot)' == ''">$(HistoryClioRoot)\2026-026-HistoryAurora\b-Code-Studio\Module\bin\Release\net8.0-windows</HistoryAuroraRuntimeRoot>
   </PropertyGroup>
   <ItemGroup>
     <AssemblyMetadata Include="HistoryMinervaRepositoryRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..'))" />
@@ -20,10 +20,6 @@
     </Reference>
     <Reference Include="HistoryVulcan.Services">
       <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="HistoryVulcan.Extensibility">
-      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Extensibility.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="HistoryAurora">
@@ -47,7 +43,6 @@
     <ItemGroup>
       <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll" />
       <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll" />
-      <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Extensibility.dll" />
       <HistoryVulcanUiTestRuntime Include="$(HistoryAuroraRuntimeRoot)\HistoryAurora.dll" />
       <HistoryVulcanUiTestRuntime Include="$(HistoryAuroraRuntimeRoot)\AvalonDock.dll" />
       <HistoryVulcanUiTestRuntime Include="$(HistoryAuroraRuntimeRoot)\AvalonDock.Themes.VS2013.dll" />

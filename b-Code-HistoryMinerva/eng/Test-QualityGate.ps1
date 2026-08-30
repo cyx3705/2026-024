@@ -200,10 +200,10 @@ if ($commandHandlerSource -notmatch 'CommandResult\.Fail\("Minerva .*已取消')
     Add-Violation 'Minerva command handlers must expose cancellation through CommandResult.Fail'
 }
 Assert-SameSet 'Module API command catalog' $sourceCommands $apiCommands
-if (@([regex]::Matches($uiSource, 'RegisterToolWindow\(')).Count -ne 1 -or
-    $uiSource -notmatch 'Id\s*=\s*HistoryMinervaIdentity\.WindowId' -or
-    $uiSource -notmatch 'DefaultSide\s*=\s*DockSide\.Center') {
-    Add-Violation 'HistoryMinerva UI must register exactly one identity-backed center window'
+if ($uiSource -notmatch 'Name\s*=\s*HistoryMinervaIdentity\.CommandRoot \+ "\.ui\.pane"' -or
+    $uiSource -notmatch '\["ui\.window"\]\s*=\s*HistoryMinervaIdentity\.WindowId' -or
+    $uiSource -notmatch '\["ui\.side"\]\s*=\s*"center"') {
+    Add-Violation 'HistoryMinerva UI must expose exactly one identity-backed center pane command'
 }
 
 # The current candidate is z-Publish/HistoryMinerva-vX.Y.Z; history is a separate subtree.

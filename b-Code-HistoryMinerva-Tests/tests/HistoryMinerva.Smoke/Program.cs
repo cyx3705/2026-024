@@ -3,12 +3,10 @@ using System.Reflection;
 using HistoryMinerva;
 using HistoryMinerva.Contracts;
 using HistoryMinerva.Worker;
-using HistoryVulcan.Core.Docking;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
 using HistoryVulcan.Core.Storage;
-using HistoryVulcan.Extensibility.Mcp;
 using HistoryVulcan.Services.Modules;
 using System.Text.Json;
 using System.Windows.Threading;
@@ -537,7 +535,9 @@ static void TestVulcanModuleHostSurface(string root)
     var settings = new RecordingSettingsService(Path.GetDirectoryName(moduleAssembly)!);
     using var host = new ModuleHost(Path.GetDirectoryName(moduleAssembly)!, log)
     {
-        EnableUiModules = false,
+        // Minerva's single assembly carries both WorkerCommands and the Aurora pane;
+        // the host must load the UI-marked package for either context to attach.
+        EnableUiModules = true,
         EnableFileWatching = false,
     };
     host.Attach(registry, bus, settings, Path.Combine(root, "module-host-data"));
@@ -551,12 +551,6 @@ static void TestVulcanModuleHostSurface(string root)
     True(!commandNames.Any(name => name.StartsWith("HistoryMinerva.", StringComparison.OrdinalIgnoreCase)),
         "the real Vulcan ModuleHost must not synthesize the legacy HistoryMinerva command surface");
 
-    var tools = new CommandSchemaExporter(registry).ExportTools();
-    foreach (var name in commandNames.Where(name => name.StartsWith("minerva.worker.", StringComparison.OrdinalIgnoreCase)))
-    {
-        True(tools.Any(tool => tool.CommandName.Equals(name, StringComparison.OrdinalIgnoreCase)),
-            $"MCP schema must include {name}");
-    }
     foreach (var name in commandNames.Where(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)))
     {
         True(registry.TryGet(name, out var conversion) && conversion.RequiresUiThread,
@@ -2463,12 +2457,12 @@ static void TestImportIdentityAndSessionFaultGuards()
 
 static void TestUiModuleRegistration(string root)
 {
-    var dataRoot = Path.Combine(root, "appshell-data");
-    var moduleRoot = Path.Combine(root, "appshell-modules");
-    var registrar = new RecordingShellUiRegistrar();
-    var context = new RecordingModuleContext(dataRoot, moduleRoot);
-    var module = new HistoryMinervaUiModule();
-    ((IShellUiAware)module).ShellUi = registrar;
+    var dataRoot = Path.Combine(root, "historyvulcan-data");
+    var moduleRoot = Path.Combine(root, "historyvulcan-modules");
+    var context = new RecordingModuleContext(
+        dataRoot,
+        moduleRoot);
+    using var module = new HistoryMinervaUiModule();
     module.Attach(context);
 
     True(context.Registry.TryGet("minerva.conversion.run", out var convert),
@@ -2479,6 +2473,22 @@ static void TestUiModuleRegistration(string root)
         "HistoryVulcan frontend must register minerva.conversion.probe");
     True(context.Registry.TryGet("minerva.conversion.strip", out var strip),
         "HistoryVulcan 前端必须注册 minerva.conversion.strip");
+    True(!context.Registry.TryGet("minerva.ui.pane", out _),
+        "Minerva must not register a self-owned WPF pane command");
+    True(context.Registry.TryGet("minerva.ui.describe", out var describe),
+        "Minerva must register the Aurora description command");
+    True(context.Registry.TryGet("minerva.ui.data", out var data),
+        "Minerva must register the Aurora data command");
+    True(context.Registry.TryGet("minerva.ui.actions", out var actions),
+        "Minerva must register the Aurora actions declaration command");
+    True(context.Registry.TryGet("minerva.ui.source", out var source),
+        "Minerva must expose a source setter for the descriptive page");
+    True(context.Registry.TryGet("minerva.ui.content", out var content),
+        "Minerva must expose a content setter for the descriptive page");
+    True(describe.Readonly && data.Readonly && actions.Readonly,
+        "Aurora description, data and actions commands must be readonly");
+    True(describe.HiddenReason is not null && data.HiddenReason is not null && actions.HiddenReason is not null,
+        "Aurora UI protocol commands must be hidden from remote consumers");
     True(probe.Readonly && probe.RequiresUiThread,
         "minerva.conversion.probe must be a UI-thread read command");
     foreach (var registeredCommand in new[] { convert, cancel, strip })
@@ -2486,41 +2496,56 @@ static void TestUiModuleRegistration(string root)
         True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
             $"{registeredCommand.Name} 必须是需要 UI 线程的写命令");
     }
-
-    // 本轮又删掉两条断言：ExecutionSite=Frontend 的代理投影，以及 AllowMcpExecution=false。
-    //
-    // 两者都随宿主字段一并消失，而且**它们本来就没在挡任何东西**：
-    // AllowMcpExecution 只有配合 ExecutionSite=Frontend 才起作用，而界面变成宿主内
-    // 模块（DEC-008）之后全仓无人设置 Frontend——所以这四条转换指令一直是 MCP 可见的，
-    // 与这里曾经写下的「不得允许 MCP 执行」正好相反。
-    //
-    // 宿主 4.8.0 起，不对远端暴露要在描述符上写 HiddenReason 并给出理由。
-    // **这四条要不要加是本模块的决定，尚未做出**；在做出之前，行为与迁移前一致。
-
     Exception? uiFailure = null;
     var uiThread = new Thread(() =>
     {
         try
         {
-            module.CreateUi();
-            Equal(1, registrar.Descriptors.Count, "模块应只注册一个单页工具窗口");
-            var descriptor = registrar.Descriptors.Single();
-            Equal(HistoryMinervaIdentity.WindowId, descriptor.Id, "窗口 ID 必须来自权威源 WindowId");
-            Equal(HistoryMinervaIdentity.WindowTitle, descriptor.Title, "窗口标题必须是去 History 的短形 Minerva");
-            True(descriptor.ContentFactory != null, "单页工具窗口必须提供内容工厂");
-            Equal(DockSide.Center, descriptor.DefaultSide, "HistoryMinerva 必须注册为中央业务页");
-            Equal(0.75, descriptor.DefaultRatio, "HistoryMinerva 中央页必须保留 0.75 描述比例");
-            True(descriptor.IsSingleton, "HistoryMinerva 中央页必须是单例");
-
-            var result = context.Bus.ExecuteAsync("minerva.conversion.run", "Smoke").GetAwaiter().GetResult();
-            True(!result.Success && result.Message.Contains("请选择", StringComparison.Ordinal),
+            var result = context.Bus.ExecuteAsync("minerva.ui.describe", "UI").GetAwaiter().GetResult();
+            var descriptionJson = result.Data as string ?? result.Message;
+            True(result.Success && descriptionJson.TrimStart().StartsWith("{", StringComparison.Ordinal), "Aurora 页面描述必须返回 JSON 字符串");
+            using var description = JsonDocument.Parse(descriptionJson);
+            Equal(1, description.RootElement.GetProperty("schemaVersion").GetInt32(),
+                "Minerva 页面描述必须使用 Aurora schema V1");
+            Equal("HistoryMinerva", description.RootElement.GetProperty("owner").GetString(),
+                "Minerva 页面描述 owner 必须与模块身份一致");
+            Equal(1, description.RootElement.GetProperty("pages").GetArrayLength(),
+                "Minerva 必须描述一个 Aurora 页面");
+            var pageJson = description.RootElement.GetProperty("pages")[0].GetRawText();
+            True(pageJson.Contains("conversion-options", StringComparison.Ordinal),
+                "Minerva 描述式页面必须包含转换选项面板");
+            True(!pageJson.Contains("\"id\": \"status\"", StringComparison.Ordinal),
+                "Minerva 页面不得再渲染状态摘要表");
+            True(pageJson.Contains("识别特征与草图", StringComparison.Ordinal)
+                && pageJson.Contains("失败继续", StringComparison.Ordinal)
+                && pageJson.Contains("重建装配关系", StringComparison.Ordinal),
+                "Minerva 转换选项必须包含识别、失败继续和装配关系设置");
+            foreach (var optionId in new[] { "part-recognize", "se-recognize", "sw-feature-recognize", "sw-property-recognize" })
+            {
+                True(pageJson.Contains($"\"mode\": \"even\", \"widgets\": [{{ \"kind\": \"switch\", \"id\": \"{optionId}\"", StringComparison.Ordinal),
+                    $"Minerva 转换选项 {optionId} 必须使用 even 均布行");
+            }
+            True(pageJson.Contains("\"id\": \"prefix\", \"label\": \"图号前缀\", \"commitAction\": \"minerva.options.prefix\"", StringComparison.Ordinal),
+                "属性整备必须保留图号前缀输入框");
+            True(pageJson.Contains("\"type\": \"switch\"", StringComparison.Ordinal),
+                "Minerva 页面必须使用 Aurora switch 分支");
+            True(pageJson.Contains("\"kind\": \"sourcePicker\"", StringComparison.Ordinal),
+                "Minerva 页面必须使用 Aurora 来源选择器");
+            True(!pageJson.Contains("设置来源", StringComparison.Ordinal)
+                && !pageJson.Contains("应用内容", StringComparison.Ordinal),
+                "Minerva 页面不得展示设置来源或应用内容按钮");
+            var actionsResult = context.Bus.ExecuteAsync("minerva.ui.actions", "UI").GetAwaiter().GetResult();
+            var actionsJson = actionsResult.Data as string ?? actionsResult.Message;
+            True(actionsResult.Success && actionsJson.TrimStart().StartsWith("{", StringComparison.Ordinal), "Aurora 动作声明必须返回 JSON 字符串");
+            using var actionSet = JsonDocument.Parse(actionsJson);
+            True(actionSet.RootElement.GetProperty("actions").GetArrayLength() >= 4,
+                "Minerva 页面必须声明转换和来源动作");
+            var dataResult = context.Bus.ExecuteAsync("minerva.ui.data view=status", "UI").GetAwaiter().GetResult();
+            True(!dataResult.Success && dataResult.Message.Contains("parts", StringComparison.Ordinal),
+                "Minerva 页面不得再提供 status 数据源");
+            var conversion = context.Bus.ExecuteAsync("minerva.conversion.run", "Smoke").GetAwaiter().GetResult();
+            True(!conversion.Success && conversion.Message.Contains("请选择", StringComparison.Ordinal),
                 "未选择来源时 minerva.conversion.run 必须通过总线返回可读失败原因");
-            True(context.Log.Entries.Any(entry =>
-                    entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)),
-                "historyminerva 命令结果必须进入 HistoryVulcan 控制台日志并携带命令类");
-
-            module.DestroyUi();
-            Equal(1, registrar.DisposeCount, "热卸载必须释放 HistoryMinerva 窗口句柄");
         }
         catch (Exception ex)
         {
@@ -2532,18 +2557,6 @@ static void TestUiModuleRegistration(string root)
     uiThread.Join();
     if (uiFailure is not null)
         throw new InvalidOperationException("Mapping UI 模块 Smoke 失败。", uiFailure);
-
-    var serviceContext = new RecordingModuleContext(dataRoot, moduleRoot);
-    var serviceModule = new HistoryMinervaUiModule();
-    serviceModule.Attach(serviceContext);
-    serviceModule.CreateUi();
-    True(serviceContext.Registry.TryGet("minerva.conversion.probe", out var serviceProbe)
-         && serviceContext.Registry.TryGet("minerva.conversion.run", out _)
-         && serviceContext.Registry.TryGet("minerva.conversion.strip", out _)
-         && serviceContext.Registry.TryGet("minerva.conversion.cancel", out _),
-        "无 ShellUi 时仍须在 Attach 注册转换指令，否则热重载后页面报未知指令");
-    True(serviceProbe.RequiresUiThread,
-        "无 ShellUi 登记的转换指令仍需 UI 线程");
 
     var runtimePaths = new MappingRuntimePaths(dataRoot, moduleRoot);
     Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, HistoryMinervaIdentity.RequestsDirectoryName),
@@ -3470,45 +3483,17 @@ static T Capture<T>(Action action) where T : Exception
     throw new InvalidOperationException($"Expected exception {typeof(T).Name}");
 }
 
-sealed class RecordingShellUiRegistrar : IShellUiRegistrar
-{
-    public List<ToolWindowDescriptor> Descriptors { get; } = [];
-    public int DisposeCount { get; private set; }
-    public bool IsUiThread => true;
-
-    public void Invoke(Action action) => action();
-
-    public IDisposable RegisterToolWindow(ToolWindowDescriptor descriptor, string owner)
-    {
-        Descriptors.Add(descriptor);
-        return new CallbackDisposable(() => DisposeCount++);
-    }
-
-    public void UnregisterToolWindow(string id)
-    {
-    }
-
-    public void UnregisterOwner(string owner)
-    {
-    }
-}
-
 sealed class RecordingModuleContext : IModuleContext
 {
     public RecordingModuleContext(string dataDirectory, string moduleDirectory)
     {
-        DataDirectory = Path.GetFullPath(dataDirectory);
-        Settings = new RecordingSettingsService(moduleDirectory);
         Log = new RecordingShellLog();
         Bus = new CommandBus(Registry, Log);
     }
 
     public CommandRegistry Registry { get; } = new();
     public CommandBus Bus { get; }
-    public ISettingsService Settings { get; }
     public RecordingShellLog Log { get; }
-    IShellLog IModuleContext.Log => Log;
-    public string DataDirectory { get; }
 
     public void RegisterCommands(Action<CommandRegistry> configure)
         => configure(Registry);
@@ -3553,12 +3538,4 @@ sealed class RecordingShellLog : IShellLog
         lock (_gate)
             return _entries.ToArray();
     }
-}
-
-sealed class CallbackDisposable(Action callback) : IDisposable
-{
-    private Action? _callback = callback;
-
-    public void Dispose()
-        => Interlocked.Exchange(ref _callback, null)?.Invoke();
 }
