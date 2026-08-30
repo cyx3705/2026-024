@@ -2520,6 +2520,13 @@ static void TestUiModuleRegistration(string root)
                 && pageJson.Contains("失败继续", StringComparison.Ordinal)
                 && pageJson.Contains("重建装配关系", StringComparison.Ordinal),
                 "Minerva 转换选项必须包含识别、失败继续和装配关系设置");
+            True(pageJson.Contains("\"type\": \"switch\"", StringComparison.Ordinal),
+                "Minerva 页面必须使用 Aurora switch 分支");
+            True(pageJson.Contains("\"kind\": \"sourcePicker\"", StringComparison.Ordinal),
+                "Minerva 页面必须使用 Aurora 来源选择器");
+            True(!pageJson.Contains("设置来源", StringComparison.Ordinal)
+                && !pageJson.Contains("应用内容", StringComparison.Ordinal),
+                "Minerva 页面不得展示设置来源或应用内容按钮");
             var actionsResult = context.Bus.ExecuteAsync("minerva.ui.actions", "UI").GetAwaiter().GetResult();
             var actionsJson = actionsResult.Data as string ?? actionsResult.Message;
             True(actionsResult.Success && actionsJson.TrimStart().StartsWith("{", StringComparison.Ordinal), "Aurora 动作声明必须返回 JSON 字符串");
@@ -2527,8 +2534,8 @@ static void TestUiModuleRegistration(string root)
             True(actionSet.RootElement.GetProperty("actions").GetArrayLength() >= 4,
                 "Minerva 页面必须声明转换和来源动作");
             var dataResult = context.Bus.ExecuteAsync("minerva.ui.data view=status", "UI").GetAwaiter().GetResult();
-            True(dataResult.Success && dataResult.Data is not null,
-                "Minerva 页面状态数据必须可通过 ui.data 获取");
+            True(!dataResult.Success && dataResult.Message.Contains("parts", StringComparison.Ordinal),
+                "Minerva 页面不得再提供 status 数据源");
             var conversion = context.Bus.ExecuteAsync("minerva.conversion.run", "Smoke").GetAwaiter().GetResult();
             True(!conversion.Success && conversion.Message.Contains("请选择", StringComparison.Ordinal),
                 "未选择来源时 minerva.conversion.run 必须通过总线返回可读失败原因");

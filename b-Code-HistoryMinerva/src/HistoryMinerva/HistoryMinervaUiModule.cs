@@ -265,7 +265,6 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         var model = _viewModel;
         return view switch
         {
-            "status" => CommandResult.Ok("Minerva 状态", StatusRows(model)),
             "parts" => CommandResult.Ok("Minerva 零件", PartRows(model)),
             "content" => CommandResult.Ok("Minerva 转换内容", MappingContentOption.Available
                 .Select((item, index) => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>
@@ -273,21 +272,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                     ["value"] = item.DisplayName,
                     ["index"] = index.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 }).ToList()),
-            _ => CommandResult.Fail("未知 view；支持 status、parts、content"),
+            _ => CommandResult.Fail("未知 view；支持 parts、content"),
         };
-    }
-
-    private static IReadOnlyList<IReadOnlyDictionary<string, string>> StatusRows(AssemblyViewModel? model)
-    {
-        if (model is null)
-            return [new Dictionary<string, string> { ["key"] = "状态", ["value"] = "请选择转换来源" }];
-
-        return [
-            new Dictionary<string, string> { ["key"] = "来源", ["value"] = model.SourcePath },
-            new Dictionary<string, string> { ["key"] = "内容", ["value"] = model.SelectedMappingContent.DisplayName },
-            new Dictionary<string, string> { ["key"] = "状态", ["value"] = model.StatusText },
-            new Dictionary<string, string> { ["key"] = "警告", ["value"] = model.WarningSummary },
-        ];
     }
 
     private static IReadOnlyList<IReadOnlyDictionary<string, string>> PartRows(AssemblyViewModel? model)
@@ -304,57 +290,42 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         {
           "schemaVersion": 1,
           "owner": "HistoryMinerva",
-          "pages": [
-            {
-              "id": "mapping",
-              "title": "Minerva",
-              "placement": { "side": "center", "ratio": 0.75, "visible": true, "singleton": true },
-              "content": {
-                "type": "stack",
-                "gap": "tight",
-                "children": [
-                  {
-                    "type": "panel",
-                    "id": "mapping-controls",
-                    "rows": [
-                      { "widgets": [
-                        { "kind": "textbox", "id": "source", "label": "转换来源", "flex": true },
-                        { "kind": "button", "action": "minerva.source.set", "text": "设置来源" }
-                      ] },
-                      { "widgets": [
-                        { "kind": "textbox", "id": "content", "label": "转换内容", "mode": "select", "channel": "minerva.content", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "content" } }, "flex": true },
-                        { "kind": "button", "action": "minerva.content.set", "text": "应用内容" },
-                        { "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" },
-                        { "kind": "button", "action": "minerva.conversion.run", "text": "开始转换" },
-                        { "kind": "button", "action": "minerva.conversion.strip", "text": "洗图号" },
-                        { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }
-                      ] }
-                    ]
-                  },
-                  {
-                    "type": "panel",
-                    "id": "conversion-options",
-                    "text": "转换选项",
-                    "rows": [
-                      { "widgets": [
-                        { "kind": "textbox", "id": "recognize", "label": "识别特征与草图", "mode": "select", "options": [ "关闭", "开启" ], "value": "关闭", "flex": true },
-                        { "kind": "button", "action": "minerva.options.recognize", "text": "应用" },
-                        { "kind": "textbox", "id": "continue", "label": "失败继续", "mode": "select", "options": [ "关闭", "开启" ], "value": "开启", "flex": true },
-                        { "kind": "button", "action": "minerva.options.continue", "text": "应用" }
-                      ] },
-                      { "widgets": [
-                        { "kind": "textbox", "id": "mates", "label": "重建装配关系", "mode": "select", "options": [ "关闭", "开启" ], "value": "关闭", "flex": true },
-                        { "kind": "button", "action": "minerva.options.mates", "text": "应用" },
-                        { "kind": "textbox", "id": "prefix", "label": "图号前缀", "flex": true },
-                        { "kind": "button", "action": "minerva.options.prefix", "text": "应用" }
-                      ] }
-                    ]
-                  },
-                  { "type": "table", "id": "parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [ { "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "detail", "title": "详情", "width": "*" }, { "key": "features", "title": "特征", "width": "70" }, { "key": "sketches", "title": "草图", "width": "70" } ] }
-                ]
-              }
-            }
-          ]
+          "pages": [{
+            "id": "mapping", "title": "Minerva",
+            "placement": { "side": "center", "ratio": 0.75, "visible": true, "singleton": true },
+            "content": { "type": "stack", "gap": "tight", "children": [
+              { "type": "panel", "id": "mapping-controls", "rows": [{ "mode": "flex", "widgets": [
+                { "kind": "sourcePicker", "id": "source", "label": "来源", "value": "", "selectCommand": "aurora.ui.selectfile", "commitAction": "minerva.source.set", "flex": true },
+                { "kind": "textbox", "id": "content", "label": "转换内容", "mode": "select", "value": "Solid Edge .par → SolidWorks .SLDPRT", "channel": "minerva.content", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "content" } }, "minWidth": 260 }
+              ] }] },
+              { "type": "switch", "id": "mapping-modes", "source": "{selection.minerva.content.value}", "children": [
+                { "case": "Solid Edge .par → SolidWorks .SLDPRT", "type": "stack", "gap": "tight", "children": [
+                  { "type": "panel", "id": "part-source", "rows": [{ "widgets": [{ "kind": "sourcePicker", "id": "part-source-path", "label": "零件目录", "selectCommand": "aurora.ui.selectdirectory", "commitAction": "minerva.source.set", "flex": true }] }] },
+                  { "type": "panel", "id": "part-actions", "rows": [{ "widgets": [{ "kind": "button", "action": "minerva.conversion.run", "text": "转换全部零件" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
+                  { "type": "table", "id": "part-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "detail", "title": "详情", "width": "*" }, { "key": "features", "title": "特征", "width": "70" }, { "key": "sketches", "title": "草图", "width": "70" }] },
+                  { "type": "panel", "id": "conversion-options", "text": "转换选项", "rows": [{ "widgets": [{ "kind": "switch", "id": "part-recognize", "label": "识别特征与草图", "value": "false", "action": "minerva.options.recognize", "flex": true }, { "kind": "switch", "id": "part-continue", "label": "失败继续", "value": "true", "action": "minerva.options.continue", "flex": true }, { "kind": "switch", "id": "part-mates", "label": "重建装配关系", "value": "false", "action": "minerva.options.mates", "flex": true }] }] }
+                ] },
+                { "case": "Solid Edge .asm → SolidWorks .SLDASM", "type": "stack", "gap": "tight", "children": [
+                  { "type": "panel", "id": "se-assembly-source", "rows": [{ "widgets": [{ "kind": "sourcePicker", "id": "se-assembly-source-path", "label": "装配体文件", "selectCommand": "aurora.ui.selectfile", "commitAction": "minerva.source.set", "flex": true }] }] },
+                  { "type": "panel", "id": "se-assembly-actions", "rows": [{ "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "开始转换" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
+                  { "type": "table", "id": "se-assembly-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "detail", "title": "详情", "width": "*" }, { "key": "features", "title": "特征", "width": "70" }, { "key": "sketches", "title": "草图", "width": "70" }] },
+                  { "type": "panel", "id": "se-assembly-options", "text": "转换选项", "rows": [{ "widgets": [{ "kind": "switch", "id": "se-recognize", "label": "识别特征与草图", "value": "false", "action": "minerva.options.recognize", "flex": true }, { "kind": "switch", "id": "se-continue", "label": "失败继续", "value": "true", "action": "minerva.options.continue", "flex": true }, { "kind": "switch", "id": "se-mates", "label": "重建装配关系", "value": "true", "action": "minerva.options.mates", "flex": true }] }] }
+                ] },
+                { "case": "SolidWorks .SLDASM → SolidWorks .SLDASM（特征整备）", "type": "stack", "gap": "tight", "children": [
+                  { "type": "panel", "id": "sw-feature-source", "rows": [{ "widgets": [{ "kind": "sourcePicker", "id": "sw-feature-source-path", "label": "装配体文件", "selectCommand": "aurora.ui.selectfile", "commitAction": "minerva.source.set", "flex": true }] }] },
+                  { "type": "panel", "id": "sw-feature-actions", "rows": [{ "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "开始整备" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
+                  { "type": "table", "id": "sw-feature-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "detail", "title": "详情", "width": "*" }, { "key": "features", "title": "特征", "width": "70" }, { "key": "sketches", "title": "草图", "width": "70" }] },
+                  { "type": "panel", "id": "sw-feature-options", "text": "转换选项", "rows": [{ "widgets": [{ "kind": "switch", "id": "sw-feature-recognize", "label": "识别特征与草图", "value": "true", "action": "minerva.options.recognize", "flex": true }, { "kind": "switch", "id": "sw-feature-continue", "label": "失败继续", "value": "true", "action": "minerva.options.continue", "flex": true }, { "kind": "switch", "id": "sw-feature-mates", "label": "重建装配关系", "value": "true", "action": "minerva.options.mates", "flex": true }] }] }
+                ] },
+                { "case": "SolidWorks .SLDASM → 属性整备（改名）", "type": "stack", "gap": "tight", "children": [
+                  { "type": "panel", "id": "sw-property-source", "rows": [{ "widgets": [{ "kind": "sourcePicker", "id": "sw-property-source-path", "label": "装配体文件", "selectCommand": "aurora.ui.selectfile", "commitAction": "minerva.source.set", "flex": true }] }] },
+                  { "type": "panel", "id": "sw-property-actions", "rows": [{ "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.strip", "text": "洗图号" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
+                  { "type": "table", "id": "sw-property-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "detail", "title": "详情", "width": "*" }, { "key": "features", "title": "特征", "width": "70" }, { "key": "sketches", "title": "草图", "width": "70" }] },
+                  { "type": "panel", "id": "sw-property-options", "text": "转换选项", "rows": [{ "widgets": [{ "kind": "switch", "id": "sw-property-recognize", "label": "识别特征与草图", "value": "false", "action": "minerva.options.recognize", "flex": true }, { "kind": "switch", "id": "sw-property-continue", "label": "失败继续", "value": "true", "action": "minerva.options.continue", "flex": true }, { "kind": "switch", "id": "sw-property-mates", "label": "重建装配关系", "value": "false", "action": "minerva.options.mates", "flex": true }, { "kind": "textbox", "id": "prefix", "label": "图号前缀", "commitAction": "minerva.options.prefix", "flex": true }] }] }
+                ] }
+              ] }
+            ] }
+          }]
         }
         """;
 
@@ -363,16 +334,15 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
           "schemaVersion": 1,
           "owner": "HistoryMinerva",
           "actions": [
-            { "id": "minerva.source.set", "title": "设置来源", "command": "minerva.ui.source", "args": { "path": "{source}" }, "summary": "设置文件或文件夹作为转换来源" },
-            { "id": "minerva.content.set", "title": "应用内容", "command": "minerva.ui.content", "args": { "content": "{content}" }, "summary": "切换转换内容" },
+            { "id": "minerva.source.set", "title": "设置来源", "command": "minerva.ui.source", "args": { "path": "{value}" }, "summary": "设置文件或文件夹作为转换来源" },
             { "id": "minerva.conversion.probe", "title": "解析装配体", "command": "minerva.conversion.probe", "summary": "解析当前装配体来源" },
             { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "summary": "执行当前转换" },
             { "id": "minerva.conversion.strip", "title": "洗图号", "command": "minerva.conversion.strip", "summary": "按空格清理图号" },
             { "id": "minerva.conversion.cancel", "title": "取消", "command": "minerva.conversion.cancel", "summary": "取消当前操作" },
-            { "id": "minerva.options.recognize", "title": "应用识别选项", "command": "minerva.ui.options", "args": { "option": "recognize", "value": "{recognize}" }, "summary": "开启或关闭特征与草图识别" },
-            { "id": "minerva.options.continue", "title": "应用失败策略", "command": "minerva.ui.options", "args": { "option": "continue", "value": "{continue}" }, "summary": "设置零件失败时是否继续" },
-            { "id": "minerva.options.mates", "title": "应用装配关系", "command": "minerva.ui.options", "args": { "option": "mates", "value": "{mates}" }, "summary": "设置是否重建装配关系" },
-            { "id": "minerva.options.prefix", "title": "应用图号前缀", "command": "minerva.ui.options", "args": { "option": "prefix", "value": "{prefix}" }, "summary": "设置属性整备图号前缀" }
+            { "id": "minerva.options.recognize", "title": "更新识别选项", "command": "minerva.ui.options", "args": { "option": "recognize", "value": "{value}" }, "summary": "开启或关闭特征与草图识别" },
+            { "id": "minerva.options.continue", "title": "更新失败策略", "command": "minerva.ui.options", "args": { "option": "continue", "value": "{value}" }, "summary": "设置零件失败时是否继续" },
+            { "id": "minerva.options.mates", "title": "更新装配关系", "command": "minerva.ui.options", "args": { "option": "mates", "value": "{value}" }, "summary": "设置是否重建装配关系" },
+            { "id": "minerva.options.prefix", "title": "更新图号前缀", "command": "minerva.ui.options", "args": { "option": "prefix", "value": "{value}" }, "summary": "设置属性整备图号前缀" }
           ]
         }
         """;
