@@ -2520,6 +2520,13 @@ static void TestUiModuleRegistration(string root)
                 && pageJson.Contains("失败继续", StringComparison.Ordinal)
                 && pageJson.Contains("重建装配关系", StringComparison.Ordinal),
                 "Minerva 转换选项必须包含识别、失败继续和装配关系设置");
+            foreach (var optionId in new[] { "part-recognize", "se-recognize", "sw-feature-recognize", "sw-property-recognize" })
+            {
+                True(pageJson.Contains($"\"mode\": \"even\", \"widgets\": [{{ \"kind\": \"switch\", \"id\": \"{optionId}\"", StringComparison.Ordinal),
+                    $"Minerva 转换选项 {optionId} 必须使用 even 均布行");
+            }
+            True(pageJson.Contains("\"id\": \"prefix\", \"label\": \"图号前缀\", \"commitAction\": \"minerva.options.prefix\"", StringComparison.Ordinal),
+                "属性整备必须保留图号前缀输入框");
             True(pageJson.Contains("\"type\": \"switch\"", StringComparison.Ordinal),
                 "Minerva 页面必须使用 Aurora switch 分支");
             True(pageJson.Contains("\"kind\": \"sourcePicker\"", StringComparison.Ordinal),
