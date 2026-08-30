@@ -2473,8 +2473,22 @@ static void TestUiModuleRegistration(string root)
         "HistoryVulcan frontend must register minerva.conversion.probe");
     True(context.Registry.TryGet("minerva.conversion.strip", out var strip),
         "HistoryVulcan 前端必须注册 minerva.conversion.strip");
-    True(context.Registry.TryGet("minerva.ui.pane", out var pane),
-        "Minerva must register an Aurora UI pane command");
+    True(!context.Registry.TryGet("minerva.ui.pane", out _),
+        "Minerva must not register a self-owned WPF pane command");
+    True(context.Registry.TryGet("minerva.ui.describe", out var describe),
+        "Minerva must register the Aurora description command");
+    True(context.Registry.TryGet("minerva.ui.data", out var data),
+        "Minerva must register the Aurora data command");
+    True(context.Registry.TryGet("minerva.ui.actions", out var actions),
+        "Minerva must register the Aurora actions declaration command");
+    True(context.Registry.TryGet("minerva.ui.source", out var source),
+        "Minerva must expose a source setter for the descriptive page");
+    True(context.Registry.TryGet("minerva.ui.content", out var content),
+        "Minerva must expose a content setter for the descriptive page");
+    True(describe.Readonly && data.Readonly && actions.Readonly,
+        "Aurora description, data and actions commands must be readonly");
+    True(describe.HiddenReason is not null && data.HiddenReason is not null && actions.HiddenReason is not null,
+        "Aurora UI protocol commands must be hidden from remote consumers");
     True(probe.Readonly && probe.RequiresUiThread,
         "minerva.conversion.probe must be a UI-thread read command");
     foreach (var registeredCommand in new[] { convert, cancel, strip })
@@ -2482,19 +2496,30 @@ static void TestUiModuleRegistration(string root)
         True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
             $"{registeredCommand.Name} 必须是需要 UI 线程的写命令");
     }
-    Equal(HistoryMinervaIdentity.WindowId, pane.Annotation("ui.window"),
-        "Aurora 窗口注解必须使用权威窗口 ID");
-    Equal("center", pane.Annotation("ui.side"), "Minerva 页面必须落在中央工作区");
-    Equal("0.75", pane.Annotation("ui.ratio"), "Minerva 页面比例必须保持 0.75");
-
     Exception? uiFailure = null;
     var uiThread = new Thread(() =>
     {
         try
         {
-            var result = context.Bus.ExecuteAsync("minerva.ui.pane", "UI").GetAwaiter().GetResult();
-            True(result.Success && result.Data is System.Windows.UIElement,
-                "Aurora 窗口命令必须返回可停靠的 UIElement");
+            var result = context.Bus.ExecuteAsync("minerva.ui.describe", "UI").GetAwaiter().GetResult();
+            var descriptionJson = result.Data as string ?? result.Message;
+            True(result.Success && descriptionJson.TrimStart().StartsWith("{", StringComparison.Ordinal), "Aurora 页面描述必须返回 JSON 字符串");
+            using var description = JsonDocument.Parse(descriptionJson);
+            Equal(1, description.RootElement.GetProperty("schemaVersion").GetInt32(),
+                "Minerva 页面描述必须使用 Aurora schema V1");
+            Equal("HistoryMinerva", description.RootElement.GetProperty("owner").GetString(),
+                "Minerva 页面描述 owner 必须与模块身份一致");
+            Equal(1, description.RootElement.GetProperty("pages").GetArrayLength(),
+                "Minerva 必须描述一个 Aurora 页面");
+            var actionsResult = context.Bus.ExecuteAsync("minerva.ui.actions", "UI").GetAwaiter().GetResult();
+            var actionsJson = actionsResult.Data as string ?? actionsResult.Message;
+            True(actionsResult.Success && actionsJson.TrimStart().StartsWith("{", StringComparison.Ordinal), "Aurora 动作声明必须返回 JSON 字符串");
+            using var actionSet = JsonDocument.Parse(actionsJson);
+            True(actionSet.RootElement.GetProperty("actions").GetArrayLength() >= 4,
+                "Minerva 页面必须声明转换和来源动作");
+            var dataResult = context.Bus.ExecuteAsync("minerva.ui.data view=status", "UI").GetAwaiter().GetResult();
+            True(dataResult.Success && dataResult.Data is not null,
+                "Minerva 页面状态数据必须可通过 ui.data 获取");
             var conversion = context.Bus.ExecuteAsync("minerva.conversion.run", "Smoke").GetAwaiter().GetResult();
             True(!conversion.Success && conversion.Message.Contains("请选择", StringComparison.Ordinal),
                 "未选择来源时 minerva.conversion.run 必须通过总线返回可读失败原因");

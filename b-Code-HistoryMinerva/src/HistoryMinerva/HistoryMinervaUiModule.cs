@@ -1,6 +1,7 @@
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Modules;
 using HistoryMinerva.Contracts;
+using System.IO;
 
 namespace HistoryMinerva;
 
@@ -8,7 +9,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 {
     private IModuleContext? _context;
     private MappingRuntimePaths? _runtimePaths;
-    private HistoryMinervaWorkspaceView? _workspace;
+    private AssemblyViewModel? _viewModel;
 
     public void Attach(IModuleContext context)
     {
@@ -63,49 +64,76 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             });
             registry.Register(new CommandDescriptor
             {
-                Name = HistoryMinervaIdentity.CommandRoot + ".ui.pane",
+                Name = HistoryMinervaIdentity.CommandRoot + ".ui.describe",
                 CommandClass = "ui",
-                Summary = HistoryMinervaIdentity.WindowTitle,
+                Summary = "返回 Minerva Aurora 描述式页面",
                 Readonly = true,
+                HiddenReason = "Aurora 页面描述内部协议，不对远程消费面暴露",
+                Handler = CommandDescriptor.Sync(_ => CommandResult.Ok(DescribeJson)),
+            });
+            registry.Register(new CommandDescriptor
+            {
+                Name = HistoryMinervaIdentity.CommandRoot + ".ui.data",
+                CommandClass = "ui",
+                Summary = "返回 Minerva 页面组件所需数据",
+                Readonly = true,
+                HiddenReason = "Aurora 页面取数内部协议，不对远程消费面暴露",
+                AllowUnspecifiedParameters = true,
+                Handler = CommandDescriptor.Sync(Data),
+            });
+            registry.Register(new CommandDescriptor
+            {
+                Name = HistoryMinervaIdentity.CommandRoot + ".ui.actions",
+                CommandClass = "ui",
+                Summary = "声明 Minerva 页面动作",
+                Readonly = true,
+                HiddenReason = "Aurora 页面动作内部协议，不对远程消费面暴露",
+                Handler = CommandDescriptor.Sync(_ => CommandResult.Ok(ActionsJson)),
+            });
+            registry.Register(new CommandDescriptor
+            {
+                Name = HistoryMinervaIdentity.CommandRoot + ".ui.source",
+                CommandClass = "ui",
+                Summary = "设置 Minerva 转换来源路径",
                 RequiresUiThread = true,
-                Annotations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["ui.window"] = HistoryMinervaIdentity.WindowId,
-                    ["ui.side"] = "center",
-                    ["ui.title"] = HistoryMinervaIdentity.WindowTitle,
-                    ["ui.ratio"] = "0.75",
-                },
-                Handler = CommandDescriptor.Sync(_ =>
-                    CommandResult.Ok("Minerva 页面", GetWorkspace())),
+                AllowUnspecifiedParameters = true,
+                Handler = CommandDescriptor.Sync(SetSource),
+            });
+            registry.Register(new CommandDescriptor
+            {
+                Name = HistoryMinervaIdentity.CommandRoot + ".ui.content",
+                CommandClass = "ui",
+                Summary = "设置 Minerva 转换内容",
+                RequiresUiThread = true,
+                AllowUnspecifiedParameters = true,
+                Handler = CommandDescriptor.Sync(SetContent),
             });
         });
     }
 
-    private HistoryMinervaWorkspaceView GetWorkspace()
+    private AssemblyViewModel GetViewModel()
     {
-        if (_workspace is null)
+        if (_viewModel is null)
         {
             if (_context is null || _runtimePaths is null)
                 throw new InvalidOperationException("Minerva 模块尚未装配。");
-            _workspace = new HistoryMinervaWorkspaceView(_runtimePaths, _context.Bus);
+            _viewModel = new AssemblyViewModel(_runtimePaths);
         }
 
-        return _workspace;
+        return _viewModel;
     }
 
     public void Dispose()
     {
-        _workspace?.Dispose();
-        _workspace = null;
+        _viewModel?.Dispose();
+        _viewModel = null;
         _context = null;
         _runtimePaths = null;
     }
 
     private Task<CommandResult> ProbeCurrentAsync(CommandContext command)
     {
-        var viewModel = _workspace?.UnifiedPage.ViewModel;
-        if (viewModel is null)
-            return Task.FromResult(CommandResult.Fail("Minerva 页面尚未创建。"));
+        var viewModel = GetViewModel();
         if (!viewModel.CanProbe)
             return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
 
@@ -114,9 +142,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
     private Task<CommandResult> ConvertCurrentAsync(CommandContext command)
     {
-        var viewModel = _workspace?.UnifiedPage.ViewModel;
-        if (viewModel is null)
-            return Task.FromResult(CommandResult.Fail("Minerva 页面尚未创建。"));
+        var viewModel = GetViewModel();
         if (!viewModel.CanConvert)
             return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
 
@@ -125,9 +151,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
     private Task<CommandResult> StripCurrentAsync(CommandContext command)
     {
-        var viewModel = _workspace?.UnifiedPage.ViewModel;
-        if (viewModel is null)
-            return Task.FromResult(CommandResult.Fail("Minerva 页面尚未创建。"));
+        var viewModel = GetViewModel();
         if (!viewModel.CanStrip)
             return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
 
@@ -136,11 +160,147 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
     private CommandResult CancelCurrent(CommandContext _)
     {
-        var viewModel = _workspace?.UnifiedPage.ViewModel;
+        var viewModel = _viewModel;
         if (viewModel is null)
             return CommandResult.Fail("Minerva 页面尚未创建。");
         return viewModel.Cancel()
             ? CommandResult.Ok("已请求取消 Minerva 当前操作。")
             : CommandResult.Fail("Minerva 当前没有可取消的操作。");
     }
+
+    private CommandResult SetSource(CommandContext command)
+    {
+        var path = command.GetString("path")?.Trim();
+        if (string.IsNullOrWhiteSpace(path))
+            return CommandResult.Fail("缺少 path");
+
+        try
+        {
+            var viewModel = GetViewModel();
+            if (Directory.Exists(path))
+                viewModel.SetPartDirectory(path);
+            else
+                viewModel.SetSourceFile(path);
+            return CommandResult.Ok("已设置 Minerva 转换来源。");
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException)
+        {
+            return CommandResult.Fail(ex.Message);
+        }
+    }
+
+    private CommandResult SetContent(CommandContext command)
+    {
+        var value = command.GetString("content")?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return CommandResult.Fail("缺少 content");
+
+        var option = MappingContentOption.Available.FirstOrDefault(item =>
+            string.Equals(item.DisplayName, value, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(item.Kind.ToString(), value, StringComparison.OrdinalIgnoreCase));
+        if (option is null && int.TryParse(value, out var index)
+            && index >= 0 && index < MappingContentOption.Available.Count)
+            option = MappingContentOption.Available[index];
+        if (option is null)
+            return CommandResult.Fail("未知转换内容");
+
+        GetViewModel().SelectedMappingContent = option;
+        return CommandResult.Ok("已设置 Minerva 转换内容。");
+    }
+
+    private CommandResult Data(CommandContext command)
+    {
+        var view = command.GetString("view")?.Trim().ToLowerInvariant();
+        var model = _viewModel;
+        return view switch
+        {
+            "status" => CommandResult.Ok("Minerva 状态", StatusRows(model)),
+            "parts" => CommandResult.Ok("Minerva 零件", PartRows(model)),
+            "content" => CommandResult.Ok("Minerva 转换内容", MappingContentOption.Available
+                .Select((item, index) => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>
+                {
+                    ["value"] = item.DisplayName,
+                    ["index"] = index.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                }).ToList()),
+            _ => CommandResult.Fail("未知 view；支持 status、parts、content"),
+        };
+    }
+
+    private static IReadOnlyList<IReadOnlyDictionary<string, string>> StatusRows(AssemblyViewModel? model)
+    {
+        if (model is null)
+            return [new Dictionary<string, string> { ["key"] = "状态", ["value"] = "请选择转换来源" }];
+
+        return [
+            new Dictionary<string, string> { ["key"] = "来源", ["value"] = model.SourcePath },
+            new Dictionary<string, string> { ["key"] = "内容", ["value"] = model.SelectedMappingContent.DisplayName },
+            new Dictionary<string, string> { ["key"] = "状态", ["value"] = model.StatusText },
+            new Dictionary<string, string> { ["key"] = "警告", ["value"] = model.WarningSummary },
+        ];
+    }
+
+    private static IReadOnlyList<IReadOnlyDictionary<string, string>> PartRows(AssemblyViewModel? model)
+        => model?.Parts.Select(row => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>
+        {
+            ["file"] = row.FileName,
+            ["status"] = row.Status,
+            ["detail"] = row.Detail,
+            ["features"] = row.FeatureText,
+            ["sketches"] = row.SketchText,
+        }).ToList() ?? [];
+
+    private const string DescribeJson = """
+        {
+          "schemaVersion": 1,
+          "owner": "HistoryMinerva",
+          "pages": [
+            {
+              "id": "mapping",
+              "title": "Minerva",
+              "placement": { "side": "center", "ratio": 0.75, "visible": true, "singleton": true },
+              "content": {
+                "type": "stack",
+                "gap": "tight",
+                "children": [
+                  {
+                    "type": "panel",
+                    "id": "mapping-controls",
+                    "rows": [
+                      { "widgets": [
+                        { "kind": "textbox", "id": "source", "label": "转换来源", "flex": true },
+                        { "kind": "button", "action": "minerva.source.set", "text": "设置来源" }
+                      ] },
+                      { "widgets": [
+                        { "kind": "textbox", "id": "content", "label": "转换内容", "mode": "select", "channel": "minerva.content", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "content" } }, "flex": true },
+                        { "kind": "button", "action": "minerva.content.set", "text": "应用内容" },
+                        { "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" },
+                        { "kind": "button", "action": "minerva.conversion.run", "text": "开始转换" },
+                        { "kind": "button", "action": "minerva.conversion.strip", "text": "洗图号" },
+                        { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }
+                      ] }
+                    ]
+                  },
+                  { "type": "table", "id": "status", "dataSource": { "command": "minerva.ui.data", "args": { "view": "status" } }, "columns": [ { "key": "key", "title": "项", "width": "90" }, { "key": "value", "title": "值", "width": "*" } ] },
+                  { "type": "table", "id": "parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [ { "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "detail", "title": "详情", "width": "*" }, { "key": "features", "title": "特征", "width": "70" }, { "key": "sketches", "title": "草图", "width": "70" } ] }
+                ]
+              }
+            }
+          ]
+        }
+        """;
+
+    private const string ActionsJson = """
+        {
+          "schemaVersion": 1,
+          "owner": "HistoryMinerva",
+          "actions": [
+            { "id": "minerva.source.set", "title": "设置来源", "command": "minerva.ui.source", "args": { "path": "{source}" }, "summary": "设置文件或文件夹作为转换来源" },
+            { "id": "minerva.content.set", "title": "应用内容", "command": "minerva.ui.content", "args": { "content": "{content}" }, "summary": "切换转换内容" },
+            { "id": "minerva.conversion.probe", "title": "解析装配体", "command": "minerva.conversion.probe", "summary": "解析当前装配体来源" },
+            { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "summary": "执行当前转换" },
+            { "id": "minerva.conversion.strip", "title": "洗图号", "command": "minerva.conversion.strip", "summary": "按空格清理图号" },
+            { "id": "minerva.conversion.cancel", "title": "取消", "command": "minerva.conversion.cancel", "summary": "取消当前操作" }
+          ]
+        }
+        """;
 }

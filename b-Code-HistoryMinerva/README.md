@@ -2,14 +2,14 @@
 
 > 对外模块：`HistoryMinerva` / `minerva`
 >
-> 当前源码版本：`4.4.5`
+> 当前源码版本：`4.5.0`
 
 中央停靠页只做四种 CAD 转换。历史 SWuse 建模 API、Roslyn 编译器与双参数构建协议已删除。
 
 ## 工程布局
 
 ```text
-src/HistoryMinerva            前端：WPF 停靠页、模块入口、命令
+src/HistoryMinerva            前端：Aurora 描述式页面、模块入口、命令
 src/HistoryMinerva.Contracts  转换协议
 src/HistoryMinerva.Worker     单一 x64 STA 工作进程：只跑转换动词
 build/                        唯一版本源（HistoryMinervaVersion）与 HistoryVulcan 3.11.1 最低兼容版本
