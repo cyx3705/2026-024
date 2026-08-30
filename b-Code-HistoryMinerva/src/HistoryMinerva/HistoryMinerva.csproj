@@ -12,6 +12,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="HistoryMinerva.Smoke" />
     <InternalsVisibleTo Include="HistoryMinerva.UiSmoke" />
+    <None Include="..\..\module.manifest.json" Link="module.manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\HistoryMinerva.Contracts\HistoryMinerva.Contracts.csproj" />
     <ProjectReference Include="..\HistoryMinerva.Worker\HistoryMinerva.Worker.csproj" ReferenceOutputAssembly="false" />
     <Reference Include="HistoryVulcan.Core">

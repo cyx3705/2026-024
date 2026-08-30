@@ -56,7 +56,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     private bool _lastOperationCanceled;
     private bool _disposed;
     private string _drawingPrefix = string.Empty;
-
     public ObservableCollection<AssemblyTreeNode> AssemblyTree { get; } = [];
     public ObservableCollection<ConversionFileRow> Parts { get; } = [];
 

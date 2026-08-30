@@ -164,4 +164,9 @@ public sealed class MappingRuntimePaths
         => new(Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "AppShell"));
+
+    public static MappingRuntimePaths CreateHistoryVulcanDefault()
+        => new(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "HistoryVulcan"));
 }

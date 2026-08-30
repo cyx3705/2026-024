@@ -18,7 +18,11 @@ function Add-Violation([string]$Message) {
 }
 
 function Read-XmlProperty([xml]$Document, [string]$Name) {
-    $values = @($Document.Project.PropertyGroup | ForEach-Object { $_.$Name } | Where-Object { $_ })
+    $values = @($Document.Project.PropertyGroup | ForEach-Object {
+        if ($_.PSObject.Properties.Name -contains $Name) {
+            $_.PSObject.Properties[$Name].Value
+        }
+    } | Where-Object { $_ })
     if ($values.Count -eq 0) { return '' }
     return [string]$values[0]
 }
@@ -196,19 +200,29 @@ if ($commandHandlerSource -notmatch 'CommandResult\.Fail\("Minerva .*已取消')
     Add-Violation 'Minerva command handlers must expose cancellation through CommandResult.Fail'
 }
 Assert-SameSet 'Module API command catalog' $sourceCommands $apiCommands
-if (@([regex]::Matches($uiSource, 'RegisterToolWindow\(')).Count -ne 1 -or
-    $uiSource -notmatch 'Id\s*=\s*HistoryMinervaIdentity\.WindowId' -or
-    $uiSource -notmatch 'DefaultSide\s*=\s*DockSide\.Center') {
-    Add-Violation 'HistoryMinerva UI must register exactly one identity-backed center window'
+if ($uiSource -notmatch 'Name\s*=\s*HistoryMinervaIdentity\.CommandRoot \+ "\.ui\.pane"' -or
+    $uiSource -notmatch '\["ui\.window"\]\s*=\s*HistoryMinervaIdentity\.WindowId' -or
+    $uiSource -notmatch '\["ui\.side"\]\s*=\s*"center"') {
+    Add-Violation 'HistoryMinerva UI must expose exactly one identity-backed center pane command'
 }
 
-# The root candidate must align with source; history is a separate immutable subtree.
-$formalRoot = Join-Path $root 'z-Publish'
+# The current candidate is z-Publish/HistoryMinerva-vX.Y.Z; history is a separate subtree.
+$publishRoot = Join-Path $root 'z-Publish'
+$formalRoot = Join-Path $publishRoot "HistoryMinerva-v$sourceVersion"
 $formalManifestPath = Join-Path $formalRoot 'module.manifest.json'
 $checksumPath = Join-Path $formalRoot 'SHA256SUMS'
+if (Test-Path -LiteralPath $publishRoot) {
+    $unexpected = @(Get-ChildItem -LiteralPath $publishRoot -Force | Where-Object {
+        $_.Name -ne 'history' -and
+        -not ($_.PSIsContainer -and $_.Name -match '^HistoryMinerva-v\d+\.\d+\.\d+$')
+    })
+    foreach ($item in $unexpected) {
+        Add-Violation "Unexpected entry in z-Publish root: $($item.Name)"
+    }
+}
 if (-not (Test-Path -LiteralPath $formalManifestPath -PathType Leaf) -or
     -not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
-    Add-Violation 'z-Publish candidate manifest or SHA256SUMS is missing'
+    Add-Violation "z-Publish/HistoryMinerva-v$sourceVersion candidate manifest or SHA256SUMS is missing"
 }
 else {
     $formalManifest = [IO.File]::ReadAllText($formalManifestPath) | ConvertFrom-Json

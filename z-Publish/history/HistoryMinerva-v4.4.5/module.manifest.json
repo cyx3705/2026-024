@@ -1,0 +1,14 @@
+{
+    "schemaVersion":  1,
+    "type":  "HistoryVulcan.Module",
+    "name":  "HistoryMinerva",
+    "version":  "4.4.5",
+    "description":  "CAD 装配转换",
+    "artifact":  "HistoryMinerva.dll",
+    "docs":  "HistoryMinerva.xml",
+    "deps":  [
+                 "HistoryMinerva.Contracts.dll"
+             ],
+    "mcpExposure":  "readonly",
+    "ui":  true
+}
