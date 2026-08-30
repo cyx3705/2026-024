@@ -2,7 +2,7 @@
     "schemaVersion":  1,
     "type":  "HistoryVulcan.Module",
     "name":  "HistoryMinerva",
-    "version":  "4.6.0",
+    "version":  "4.6.2",
     "description":  "CAD 装配转换",
     "artifact":  "HistoryMinerva.dll",
     "docs":  "HistoryMinerva.xml",
