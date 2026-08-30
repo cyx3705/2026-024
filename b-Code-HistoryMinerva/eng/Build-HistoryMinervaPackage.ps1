@@ -107,10 +107,13 @@ foreach ($file in $runtimeFiles) {
     }
 }
 
-# Candidates are generated outside product sources. The publish script validates and
-# atomically promotes this immutable candidate to the formal Z directory.
+# Candidates are generated outside product sources. Default output is the
+# versioned host-pipeline directory z-Publish/HistoryMinerva-vX.Y.Z.
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path $projectRoot 'z-Publish'
+    $OutputRoot = Join-Path $projectRoot "z-Publish\HistoryMinerva-v$moduleVersion"
+}
+elseif ([IO.Path]::GetFullPath($OutputRoot).TrimEnd('\') -eq [IO.Path]::GetFullPath((Join-Path $projectRoot 'z-Publish')).TrimEnd('\')) {
+    $OutputRoot = Join-Path $projectRoot "z-Publish\HistoryMinerva-v$moduleVersion"
 }
 $candidateRoot = [System.IO.Path]::GetFullPath($OutputRoot)
 $projectPrefix = [System.IO.Path]::GetFullPath($projectRoot).TrimEnd('\') + '\'
@@ -210,7 +213,30 @@ foreach ($file in $hashTargets) {
 
 $movedPrevious = [Collections.Generic.List[string]]::new()
 $movedCandidate = [Collections.Generic.List[string]]::new()
-New-Item -ItemType Directory -Force -Path $candidateRoot | Out-Null
+$publishRoot = Join-Path $projectRoot 'z-Publish'
+$historyRoot = Join-Path $publishRoot 'history'
+New-Item -ItemType Directory -Force -Path $historyRoot, $candidateRoot | Out-Null
+$legacyNames = @(
+    'HistoryMinerva.dll', 'HistoryMinerva.xml', 'HistoryMinerva.Contracts.dll',
+    'HistoryMinerva.Worker.exe', 'HistoryMinerva.Worker.dll',
+    'HistoryMinerva.Worker.deps.json', 'HistoryMinerva.Worker.runtimeconfig.json',
+    'module.manifest.json', 'historyvulcan.snapshot.json', 'SHA256SUMS', 'docs'
+)
+$legacyEntries = @($legacyNames | ForEach-Object {
+    $path = Join-Path $publishRoot $_
+    if (Test-Path -LiteralPath $path) { Get-Item -LiteralPath $path }
+})
+if ($legacyEntries.Count -gt 0) {
+    $legacyArchive = Join-Path $historyRoot ("HistoryMinerva-v{0}-flat-{1}" -f $moduleVersion, (Get-Date -Format 'yyyyMMddHHmmss'))
+    New-Item -ItemType Directory -Force -Path $legacyArchive | Out-Null
+    foreach ($entry in $legacyEntries) {
+        Move-Item -LiteralPath $entry.FullName -Destination $legacyArchive
+    }
+}
+foreach ($candidate in @(Get-ChildItem -LiteralPath $publishRoot -Directory -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^HistoryMinerva-v\d+\.\d+\.\d+$' -and $_.FullName -ne $candidateRoot })) {
+    Move-Item -LiteralPath $candidate.FullName -Destination $historyRoot
+}
 try {
     foreach ($item in @(Get-ChildItem -LiteralPath $candidateRoot -Force |
             Where-Object { $_.Name -ne 'history' })) {
