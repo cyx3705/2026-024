@@ -16,7 +16,7 @@
   },
   "historyVulcanHost": {
     "packageRoot": "../2026-023-HistoryVulcan/z-Publish",
-    "version": "3.12.0"
+    "version": "5.1.2"
   },
   "paths": {
     "activeRoots": [
@@ -60,7 +60,7 @@
   },
   "externalDependencies": [
     ".NET 8 SDK and Windows Desktop Runtime",
-    "HistoryVulcan.Core 3.12.0 or newer host snapshot (minimum compatible host version)",
+    "HistoryVulcan.Core 5.1.2 or newer host snapshot (minimum compatible host version)",
     "HistoryAurora 1.0.0 Release runtime (UI Smoke theme fixture only)",
     "Solid Edge 2020 COM automation",
     "SolidWorks 2025 SP5 COM automation",

@@ -1,23 +1,14 @@
 using HistoryVulcan.Core.Commands;
-using HistoryVulcan.Core.Docking;
-using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
 using HistoryMinerva.Contracts;
 
 namespace HistoryMinerva;
 
-public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleContextAware
+public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 {
-    private readonly List<IDisposable> _windows = [];
-    private IShellUiRegistrar? _shellUi;
     private IModuleContext? _context;
     private MappingRuntimePaths? _runtimePaths;
     private HistoryMinervaWorkspaceView? _workspace;
-
-    IShellUiRegistrar IShellUiAware.ShellUi
-    {
-        set => _shellUi = value;
-    }
 
     public void Attach(IModuleContext context)
     {
@@ -26,8 +17,7 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
             throw new InvalidOperationException("Minerva UI 宿主上下文已注入。");
 
         _context = context;
-        _runtimePaths = new MappingRuntimePaths(context.DataDirectory, context.Settings.Get("module.dir"));
-        context.Log.Info(HistoryMinervaIdentity.WindowId, $"Minerva UI 数据根：{_runtimePaths.ModuleDataDirectory}");
+        _runtimePaths = MappingRuntimePaths.CreateHistoryVulcanDefault();
 
         // Must register during Attach. Vulcan FinalizeMetas runs before CreateUi
         // injects ShellUi, so gating on _shellUi drops conversion commands after
@@ -71,33 +61,44 @@ public sealed class HistoryMinervaUiModule : IUiModule, IShellUiAware, IModuleCo
                 RequiresUiThread = true,
                 Handler = CommandDescriptor.Sync(CancelCurrent),
             });
+            registry.Register(new CommandDescriptor
+            {
+                Name = HistoryMinervaIdentity.CommandRoot + ".ui.pane",
+                CommandClass = "ui",
+                Summary = HistoryMinervaIdentity.WindowTitle,
+                Readonly = true,
+                RequiresUiThread = true,
+                Annotations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["ui.window"] = HistoryMinervaIdentity.WindowId,
+                    ["ui.side"] = "center",
+                    ["ui.title"] = HistoryMinervaIdentity.WindowTitle,
+                    ["ui.ratio"] = "0.75",
+                },
+                Handler = CommandDescriptor.Sync(_ =>
+                    CommandResult.Ok("Minerva 页面", GetWorkspace())),
+            });
         });
     }
 
-    public void CreateUi()
+    private HistoryMinervaWorkspaceView GetWorkspace()
     {
-        if (_shellUi is null || _context is null || _runtimePaths is null || _windows.Count != 0)
-            return;
-
-        _workspace = new HistoryMinervaWorkspaceView(_runtimePaths, _context.Bus);
-        _windows.Add(_shellUi.RegisterToolWindow(new ToolWindowDescriptor
+        if (_workspace is null)
         {
-            Id = HistoryMinervaIdentity.WindowId,
-            Title = HistoryMinervaIdentity.WindowTitle,
-            DefaultSide = DockSide.Center,
-            DefaultRatio = 0.75,
-            IsSingleton = true,
-            ContentFactory = () => _workspace,
-        }, HistoryMinervaIdentity.Name));
+            if (_context is null || _runtimePaths is null)
+                throw new InvalidOperationException("Minerva 模块尚未装配。");
+            _workspace = new HistoryMinervaWorkspaceView(_runtimePaths, _context.Bus);
+        }
+
+        return _workspace;
     }
 
-    public void DestroyUi()
+    public void Dispose()
     {
-        for (var index = _windows.Count - 1; index >= 0; index--)
-            _windows[index].Dispose();
-        _windows.Clear();
         _workspace?.Dispose();
         _workspace = null;
+        _context = null;
+        _runtimePaths = null;
     }
 
     private Task<CommandResult> ProbeCurrentAsync(CommandContext command)

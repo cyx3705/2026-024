@@ -8,7 +8,7 @@ namespace HistoryMinerva;
 /// <summary>后台 Worker 状态命令。转换执行走前端 <c>minerva.conversion.*</c>。</summary>
 public sealed class WorkerCommands : IModuleContextAware
 {
-    private MappingRuntimePaths _runtimePaths = MappingRuntimePaths.CreateAppShellFallback();
+    private MappingRuntimePaths _runtimePaths = MappingRuntimePaths.CreateHistoryVulcanDefault();
     private bool _attached;
 
     public void Attach(IModuleContext context)
@@ -17,9 +17,7 @@ public sealed class WorkerCommands : IModuleContextAware
         if (_attached)
             throw new InvalidOperationException("HistoryMinerva worker command context has already been attached.");
 
-        _runtimePaths = new MappingRuntimePaths(
-            context.DataDirectory,
-            context.Settings.Get("module.dir"));
+        _runtimePaths = MappingRuntimePaths.CreateHistoryVulcanDefault();
         _attached = true;
         context.RegisterCommands(registry =>
         {
