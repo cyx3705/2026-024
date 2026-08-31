@@ -1,9 +1,7 @@
-using Microsoft.Win32;
 using HistoryVulcan.Core.Commands;
 using HistoryMinerva.Contracts;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -28,6 +26,7 @@ public partial class AssemblyView : UserControl, IDisposable
         // DataGridColumn 不参与可视树，Binding 解析不到 DataContext（实测列头会变空白），
         // 列头只能在这里跟着源格式更新。
         SourcePartColumn.Header = _viewModel.SourcePartColumnHeader;
+        ApplyRenameTableColumns();
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
     }
 
@@ -35,6 +34,10 @@ public partial class AssemblyView : UserControl, IDisposable
     {
         if (e.PropertyName is nameof(AssemblyViewModel.SourcePartColumnHeader) or null)
             SourcePartColumn.Header = _viewModel.SourcePartColumnHeader;
+        if (e.PropertyName is nameof(AssemblyViewModel.IsRenameMode)
+            or nameof(AssemblyViewModel.SelectedMappingContent)
+            or null)
+            ApplyRenameTableColumns();
         if (e.PropertyName is nameof(AssemblyViewModel.SelectedMappingContent)
             or nameof(AssemblyViewModel.IsPartDirectoryMode)
             or null)
@@ -46,6 +49,15 @@ public partial class AssemblyView : UserControl, IDisposable
     internal Visibility OutputActivityVisibility => OutputActivityBar.Visibility;
     internal double SourceColumnWidth => SourceColumn.ActualWidth;
     internal double ContentColumnWidth => ContentColumn.ActualWidth;
+
+    private void ApplyRenameTableColumns()
+    {
+        var rename = _viewModel.IsRenameMode;
+        FeatureColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
+        SketchColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
+        ResultColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
+        RenamePreviewColumn.Visibility = rename ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private bool _mappingContentUserPicking;
 
@@ -69,57 +81,17 @@ public partial class AssemblyView : UserControl, IDisposable
         MappingContentSelector.SelectedItem = _viewModel.SelectedMappingContent;
     }
 
-    private async void OnChooseSourceClick(object sender, RoutedEventArgs e)
+    private void OnChooseSourceClick(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanEdit)
             return;
-        if (_viewModel.SelectedMappingContent.IsAssemblySource)
-            await ChooseAssemblyAsync();
-        else
-            ChoosePartDirectory();
-    }
-
-    private async Task ChooseAssemblyAsync()
-    {
-        // 过滤器跟着当前选中的转换内容走：选 SW 自整备时不该再让用户去挑 .asm。
-        var isSolidWorksSource =
-            _viewModel.SourceFormat == HistoryMinerva.Contracts.ConversionSourceFormat.SolidWorks;
-        var dialog = new OpenFileDialog
-        {
-            Title = isSolidWorksSource ? "选择 SolidWorks 装配体来源" : "选择 Solid Edge 装配体来源",
-            Filter = isSolidWorksSource
-                ? "SolidWorks 装配体 (*.SLDASM)|*.SLDASM|所有文件 (*.*)|*.*"
-                : "Solid Edge 装配体 (*.asm)|*.asm|所有文件 (*.*)|*.*",
-            CheckFileExists = true,
-            Multiselect = false,
-        };
-        var directory = Path.GetDirectoryName(_viewModel.SourceAssemblyPath);
-        if (Directory.Exists(directory))
-            dialog.InitialDirectory = directory;
-        if (dialog.ShowDialog(Window.GetWindow(this)) == true)
-        {
-            _viewModel.SetSourceFile(dialog.FileName);
-            if (_commandBus is not null && _viewModel.CanProbe)
-                await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.probe", HistoryMinervaIdentity.Name + ":UI");
-        }
-    }
-
-    private void ChoosePartDirectory()
-    {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "选择 Solid Edge 零件来源文件夹",
-            Multiselect = false,
-        };
-        var currentDirectory = _viewModel.IsPartDirectoryMode
-            ? _viewModel.SourcePath
-            : Path.GetDirectoryName(_viewModel.SourceAssemblyPath);
-        if (Directory.Exists(currentDirectory))
-            dialog.InitialDirectory = currentDirectory;
-        if (dialog.ShowDialog(Window.GetWindow(this)) != true)
+        var owner = Window.GetWindow(this);
+        var picked = _viewModel.SelectedMappingContent.IsAssemblySource
+            ? SourcePickDialog.ShowFile(owner)
+            : SourcePickDialog.ShowFolder(owner);
+        if (string.IsNullOrWhiteSpace(picked))
             return;
-
-        _viewModel.SetPartDirectory(dialog.FolderName);
+        _viewModel.SetSourcePath(picked);
     }
 
     private async void OnConvertClick(object sender, RoutedEventArgs e)

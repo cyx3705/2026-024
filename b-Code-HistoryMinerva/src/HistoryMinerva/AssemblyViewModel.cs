@@ -260,7 +260,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     public bool IsPartDirectoryMode => SourceKind == ConversionSourceKind.PartDirectory
         || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource;
     public bool CanEdit => !IsBusy;
-    public bool CanProbe => CanEdit && IsAssemblyMode && File.Exists(SourceAssemblyPath)
+    public bool CanProbe => CanEdit && IsAssemblyMode
+        && !string.IsNullOrWhiteSpace(SourceAssemblyPath)
         && ConversionPathLayout.HasExtension(
             SourceAssemblyPath, ConversionPathLayout.GetSourceAssemblyExtension(SourceFormat));
     public bool CanConvert => CanEdit && (IsRenameMode
@@ -339,18 +340,39 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     }
 
     public void SetSourceFile(string path)
-        => SetAssemblySource(path);
+        => SetSourcePath(path);
+
+    /// <summary>
+    /// 来源格式只跟当前转换内容走：装配体转换收装配体文件，零件转换收文件夹。
+    /// 不得按扩展名改转换内容，也不得在选完来源时解析装配体。
+    /// </summary>
+    public void SetSourcePath(string path)
+    {
+        if (IsBusy)
+            return;
+
+        var trimmed = path.Trim();
+        if (!SelectedMappingContent.AcceptsSourcePath(trimmed))
+            throw new InvalidOperationException(
+                $"当前是「{SelectedMappingContent.DisplayName}」。{SelectedMappingContent.SourceRequirement}。");
+        if (SelectedMappingContent.IsAssemblySource)
+            SetAssemblySource(trimmed);
+        else
+            SetPartDirectory(trimmed);
+    }
 
     public void SetAssemblySource(string path)
     {
         if (IsBusy)
             return;
 
-        // 源格式由文件本身决定，不由界面当前的选择决定：
-        // 用户拖进来一个 .SLDASM，转换内容就必须跟着切到 SW 自整备那一项。
+        if (!SelectedMappingContent.IsAssemblySource)
+            throw new InvalidOperationException(
+                "当前转换内容是零件文件夹，请选择文件夹。装配体请先改转换内容。");
         var trimmed = path.Trim();
-        var option = MappingContentOption.ForAssemblyFile(trimmed)
-            ?? throw new InvalidOperationException("只支持 Solid Edge .asm 或 SolidWorks .SLDASM 装配体。");
+        var expected = ConversionPathLayout.GetSourceAssemblyExtension(SelectedMappingContent.SourceFormat);
+        if (!ConversionPathLayout.HasExtension(trimmed, expected))
+            throw new InvalidOperationException($"当前转换内容需要 {expected} 装配体文件。");
         ClearSourceResults();
         ResetOutputDirectories();
         _sourceAssemblyPath = Path.GetFullPath(trimmed);
@@ -358,10 +380,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         SetSourceKind(ConversionSourceKind.Assembly);
         RebuildMates = false;
         UpdateAssemblyOutputPaths();
-        if (!(SelectedMappingContent.IsAssemblySource
-              && SelectedMappingContent.SourceFormat == option.SourceFormat))
-            SelectMappingContentForSource(option.Kind);
-        StatusText = "正在准备解析装配体";
+        StatusText = "已选择装配体，点击解析装配体";
         NotifySourceChanged();
     }
 
@@ -370,11 +389,10 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         if (IsBusy)
             return;
 
+        if (SelectedMappingContent.IsAssemblySource)
+            throw new InvalidOperationException(
+                "当前转换内容是装配体，请选择装配体文件，不要选择文件夹。");
         var fullPath = Path.GetFullPath(path.Trim());
-        if (!Directory.Exists(fullPath))
-            throw new DirectoryNotFoundException($"文件夹不存在：{fullPath}");
-
-        SelectMappingContentForSource(MappingContent.SolidEdgePartToSolidWorksPart);
         ClearSourceResults();
         ResetOutputDirectories();
         _sourceAssemblyPath = string.Empty;
@@ -556,7 +574,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         if (!File.Exists(SourceAssemblyPath)
             || !ConversionPathLayout.HasExtension(SourceAssemblyPath, sourceAssemblyExtension))
             throw new InvalidOperationException($"请选择存在的 {sourceAssemblyExtension} 装配体文件。");
-        _validateEnvironment(sourceFormat);
+        // COM ProgID 查询和后续 Worker 启动都不要占着选文件那一拍的 UI 线程。
+        await Task.Run(() => _validateEnvironment(sourceFormat), cancellationToken).ConfigureAwait(false);
 
         var batchId = Guid.NewGuid().ToString("N");
         var resultDirectory = _runtimePaths.ProbesDirectory;
@@ -577,8 +596,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             var issueText = plan.BlockingIssues.Count == 0
                 ? string.Empty
                 : string.Join("；", plan.BlockingIssues.Select(issue => $"[{issue.ErrorClass}] {issue.Message}"));
-            // 命令总线在 Dispatcher 排空前就会读这两个字段；先同步写好，避免把「正在解析」进度文案报成失败。
-            _lastOperationSucceeded = plan.CanConvert;
+            _lastOperationSucceeded = IsRenameMode
+                ? PropertyPrepPlanner.CreateStrip(result).BlockingIssues.Count == 0
+                : plan.CanConvert;
             StatusText = FormatProbeStatus(plan, result, issueText);
             QueueUiUpdate(() => ApplyProbeResult(result, plan, sourceHash));
         }
@@ -750,47 +770,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         WarningSummary = string.IsNullOrWhiteSpace(WarningSummary)
             ? summary
             : WarningSummary + "；" + summary;
-    }
-
-    private void ApplyProbeResult(
-        AssemblyProbeResult result,
-        AssemblyConversionPlan plan,
-        string sourceHash)
-    {
-        ClearProbeResult();
-        _mateOutcome = null;
-        _plan = plan;
-        _probeResult = result;
-        // 每次解析都依据新装配的真实关系数重置默认值。这样切换到无关系装配不会留下
-        // 一个看似可用、实际不会执行的勾选状态；切回有关系装配也无需用户额外发现设置。
-        RebuildMates = plan.RelationCount > 0;
-        _sourceHashAfterProbe = sourceHash;
-        XtDirectory = plan.XtDirectory;
-        SolidWorksDirectory = plan.SolidWorksDirectory;
-        AssemblyOutputPath = plan.AssemblyOutputPath;
-        AssemblyTree.Add(AssemblyTreeNode.Build(result, plan.Nodes));
-        var regeneratesExisting = RegeneratesExistingOutputs;
-        var issueText = plan.BlockingIssues.Count == 0
-            ? string.Empty
-            : string.Join("；", plan.BlockingIssues.Select(issue => $"[{issue.ErrorClass}] {issue.Message}"));
-        foreach (var candidate in plan.Parts)
-            Parts.Add(new ConversionFileRow(candidate, regeneratesExisting));
-        if (plan.BlockingIssues.Count > 0)
-        {
-            foreach (var row in Parts)
-            {
-                row.Status = "受阻";
-                row.Detail = issueText;
-            }
-        }
-        WarningSummary = string.Join("；", plan.Warnings.Concat(
-            string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
-        StatusText = FormatProbeStatus(plan, result, issueText);
-        _lastOperationSucceeded = plan.CanConvert;
-        ApplyRenamePreview();
-        OnPropertyChanged(nameof(CanConvert));
-        OnPropertyChanged(nameof(CanRebuildMates));
-        OnPropertyChanged(nameof(RebuildMatesHint));
     }
 
     private void ApplyWorkerEvent(WorkerEvent workerEvent)

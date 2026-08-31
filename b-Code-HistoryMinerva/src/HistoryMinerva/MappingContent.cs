@@ -57,4 +57,18 @@ public sealed record MappingContentOption(
         => Available.FirstOrDefault(option => option.IsAssemblySource
             && ConversionPathLayout.HasExtension(
                 path, ConversionPathLayout.GetSourceAssemblyExtension(option.SourceFormat)));
+
+    public string SourceRequirement => IsAssemblySource
+        ? $"请选择单个 {ConversionPathLayout.GetSourceAssemblyExtension(SourceFormat)} 装配体文件，不要选择文件夹"
+        : "请选择零件文件夹，不要选择装配体或零件文件";
+
+    public bool AcceptsSourcePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+        if (IsAssemblySource)
+            return ConversionPathLayout.HasExtension(
+                path, ConversionPathLayout.GetSourceAssemblyExtension(SourceFormat));
+        return !ConversionPathLayout.IsKnownCadFile(path);
+    }
 }
