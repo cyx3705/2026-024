@@ -43,6 +43,7 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     public string FileName => Path.GetFileName(SourcePath);
     public string XtFileName => Path.GetFileName(XtPath);
     public string SolidWorksFileName => Path.GetFileName(SolidWorksPath);
+    public string RenamePreview => SolidWorksFileName;
     public bool HasExistingOutput { get; }
 
     /// <summary>

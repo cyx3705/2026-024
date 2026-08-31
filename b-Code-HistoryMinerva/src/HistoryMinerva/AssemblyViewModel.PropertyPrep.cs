@@ -11,7 +11,53 @@ public sealed partial class AssemblyViewModel
     public bool ShowConversionOptions => !IsRenameMode;
 
     public bool CanStrip => CanEdit && IsRenameMode
-        && !_conversionCompleted && _stripPlan?.CanRename == true;
+        && !_conversionCompleted && _probeResult is not null;
+
+    internal bool CanExecuteStrip => CanStrip && _stripPlan?.CanRename == true;
+
+    internal string RenameBlockedReason
+    {
+        get
+        {
+            if (!IsRenameMode)
+                return StatusText;
+            if (!CanEdit)
+                return "正在执行操作。";
+            if (_probeResult is null)
+                return "请先解析装配体。";
+            if (string.IsNullOrWhiteSpace(_drawingPrefix) || _renamePlan is null)
+                return "请填写图号前缀后再按图号改名。";
+            if (_renamePlan.BlockingIssues.Count > 0)
+                return string.Join("；", _renamePlan.BlockingIssues);
+            if (!_renamePlan.CanRename)
+                return "图号已与规则一致，没有需要改名的文件。";
+            if (_conversionCompleted)
+                return "本轮改名已完成，请重新解析后再改名。";
+            return StatusText;
+        }
+    }
+
+    internal string StripBlockedReason
+    {
+        get
+        {
+            if (!IsRenameMode)
+                return "洗图号只在属性整备改名模式下可用。";
+            if (!CanEdit)
+                return "正在执行操作。";
+            if (_probeResult is null)
+                return "请先解析装配体。";
+            if (_stripPlan is null)
+                return "请先解析装配体。";
+            if (_stripPlan.BlockingIssues.Count > 0)
+                return string.Join("；", _stripPlan.BlockingIssues);
+            if (!_stripPlan.CanRename)
+                return "没有可按空格洗掉的图号。";
+            if (_conversionCompleted)
+                return "本轮改名已完成，请重新解析后再洗图号。";
+            return StatusText;
+        }
+    }
 
     public async Task StripDrawingNumbersAsync(IProgress<string>? progress = null)
     {
@@ -135,6 +181,7 @@ public sealed partial class AssemblyViewModel
         {
             _renamePlan = null;
             _stripPlan = null;
+            OnPropertyChanged(nameof(CanStrip));
             return;
         }
 
@@ -288,5 +335,48 @@ public sealed partial class AssemblyViewModel
         return string.IsNullOrWhiteSpace(issueText)
             ? $"解析完成，但有 {plan.BlockingIssues.Count} 个前置错误"
             : $"解析完成，但有 {plan.BlockingIssues.Count} 个前置错误：{issueText}";
+    }
+
+    private void ApplyProbeResult(
+        AssemblyProbeResult result,
+        AssemblyConversionPlan plan,
+        string sourceHash)
+    {
+        ClearProbeResult();
+        _mateOutcome = null;
+        _plan = plan;
+        _probeResult = result;
+        // 每次解析都依据新装配的真实关系数重置默认值。这样切换到无关系装配不会留下
+        // 一个看似可用、实际不会执行的勾选状态；切回有关系装配也无需用户额外发现设置。
+        RebuildMates = plan.RelationCount > 0;
+        _sourceHashAfterProbe = sourceHash;
+        XtDirectory = plan.XtDirectory;
+        SolidWorksDirectory = plan.SolidWorksDirectory;
+        AssemblyOutputPath = plan.AssemblyOutputPath;
+        AssemblyTree.Add(AssemblyTreeNode.Build(result, plan.Nodes));
+        var regeneratesExisting = RegeneratesExistingOutputs;
+        var issueText = plan.BlockingIssues.Count == 0
+            ? string.Empty
+            : string.Join("；", plan.BlockingIssues.Select(issue => $"[{issue.ErrorClass}] {issue.Message}"));
+        foreach (var candidate in plan.Parts)
+            Parts.Add(new ConversionFileRow(candidate, regeneratesExisting));
+        if (plan.BlockingIssues.Count > 0)
+        {
+            foreach (var row in Parts)
+            {
+                row.Status = "受阻";
+                row.Detail = issueText;
+            }
+        }
+        WarningSummary = string.Join("；", plan.Warnings.Concat(
+            string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
+        StatusText = FormatProbeStatus(plan, result, issueText);
+        ApplyRenamePreview();
+        _lastOperationSucceeded = IsRenameMode
+            ? _stripPlan is not null && _stripPlan.BlockingIssues.Count == 0
+            : plan.CanConvert;
+        OnPropertyChanged(nameof(CanConvert));
+        OnPropertyChanged(nameof(CanRebuildMates));
+        OnPropertyChanged(nameof(RebuildMatesHint));
     }
 }

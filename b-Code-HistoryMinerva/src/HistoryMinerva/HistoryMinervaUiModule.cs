@@ -153,7 +153,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     {
         var viewModel = GetViewModel();
         if (!viewModel.CanConvert)
-            return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
+            return Task.FromResult(CommandResult.Fail(
+                viewModel.IsRenameMode ? viewModel.RenameBlockedReason : viewModel.StatusText));
 
         return ConversionCommandHandlers.ConvertAsync(viewModel, command);
     }
@@ -161,8 +162,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     private Task<CommandResult> StripCurrentAsync(CommandContext command)
     {
         var viewModel = GetViewModel();
-        if (!viewModel.CanStrip)
-            return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
+        if (!viewModel.CanExecuteStrip)
+            return Task.FromResult(CommandResult.Fail(viewModel.StripBlockedReason));
 
         return ConversionCommandHandlers.StripAsync(viewModel, command);
     }
@@ -280,6 +281,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             ["detail"] = row.Detail,
             ["features"] = row.FeatureText,
             ["sketches"] = row.SketchText,
+            ["preview"] = row.RenamePreview,
         }).ToList() ?? [];
 
     private const string DescribeJson = """
@@ -311,9 +313,9 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                   { "type": "panel", "id": "sw-feature-options", "text": "转换选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "switch", "id": "sw-feature-recognize", "label": "识别特征与草图", "value": "true", "action": "minerva.options.recognize" }, { "kind": "switch", "id": "sw-feature-continue", "label": "失败继续", "value": "true", "action": "minerva.options.continue" }, { "kind": "switch", "id": "sw-feature-mates", "label": "重建装配关系", "value": "true", "action": "minerva.options.mates" }] }] }
                 ] },
                 { "case": "SolidWorks .SLDASM → 属性整备（改名）", "type": "stack", "gap": "tight", "children": [
-                  { "type": "panel", "id": "sw-property-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.strip", "text": "洗图号" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
-                  { "type": "table", "id": "sw-property-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "detail", "title": "详情", "width": "*" }, { "key": "features", "title": "特征", "width": "70" }, { "key": "sketches", "title": "草图", "width": "70" }] },
-                  { "type": "panel", "id": "sw-property-options", "text": "转换选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "switch", "id": "sw-property-recognize", "label": "识别特征与草图", "value": "false", "action": "minerva.options.recognize" }, { "kind": "switch", "id": "sw-property-continue", "label": "失败继续", "value": "true", "action": "minerva.options.continue" }, { "kind": "switch", "id": "sw-property-mates", "label": "重建装配关系", "value": "false", "action": "minerva.options.mates" }, { "kind": "textbox", "id": "prefix", "label": "图号前缀", "commitAction": "minerva.options.prefix" }] }] }
+                  { "type": "panel", "id": "sw-property-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "按图号改名" }, { "kind": "button", "action": "minerva.conversion.strip", "text": "按空格洗图号" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
+                  { "type": "table", "id": "sw-property-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "preview", "title": "改名后预览", "width": "*" }] },
+                  { "type": "panel", "id": "sw-property-options", "text": "图号前缀", "rows": [{ "mode": "flex", "widgets": [{ "kind": "textbox", "id": "prefix", "label": "图号前缀", "commitAction": "minerva.options.prefix", "flex": true, "minWidth": 160 }] }] }
                 ] }
               ] }
             ] }
@@ -329,7 +331,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             { "id": "minerva.source.set", "title": "设置来源", "command": "minerva.ui.source", "args": { "path": "{value}" }, "summary": "设置文件或文件夹作为转换来源" },
             { "id": "minerva.conversion.probe", "title": "解析装配体", "command": "minerva.conversion.probe", "summary": "解析当前装配体来源" },
             { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "summary": "执行当前转换" },
-            { "id": "minerva.conversion.strip", "title": "洗图号", "command": "minerva.conversion.strip", "summary": "按空格清理图号" },
+            { "id": "minerva.conversion.strip", "title": "按空格洗图号", "command": "minerva.conversion.strip", "summary": "按文件名第一个空格洗掉图号" },
             { "id": "minerva.conversion.cancel", "title": "取消", "command": "minerva.conversion.cancel", "summary": "取消当前操作" },
             { "id": "minerva.options.recognize", "title": "更新识别选项", "command": "minerva.ui.options", "args": { "option": "recognize", "value": "{value}" }, "summary": "开启或关闭特征与草图识别" },
             { "id": "minerva.options.continue", "title": "更新失败策略", "command": "minerva.ui.options", "args": { "option": "continue", "value": "{value}" }, "summary": "设置零件失败时是否继续" },

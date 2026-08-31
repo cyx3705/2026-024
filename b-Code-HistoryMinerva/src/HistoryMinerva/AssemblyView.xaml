@@ -179,9 +179,17 @@
                         <DataGridTextColumn x:Name="SourcePartColumn"
                                             Binding="{Binding FileName}" Width="2*" MinWidth="120" />
                         <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="72" />
-                        <DataGridTextColumn Header="特征" Binding="{Binding FeatureText}" Width="58" />
-                        <DataGridTextColumn Header="草图" Binding="{Binding SketchText}" Width="58" />
-                        <DataGridTextColumn Header="结果" Binding="{Binding Detail}" Width="2.4*" MinWidth="120" />
+                        <DataGridTextColumn x:Name="FeatureColumn"
+                                            Header="特征" Binding="{Binding FeatureText}" Width="58" />
+                        <DataGridTextColumn x:Name="SketchColumn"
+                                            Header="草图" Binding="{Binding SketchText}" Width="58" />
+                        <DataGridTextColumn x:Name="ResultColumn"
+                                            Header="结果" Binding="{Binding Detail}" Width="2.4*" MinWidth="120" />
+                        <DataGridTextColumn x:Name="RenamePreviewColumn"
+                                            Header="改名后预览"
+                                            Binding="{Binding RenamePreview}"
+                                            Width="2.4*" MinWidth="120"
+                                            Visibility="Collapsed" />
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>
@@ -244,12 +252,24 @@
                             VerticalAlignment="Center"
                             ToolTip="从左侧打开装配结构" />
                 </Grid>
-                <TextBlock x:Name="OptionsLabelText"
-                           Style="{DynamicResource Aurora.Text.Body}"
-                           FontWeight="SemiBold"
-                           Margin="{DynamicResource Aurora.Space.Gap}"
-                           Text="转换选项"
-                           VerticalAlignment="Center" />
+                <Grid VerticalAlignment="Center">
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ShowConversionOptions}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <TextBlock x:Name="OptionsLabelText"
+                               Style="{DynamicResource Aurora.Text.Body}"
+                               FontWeight="SemiBold"
+                               Margin="{DynamicResource Aurora.Space.Gap}"
+                               Text="转换选项"
+                               VerticalAlignment="Center" />
+                </Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">

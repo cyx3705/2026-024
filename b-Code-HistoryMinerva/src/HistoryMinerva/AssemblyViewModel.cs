@@ -617,8 +617,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             var issueText = plan.BlockingIssues.Count == 0
                 ? string.Empty
                 : string.Join("；", plan.BlockingIssues.Select(issue => $"[{issue.ErrorClass}] {issue.Message}"));
-            // 命令总线在 Dispatcher 排空前就会读这两个字段；先同步写好，避免把「正在解析」进度文案报成失败。
-            _lastOperationSucceeded = plan.CanConvert;
+            _lastOperationSucceeded = IsRenameMode
+                ? PropertyPrepPlanner.CreateStrip(result).BlockingIssues.Count == 0
+                : plan.CanConvert;
             StatusText = FormatProbeStatus(plan, result, issueText);
             QueueUiUpdate(() => ApplyProbeResult(result, plan, sourceHash));
         }
@@ -790,47 +791,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         WarningSummary = string.IsNullOrWhiteSpace(WarningSummary)
             ? summary
             : WarningSummary + "；" + summary;
-    }
-
-    private void ApplyProbeResult(
-        AssemblyProbeResult result,
-        AssemblyConversionPlan plan,
-        string sourceHash)
-    {
-        ClearProbeResult();
-        _mateOutcome = null;
-        _plan = plan;
-        _probeResult = result;
-        // 每次解析都依据新装配的真实关系数重置默认值。这样切换到无关系装配不会留下
-        // 一个看似可用、实际不会执行的勾选状态；切回有关系装配也无需用户额外发现设置。
-        RebuildMates = plan.RelationCount > 0;
-        _sourceHashAfterProbe = sourceHash;
-        XtDirectory = plan.XtDirectory;
-        SolidWorksDirectory = plan.SolidWorksDirectory;
-        AssemblyOutputPath = plan.AssemblyOutputPath;
-        AssemblyTree.Add(AssemblyTreeNode.Build(result, plan.Nodes));
-        var regeneratesExisting = RegeneratesExistingOutputs;
-        var issueText = plan.BlockingIssues.Count == 0
-            ? string.Empty
-            : string.Join("；", plan.BlockingIssues.Select(issue => $"[{issue.ErrorClass}] {issue.Message}"));
-        foreach (var candidate in plan.Parts)
-            Parts.Add(new ConversionFileRow(candidate, regeneratesExisting));
-        if (plan.BlockingIssues.Count > 0)
-        {
-            foreach (var row in Parts)
-            {
-                row.Status = "受阻";
-                row.Detail = issueText;
-            }
-        }
-        WarningSummary = string.Join("；", plan.Warnings.Concat(
-            string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
-        StatusText = FormatProbeStatus(plan, result, issueText);
-        _lastOperationSucceeded = plan.CanConvert;
-        ApplyRenamePreview();
-        OnPropertyChanged(nameof(CanConvert));
-        OnPropertyChanged(nameof(CanRebuildMates));
-        OnPropertyChanged(nameof(RebuildMatesHint));
     }
 
     private void ApplyWorkerEvent(WorkerEvent workerEvent)

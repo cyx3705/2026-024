@@ -29,6 +29,7 @@ public partial class AssemblyView : UserControl, IDisposable
         // DataGridColumn 不参与可视树，Binding 解析不到 DataContext（实测列头会变空白），
         // 列头只能在这里跟着源格式更新。
         SourcePartColumn.Header = _viewModel.SourcePartColumnHeader;
+        ApplyRenameTableColumns();
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
     }
 
@@ -36,6 +37,10 @@ public partial class AssemblyView : UserControl, IDisposable
     {
         if (e.PropertyName is nameof(AssemblyViewModel.SourcePartColumnHeader) or null)
             SourcePartColumn.Header = _viewModel.SourcePartColumnHeader;
+        if (e.PropertyName is nameof(AssemblyViewModel.IsRenameMode)
+            or nameof(AssemblyViewModel.SelectedMappingContent)
+            or null)
+            ApplyRenameTableColumns();
         if (e.PropertyName is nameof(AssemblyViewModel.SelectedMappingContent)
             or nameof(AssemblyViewModel.IsPartDirectoryMode)
             or null)
@@ -47,6 +52,15 @@ public partial class AssemblyView : UserControl, IDisposable
     internal Visibility OutputActivityVisibility => OutputActivityBar.Visibility;
     internal double SourceColumnWidth => SourceColumn.ActualWidth;
     internal double ContentColumnWidth => ContentColumn.ActualWidth;
+
+    private void ApplyRenameTableColumns()
+    {
+        var rename = _viewModel.IsRenameMode;
+        FeatureColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
+        SketchColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
+        ResultColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
+        RenamePreviewColumn.Visibility = rename ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private bool _mappingContentUserPicking;
 

@@ -2083,6 +2083,10 @@ static void TestPropertyPrepViewModel(string root)
     viewModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(viewModel.CanConvert, "解析成功且前缀有效后必须允许按图号改名");
+    True(viewModel.CanStrip, "解析完成后洗图号按钮必须可点，不得因文件名没有空格而灰掉");
+    True(viewModel.Parts.Any(row => row.RenamePreview.Contains("ZS-LHL-00", StringComparison.Ordinal)
+                                    || row.RenamePreview.Contains("ZS-LHL-01", StringComparison.Ordinal)),
+        "改名预览必须展示规划后的文件名");
     True(viewModel.Parts.Any(row => row.Detail.Contains("ZS-LHL-00", StringComparison.Ordinal)
                                     || row.Detail.Contains("ZS-LHL-01", StringComparison.Ordinal)),
         "改名预览必须展示规划后的文件名");
@@ -2124,9 +2128,12 @@ static void TestPropertyPrepViewModel(string root)
     stripModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(!stripModel.CanConvert, "未填前缀时不得按图号改名");
-    True(stripModel.CanStrip, "文件名带空格时必须允许按空格洗图号");
-    True(stripModel.Parts.Any(row => row.Detail.Contains("总装", StringComparison.Ordinal)
-                                    || row.Detail.Contains("阀体", StringComparison.Ordinal)),
+    True(stripModel.CanStrip, "解析完成后洗图号按钮必须可点");
+    True(stripModel.CanExecuteStrip, "文件名带空格时必须允许按空格洗图号");
+    Equal("请填写图号前缀后再按图号改名。", stripModel.RenameBlockedReason,
+        "未填前缀时按图号改名必须给出可读原因，不得沿用转换状态文案");
+    True(stripModel.Parts.Any(row => row.RenamePreview.Contains("总装", StringComparison.Ordinal)
+                                    || row.RenamePreview.Contains("阀体", StringComparison.Ordinal)),
         "未填前缀时预览必须展示洗掉图号后的文件名");
     stripModel.StripDrawingNumbersAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
@@ -2520,11 +2527,21 @@ static void TestUiModuleRegistration(string root)
                 && pageJson.Contains("失败继续", StringComparison.Ordinal)
                 && pageJson.Contains("重建装配关系", StringComparison.Ordinal),
                 "Minerva 转换选项必须包含识别、失败继续和装配关系设置");
-            foreach (var optionId in new[] { "part-recognize", "se-recognize", "sw-feature-recognize", "sw-property-recognize" })
+            foreach (var optionId in new[] { "part-recognize", "se-recognize", "sw-feature-recognize" })
             {
                 True(pageJson.Contains($"\"mode\": \"even\", \"widgets\": [{{ \"kind\": \"switch\", \"id\": \"{optionId}\"", StringComparison.Ordinal),
                     $"Minerva 转换选项 {optionId} 必须使用 even 均布行");
             }
+            True(!pageJson.Contains("sw-property-recognize", StringComparison.Ordinal)
+                && !pageJson.Contains("sw-property-continue", StringComparison.Ordinal)
+                && !pageJson.Contains("sw-property-mates", StringComparison.Ordinal),
+                "属性整备改名模式不得再展示识别特征、失败继续或重建装配关系");
+            True(pageJson.Contains("\"text\": \"按图号改名\"", StringComparison.Ordinal),
+                "属性整备必须在顶部提供按图号改名按钮");
+            True(pageJson.Contains("\"text\": \"按空格洗图号\"", StringComparison.Ordinal),
+                "属性整备必须在顶部提供按空格洗图号按钮");
+            True(pageJson.Contains("\"id\": \"sw-property-parts\", \"dataSource\": { \"command\": \"minerva.ui.data\", \"args\": { \"view\": \"parts\" } }, \"columns\": [{ \"key\": \"file\", \"title\": \"文件\", \"width\": \"220\" }, { \"key\": \"status\", \"title\": \"状态\", \"width\": \"90\" }, { \"key\": \"preview\", \"title\": \"改名后预览\", \"width\": \"*\" }]", StringComparison.Ordinal),
+                "属性整备零件表必须用改名后预览列，不得再显示特征/草图列");
             True(pageJson.Contains("\"id\": \"prefix\", \"label\": \"图号前缀\", \"commitAction\": \"minerva.options.prefix\"", StringComparison.Ordinal),
                 "属性整备必须保留图号前缀输入框");
             True(pageJson.Contains("\"type\": \"switch\"", StringComparison.Ordinal),

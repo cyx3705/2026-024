@@ -310,6 +310,7 @@ internal static class Program
         public bool CanCancel => true;
         public bool CanConvert => false;
         public bool CanStrip => false;
+        public bool ShowConversionOptions => true;
         public bool IsRenameMode => false;
         public bool CanFullyDefineSketches => false;
         public bool CanContinueWhenPartFails => false;
