@@ -176,6 +176,12 @@ static void TestSharedContractsAndVersion()
     Equal(@"C:\fixture\Part.SLDPRT", paths.LegacySolidWorksPath, "旧平铺 SLDPRT 候选必须由共享路径合同解析");
     Equal(@"C:\fixture\SW\Top.SLDASM", ConversionPathLayout.ResolveAssemblyOutputPath(@"C:\fixture\Top.asm", directories.SolidWorksDirectory),
         "SLDASM 路径必须由共享路径合同解析");
+    True(!ConversionPathLayout.IsOutsideAssemblyDirectory(@"C:\fixture\件A.SLDPRT", @"C:\fixture\顶层.SLDASM"),
+        "与装配体同级的正式零件不得当成外购件");
+    True(ConversionPathLayout.IsOutsideAssemblyDirectory(@"C:\fixture\标准件\GB70.SLDASM", @"C:\fixture\顶层.SLDASM"),
+        "子文件夹中的文件必须当成外购件");
+    True(!ConversionPathLayout.IsOutsideAssemblyDirectory(string.Empty, @"C:\fixture\顶层.SLDASM"),
+        "空路径留给未解析引用，不得当成外购件跳过");
 
     var row = new ConversionFileRow(new ScanCandidate(@"C:\fixture\Part.par", paths.XtPath, paths.SolidWorksPath, false));
     var reuseEvent = new WorkerEvent("smoke", row.Id, ConversionStage.Skipped, "消息文本不应参与复用类别判断：XT", ReuseKind: ReuseKind.ExistingSolidWorksPart);
@@ -1475,9 +1481,9 @@ static void TestSolidWorksFlexibleSubAssemblyPlanning(string root)
     }
 
     var top = F("0-罩子装配.SLDASM");
-    var sub = F(Path.Combine("气缸", "CRE-25.SLDASM"));
-    var pin = F(Path.Combine("气缸", "CRE-25_pin.SLDPRT"));
-    var cylinder = F(Path.Combine("气缸", "CRE-25_cylinder.SLDPRT"));
+    var sub = F("CRE-25.SLDASM");
+    var pin = F("CRE-25_pin.SLDPRT");
+    var cylinder = F("CRE-25_cylinder.SLDPRT");
 
     var flexProbe = new AssemblyProbeResult(
         top,
@@ -1883,7 +1889,7 @@ static void TestSolidWorksSelfPipelineContracts()
     Equal(4, MappingContentOption.Available.Count, "转换内容必须包含属性整备改名这一项");
 }
 
-/// <summary>V4.3.9：图号前缀手写，层级数字按所选装配体推断；标准件内部无图号。</summary>
+/// <summary>图号前缀手写，层级数字按所选装配体推断；子文件夹外购件不编号。</summary>
 static void TestPropertyPrepDrawingNumbers(string root)
 {
     True(DrawingNumber.TryParseFileName("ZS-LHL-01-02-00 进样器模块.SLDASM", "ZS-LHL", out var parsed, out var name),
@@ -1944,9 +1950,10 @@ static void TestPropertyPrepDrawingNumbers(string root)
     Equal("ZS-LHL-01-00 进样器模块.SLDASM", Path.GetFileName(Target(plan, major)), "总装下的子装配必须编成大组件");
     Equal("ZS-LHL-01-01 轴.SLDPRT", Path.GetFileName(Target(plan, shaft)), "大组件下的零件必须接到该大组件编号后");
     Equal("ZS-LHL-02 底板.SLDPRT", Path.GetFileName(Target(plan, basePlate)), "总装直属零件必须占用一个序号");
-    Equal("ZS-LHL-03 GB70.SLDASM", Path.GetFileName(Target(plan, standard)), "标准件装配体无论层级都按零件编号");
-    True(plan.Unnumbered.Any(entry => AssemblyRenamePlan.SamePath(entry.SourcePath, screw)),
-        "标准件内部零件不得分配图号");
+    True(plan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, standard)),
+        "子文件夹外购件装配体不得编号、不得进改名清单");
+    True(plan.Unnumbered.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, screw)),
+        "子文件夹外购件内部不得进入未编号清单");
 
     var minorDir = Path.Combine(root, "property-prep-minor");
     Directory.CreateDirectory(minorDir);
@@ -2033,8 +2040,10 @@ static void TestPropertyPrepDrawingNumbers(string root)
     Equal("总装.SLDASM", Path.GetFileName(Target(stripPlan, numberedRoot)), "总装必须洗成原名");
     Equal("进样器模块.SLDASM", Path.GetFileName(Target(stripPlan, numberedMajor)), "大组件必须洗成原名");
     Equal("轴.SLDPRT", Path.GetFileName(Target(stripPlan, numberedShaft)), "零件必须洗成原名");
-    Equal("GB70.SLDASM", Path.GetFileName(Target(stripPlan, numberedStandard)), "标准件装配也按空格洗");
-    Equal("螺钉.SLDPRT", Path.GetFileName(Target(stripPlan, numberedScrew)), "标准件内部若已有图号也要洗");
+    True(stripPlan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, numberedStandard)),
+        "子文件夹外购件装配体不得按空格洗名");
+    True(stripPlan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, numberedScrew)),
+        "子文件夹外购件内部不得按空格洗名");
     True(stripPlan.Unnumbered.Any(entry => AssemblyRenamePlan.SamePath(entry.SourcePath, plainPlate)),
         "没有空格的文件必须保持原名");
 }
@@ -2206,6 +2215,44 @@ static void TestSolidWorksSelfPipelinePlanning(string root)
         plan.Parts[0].XtPath,
         "SW 特征整备必须规划交付用 XT");
     Equal(Path.Combine(output, "顶层.SLDASM"), plan.AssemblyOutputPath, "装配产物落在输出目录");
+
+    var purchasedDir = Path.Combine(source, "标准件");
+    Directory.CreateDirectory(purchasedDir);
+    var purchasedPart = Path.Combine(purchasedDir, "GB70.SLDPRT");
+    var purchasedAsm = Path.Combine(purchasedDir, "外购组件.SLDASM");
+    File.WriteAllText(purchasedPart, "purchased");
+    File.WriteAllText(purchasedAsm, "purchased-asm");
+    var withPurchased = new AssemblyProbeResult(
+        assemblyPath,
+        [
+            new AssemblyOccurrence("件A-1", null, partPath, false, false, false, identity, null),
+            new AssemblyOccurrence("GB70-1", null, purchasedPart, false, false, false, identity, null),
+            new AssemblyOccurrence("外购组件-1", null, purchasedAsm, true, false, false, identity, null),
+            new AssemblyOccurrence("外购组件-1/内部-1", "外购组件-1", purchasedPart, false, false, false, identity, null),
+        ],
+        [partPath, purchasedPart],
+        0, 0, 0, 0,
+        [],
+        [
+            new AssemblyDocumentReading(
+                assemblyPath,
+                [
+                    new AssemblyChild("件A-1", partPath, false, false, identity),
+                    new AssemblyChild("GB70-1", purchasedPart, false, false, identity),
+                    new AssemblyChild("外购组件-1", purchasedAsm, true, false, identity),
+                ],
+                []),
+            new AssemblyDocumentReading(
+                purchasedAsm,
+                [new AssemblyChild("内部-1", purchasedPart, false, false, identity)],
+                []),
+        ]);
+    var skipPurchased = AssemblyPlanner.Create(withPurchased, null, output, ConversionSourceFormat.SolidWorks);
+    True(skipPurchased.CanConvert, "跳过外购件后正式零件仍必须能转换。阻断：" + string.Join("；", skipPurchased.BlockingIssues.Select(item => item.Message)));
+    Equal(1, skipPurchased.Parts.Count, "特征整备不得转换子文件夹外购件");
+    Equal(partPath, skipPurchased.Parts[0].SourcePath, "特征整备只保留与装配体同级的零件");
+    True(skipPurchased.Warnings.Any(item => item.Contains("外购件", StringComparison.Ordinal)),
+        "跳过外购件必须写入可读说明");
 
     // 输出目录指回源目录时，产物就是源文件本身——必须在计划阶段拦住，绝不动用户的原件。
     var selfOverwrite = AssemblyPlanner.Create(probe, null, source, ConversionSourceFormat.SolidWorks);
@@ -2979,17 +3026,10 @@ static void TestNativeSolidWorksPartRecognition(string root)
     blocked.SetAssemblySource(assembly);
     blocked.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(!blocked.CanConvert, "同名不同路径零件必须挡住转换装配体");
-    True(blocked.Parts.All(row => row.Status == "受阻"),
-        "前置错误必须写到零件行，不能只留在控制台");
-    True(blocked.Parts.Any(row => row.Detail.Contains("同名不同路径", StringComparison.Ordinal)
-                                  || row.Detail.Contains("同一输出", StringComparison.Ordinal)),
-        "零件行要写出挡住转换的原因");
-    True(!blocked.LastOperationSucceeded, "前置错误的探查不得报成功");
-    True(blocked.StatusText.Contains("前置错误", StringComparison.Ordinal)
-         && (blocked.StatusText.Contains("同名不同路径", StringComparison.Ordinal)
-             || blocked.StatusText.Contains("同一输出", StringComparison.Ordinal)),
-        "命令结果必须带上挡住转换的原因，不能只说有前置错误");
+    True(blocked.CanConvert, "子文件夹里的同名外购件不得挡住正式零件转换");
+    Equal(1, blocked.Parts.Count, "解析装配体只保留与装配体同级的零件");
+    Equal("阀体.SLDPRT", blocked.Parts[0].FileName, "正式零件必须留下");
+    True(blocked.LastOperationSucceeded, "跳过外购件后的探查必须成功");
 }
 
 /// <summary>

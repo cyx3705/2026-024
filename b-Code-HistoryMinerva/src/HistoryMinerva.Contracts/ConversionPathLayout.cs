@@ -106,4 +106,27 @@ public static class ConversionPathLayout
 
     public static bool HasExtension(string path, string extension)
         => string.Equals(Path.GetExtension(path), extension, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 正式零件与所选装配体同级。路径落在子文件夹或其它目录即为外购件。
+    /// 空路径不算外购件，留给未解析引用诊断。
+    /// </summary>
+    public static bool IsOutsideAssemblyDirectory(string filePath, string assemblyPath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || string.IsNullOrWhiteSpace(assemblyPath))
+            return false;
+
+        try
+        {
+            var fileDirectory = Path.GetDirectoryName(Path.GetFullPath(filePath.Trim()));
+            var assemblyDirectory = Path.GetDirectoryName(Path.GetFullPath(assemblyPath.Trim()));
+            return !string.IsNullOrWhiteSpace(fileDirectory)
+                && !string.IsNullOrWhiteSpace(assemblyDirectory)
+                && !string.Equals(fileDirectory, assemblyDirectory, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
 }

@@ -52,6 +52,8 @@ public static class AssemblyPlanner
         }
 
         var sourceAssemblyPath = Path.GetFullPath(probe.SourceAssemblyPath);
+        if (sourceFormat == ConversionSourceFormat.SolidWorks)
+            probe = KeepOfficialParts(probe, sourceAssemblyPath);
         var sourceDirectory = Path.GetDirectoryName(sourceAssemblyPath)
             ?? throw new InvalidDataException("无法解析装配体所在目录。");
         var directories = ExternalOutputLayout.Resolve(
@@ -225,6 +227,41 @@ public static class AssemblyPlanner
             (plannedProbe.Documents ?? [])
                 .SelectMany(document => document.Relations ?? [])
                 .ToArray());
+    }
+
+    /// <summary>
+    /// 正式零件与所选装配体同级。子文件夹外购件不进转换计划，以免缺文档读数把整轮挡住。
+    /// </summary>
+    private static AssemblyProbeResult KeepOfficialParts(AssemblyProbeResult probe, string sourceAssemblyPath)
+    {
+        bool keep(string path) => !ConversionPathLayout.IsOutsideAssemblyDirectory(path, sourceAssemblyPath);
+        var occurrences = probe.Occurrences.Where(item => keep(item.SourcePath)).ToArray();
+        var uniqueParts = probe.UniquePartPaths.Where(keep).ToArray();
+        var documents = probe.Documents?
+            .Where(document => keep(document.SourceAssemblyPath))
+            .Select(document => document with
+            {
+                Children = document.Children.Where(child => keep(child.SourcePath)).ToArray(),
+            })
+            .ToArray();
+        var warnings = probe.Warnings.ToList();
+        var skipped = probe.Occurrences.Count - occurrences.Length;
+        if (skipped > 0
+            && warnings.All(item => !item.Contains("外购件", StringComparison.Ordinal)))
+        {
+            warnings.Add($"已跳过 {skipped} 个外购件（子文件夹，与装配体不同级）。");
+        }
+
+        return probe with
+        {
+            Occurrences = occurrences,
+            UniquePartPaths = uniqueParts,
+            Documents = documents,
+            UnresolvedCount = occurrences.Count(item =>
+                item.Diagnostic?.Contains("引用不存在", StringComparison.Ordinal) == true),
+            SuppressedCount = occurrences.Count(item => item.IsSuppressed),
+            Warnings = warnings,
+        };
     }
 
     /// <summary>V3.3：把逐文档读数组装成拓扑序的装配节点；读数缺失时返回 null，由调用方退回展平。</summary>

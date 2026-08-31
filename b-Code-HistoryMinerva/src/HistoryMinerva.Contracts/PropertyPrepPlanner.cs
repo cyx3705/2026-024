@@ -2,8 +2,8 @@ namespace HistoryMinerva.Contracts;
 
 /// <summary>
 /// 根据所选 SolidWorks 装配体的现有图号（或默认总装 <c>前缀-00</c>）
-/// 给同级零件和下层装配体分配图号。标准件子文件夹与小组件下的装配体视为零件，
-/// 其内部文件不分配图号。
+/// 给同级零件和下层装配体分配图号。子文件夹中的外购件不编号；
+/// 小组件下的装配体视为零件，其内部文件不分配图号。
 /// </summary>
 public static class PropertyPrepPlanner
 {
@@ -75,7 +75,7 @@ public static class PropertyPrepPlanner
             parentPath: null,
             depth: 0,
             skipChildren: !rootNumber.IsAssembly,
-            rootDirectory,
+            rootPath,
             documents,
             probe,
             planned,
@@ -113,8 +113,8 @@ public static class PropertyPrepPlanner
     }
 
     /// <summary>
-    /// 按文件名第一个空格洗掉图号，保留空格后的原名。遍历所选装配体全部文档，
-    /// 含标准件内部；没有空格的文件保持原名。
+    /// 按文件名第一个空格洗掉图号，保留空格后的原名。只遍历所选装配体同级目录文档，
+    /// 不含子文件夹外购件。没有空格的文件保持原名。
     /// </summary>
     public static AssemblyRenamePlan CreateStrip(AssemblyProbeResult probe)
     {
@@ -156,6 +156,7 @@ public static class PropertyPrepPlanner
             rootPath,
             parentPath: null,
             depth: 0,
+            rootPath,
             documents,
             probe,
             planned,
@@ -209,7 +210,7 @@ public static class PropertyPrepPlanner
         string? parentPath,
         int depth,
         bool skipChildren,
-        string rootDirectory,
+        string rootPath,
         IReadOnlyDictionary<string, AssemblyDocumentReading> documents,
         AssemblyProbeResult probe,
         Dictionary<string, MutableEntry> planned,
@@ -222,6 +223,7 @@ public static class PropertyPrepPlanner
 
         var sequence = 1;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var skippedPurchased = 0;
         foreach (var child in document.Children)
         {
             if (!Path.IsPathFullyQualified(child.SourcePath))
@@ -238,6 +240,12 @@ public static class PropertyPrepPlanner
                 continue;
             }
 
+            if (ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, rootPath))
+            {
+                skippedPurchased++;
+                continue;
+            }
+
             if (child.Diagnostic?.Contains("引用不存在", StringComparison.Ordinal) == true
                 || IsFullySuppressed(probe, childPath))
             {
@@ -251,13 +259,14 @@ public static class PropertyPrepPlanner
                 continue;
             }
 
-            var treatAsPart = ShouldTreatAsPart(rootDirectory, childPath, child.IsSubAssembly, number);
+            var treatAsPart = ShouldTreatAsPart(child.IsSubAssembly, number);
             if (treatAsPart || !child.IsSubAssembly)
             {
                 var childNumber = number.Child(sequence++, asAssembly: false);
                 Remember(planned, childPath, childNumber, assemblyPath, depth + 1, assignsDrawingNumber: true);
                 if (child.IsSubAssembly)
-                    CollectUnnumberedDescendants(childPath, assemblyPath, depth + 1, documents, planned, unnumbered);
+                    CollectUnnumberedDescendants(
+                        childPath, assemblyPath, depth + 1, rootPath, documents, planned, unnumbered);
                 continue;
             }
 
@@ -268,45 +277,33 @@ public static class PropertyPrepPlanner
                 assemblyPath,
                 depth + 1,
                 skipChildren: false,
-                rootDirectory,
+                rootPath,
                 documents,
                 probe,
                 planned,
                 unnumbered,
                 warnings);
         }
+
+        if (skippedPurchased > 0)
+            warnings.Add($"已跳过 {skippedPurchased} 个外购件（子文件夹，与装配体不同级）。");
     }
 
-    private static bool ShouldTreatAsPart(
-        string rootDirectory,
-        string childPath,
-        bool isSubAssembly,
-        DrawingNumber parentNumber)
+    private static bool ShouldTreatAsPart(bool isSubAssembly, DrawingNumber parentNumber)
     {
         if (!isSubAssembly)
             return true;
         if (!parentNumber.IsAssembly || parentNumber.IsMinorAssembly || !parentNumber.IsRootAssembly && !parentNumber.IsMajorAssembly)
             return true;
 
-        var childDirectory = Path.GetDirectoryName(childPath);
-        if (string.IsNullOrWhiteSpace(childDirectory))
-            return true;
-        var childDir = Path.GetFullPath(childDirectory);
-        var rootDir = Path.GetFullPath(rootDirectory);
-        if (string.Equals(childDir, rootDir, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        var relative = Path.GetRelativePath(rootDir, childDir);
-        return relative != "."
-            && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            && !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal)
-            && !string.Equals(relative, "..", StringComparison.Ordinal);
+        return false;
     }
 
     private static void CollectUnnumberedDescendants(
         string assemblyPath,
         string parentPath,
         int depth,
+        string rootPath,
         IReadOnlyDictionary<string, AssemblyDocumentReading> documents,
         Dictionary<string, MutableEntry> planned,
         Dictionary<string, MutableEntry> unnumbered)
@@ -322,10 +319,12 @@ public static class PropertyPrepPlanner
             var childPath = Path.GetFullPath(child.SourcePath);
             if (!seen.Add(childPath) || planned.ContainsKey(childPath))
                 continue;
+            if (ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, rootPath))
+                continue;
 
             Remember(unnumbered, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false);
             if (child.IsSubAssembly)
-                CollectUnnumberedDescendants(childPath, assemblyPath, depth + 1, documents, planned, unnumbered);
+                CollectUnnumberedDescendants(childPath, assemblyPath, depth + 1, rootPath, documents, planned, unnumbered);
         }
     }
 
@@ -333,6 +332,7 @@ public static class PropertyPrepPlanner
         string path,
         string? parentPath,
         int depth,
+        string rootPath,
         IReadOnlyDictionary<string, AssemblyDocumentReading> documents,
         AssemblyProbeResult probe,
         Dictionary<string, MutableEntry> planned,
@@ -346,6 +346,9 @@ public static class PropertyPrepPlanner
         }
 
         var fullPath = Path.GetFullPath(path);
+        if (ConversionPathLayout.IsOutsideAssemblyDirectory(fullPath, rootPath))
+            return;
+
         var map = DrawingNumber.TryStripBySpace(Path.GetFileName(fullPath), out var token, out var original)
             ? planned
             : kept;
@@ -354,6 +357,7 @@ public static class PropertyPrepPlanner
             return;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var skippedPurchased = 0;
         foreach (var child in document.Children)
         {
             if (!Path.IsPathFullyQualified(child.SourcePath))
@@ -369,6 +373,12 @@ public static class PropertyPrepPlanner
                     plannedExisting.AddParent(fullPath);
                 else if (kept.TryGetValue(childPath, out var keptExisting))
                     keptExisting.AddParent(fullPath);
+                continue;
+            }
+
+            if (ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, rootPath))
+            {
+                skippedPurchased++;
                 continue;
             }
 
@@ -391,8 +401,11 @@ public static class PropertyPrepPlanner
                 continue;
             }
 
-            VisitStrip(childPath, fullPath, depth + 1, documents, probe, planned, kept, warnings);
+            VisitStrip(childPath, fullPath, depth + 1, rootPath, documents, probe, planned, kept, warnings);
         }
+
+        if (skippedPurchased > 0)
+            warnings.Add($"已跳过 {skippedPurchased} 个外购件（子文件夹，与装配体不同级）。");
     }
 
     private static void RememberStrip(
