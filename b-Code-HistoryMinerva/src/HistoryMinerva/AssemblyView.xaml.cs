@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 
 namespace HistoryMinerva;
 
@@ -98,7 +99,12 @@ public partial class AssemblyView : UserControl, IDisposable
             dialog.InitialDirectory = directory;
         if (dialog.ShowDialog(Window.GetWindow(this)) == true)
         {
-            _viewModel.SetSourceFile(dialog.FileName);
+            _viewModel.SetSourcePath(dialog.FileName);
+            if (_commandBus is null || !_viewModel.CanProbe)
+                return;
+            // 等文件对话框把嵌套消息泵彻底收掉，再探查。同一拍里跑 COM 查询
+            // 或开始灌零件表，整窗会停在对话框刚关上的那一帧。
+            await Dispatcher.InvokeAsync(static () => { }, DispatcherPriority.Background);
             if (_commandBus is not null && _viewModel.CanProbe)
                 await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.probe", HistoryMinervaIdentity.Name + ":UI");
         }

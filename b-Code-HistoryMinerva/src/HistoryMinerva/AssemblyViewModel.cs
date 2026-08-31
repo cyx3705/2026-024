@@ -339,7 +339,46 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     }
 
     public void SetSourceFile(string path)
-        => SetAssemblySource(path);
+        => SetSourcePath(path);
+
+    /// <summary>
+    /// 来源选择器只给一条路径。零件模式挑的是 <c>.par</c> 文件，装配模式才是
+    /// <c>.asm</c> / <c>.SLDASM</c>；把零件文件丢给装配解析会立刻抛错，而 Aurora
+    /// 失败指令还会去抢控制台焦点，文件对话框刚关上时整窗就像死了。
+    /// </summary>
+    public void SetSourcePath(string path)
+    {
+        if (IsBusy)
+            return;
+
+        var trimmed = path.Trim();
+        if (Directory.Exists(trimmed))
+        {
+            SetPartDirectory(trimmed);
+            return;
+        }
+
+        if (!File.Exists(trimmed))
+            throw new FileNotFoundException("来源路径不存在。", trimmed);
+
+        if (MappingContentOption.ForAssemblyFile(trimmed) is not null)
+        {
+            SetAssemblySource(trimmed);
+            return;
+        }
+
+        if (ConversionPathLayout.HasExtension(trimmed, ConversionPathLayout.SolidEdgePartExtension))
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(trimmed));
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                throw new DirectoryNotFoundException($"零件文件所在文件夹不存在：{trimmed}");
+            SetPartDirectory(directory);
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "请选择 Solid Edge .par 零件、.asm 装配体、SolidWorks .SLDASM，或包含顶层 .par 的文件夹。");
+    }
 
     public void SetAssemblySource(string path)
     {
@@ -556,7 +595,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         if (!File.Exists(SourceAssemblyPath)
             || !ConversionPathLayout.HasExtension(SourceAssemblyPath, sourceAssemblyExtension))
             throw new InvalidOperationException($"请选择存在的 {sourceAssemblyExtension} 装配体文件。");
-        _validateEnvironment(sourceFormat);
+        // COM ProgID 查询和后续 Worker 启动都不要占着选文件那一拍的 UI 线程。
+        await Task.Run(() => _validateEnvironment(sourceFormat), cancellationToken).ConfigureAwait(false);
 
         var batchId = Guid.NewGuid().ToString("N");
         var resultDirectory = _runtimePaths.ProbesDirectory;

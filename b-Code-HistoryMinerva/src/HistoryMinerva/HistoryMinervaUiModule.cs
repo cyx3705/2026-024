@@ -185,11 +185,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
         try
         {
-            var viewModel = GetViewModel();
-            if (Directory.Exists(path))
-                viewModel.SetPartDirectory(path);
-            else
-                viewModel.SetSourceFile(path);
+            GetViewModel().SetSourcePath(path);
             return CommandResult.Ok("已设置 Minerva 转换来源。");
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException)

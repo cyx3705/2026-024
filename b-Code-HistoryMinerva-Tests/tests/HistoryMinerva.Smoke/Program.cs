@@ -2546,6 +2546,19 @@ static void TestUiModuleRegistration(string root)
             var conversion = context.Bus.ExecuteAsync("minerva.conversion.run", "Smoke").GetAwaiter().GetResult();
             True(!conversion.Success && conversion.Message.Contains("请选择", StringComparison.Ordinal),
                 "未选择来源时 minerva.conversion.run 必须通过总线返回可读失败原因");
+
+            var partsDir = Path.Combine(root, "ui-source-parts");
+            Directory.CreateDirectory(partsDir);
+            var partFile = Path.Combine(partsDir, "阀体.par");
+            File.WriteAllText(partFile, "part");
+            var pickedPart = context.Bus.ExecuteAsync(
+                "minerva.ui.source path=" + CommandParser.QuoteArg(partFile), "UI").GetAwaiter().GetResult();
+            True(pickedPart.Success, "选 .par 文件必须当成零件文件夹来源，不得抛成装配体错误。实得：" + pickedPart.Message);
+            var partRows = context.Bus.ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult();
+            True(partRows.Success, "选完 .par 后零件表必须能取数");
+            var rows = (IReadOnlyList<IReadOnlyDictionary<string, string>>?)partRows.Data;
+            True(rows is { Count: 1 }, $"选完 .par 后零件表应有 1 行，实得 {rows?.Count}");
+            Equal("阀体.par", rows![0]["file"], "零件表第一行必须是所选 .par 文件名");
         }
         catch (Exception ex)
         {
@@ -2578,6 +2591,21 @@ static void TestUiModuleRegistration(string root)
                 && normalized.EndsWith(HistoryMinervaIdentity.WorkerFileName, StringComparison.OrdinalIgnoreCase);
         }),
         "Worker 定位必须包含正式 z-Publish 发布包回退路径");
+    var originalCwd = Environment.CurrentDirectory;
+    var decoy = Path.Combine(root, "cad-vault", "2026-999-DecoyProject", "huge-asm");
+    Directory.CreateDirectory(decoy);
+    File.WriteAllText(Path.Combine(decoy, "bait.SLDASM"), "bait");
+    try
+    {
+        Environment.CurrentDirectory = decoy;
+        True(!runtimePaths.WorkerCandidates().Any(path =>
+                path.Contains("2026-999-DecoyProject", StringComparison.OrdinalIgnoreCase)),
+            "选完 CAD 文件后当前目录会变成零件库，Worker 定位不得顺着它往上扫");
+    }
+    finally
+    {
+        Environment.CurrentDirectory = originalCwd;
+    }
     Equal(HistoryMinervaIdentity.Name, "HistoryMinerva", "部署槽字面量必须与权威源一致");
     Equal("HistoryMinerva.Worker.exe", HistoryMinervaIdentity.WorkerFileName, "Worker 已合并为单个 HistoryMinerva.Worker.exe");
 }
@@ -3073,6 +3101,9 @@ static void TestUnifiedPartDirectoryFlow(string root)
     viewModel.SetPartDirectory(directory);
     Equal(ConversionSourceKind.PartDirectory, viewModel.SourceKind, "选择文件夹后必须切换到零件来源");
     Equal(3, viewModel.Parts.Count, "文件夹模式只扫描顶层 .par");
+    viewModel.SetSourcePath(Path.Combine(directory, "A.par"));
+    Equal(ConversionSourceKind.PartDirectory, viewModel.SourceKind, "选单个 .par 必须落到所在文件夹，不得当装配体抛错");
+    Equal(3, viewModel.Parts.Count, "选 .par 后仍扫描该文件夹顶层零件");
     True(viewModel.Parts.All(row => !string.Equals(row.SourcePath, nestedPart, StringComparison.OrdinalIgnoreCase)),
         "文件夹模式不得递归扫描子目录");
     Equal(0, viewModel.AssemblyTree.Count, "切到文件夹必须清除旧装配树");

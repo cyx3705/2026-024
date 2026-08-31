@@ -52,10 +52,12 @@ public sealed class MappingRuntimePaths
 
     private static IEnumerable<string> FindPublishedPackageWorkers()
     {
+        // 不要用 Environment.CurrentDirectory：OpenFileDialog 默认会把进程
+        // 当前目录改到所选 CAD 文件旁边。从那个（往往极大的）零件库往上
+        // 枚举每一层子目录时，UI 线程会像死掉一样。
         var seeds = new[]
         {
             AppContext.BaseDirectory,
-            Environment.CurrentDirectory,
             Path.GetDirectoryName(Environment.ProcessPath ?? string.Empty),
         };
 
