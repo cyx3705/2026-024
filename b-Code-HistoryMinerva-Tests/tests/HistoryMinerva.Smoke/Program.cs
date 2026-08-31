@@ -2094,6 +2094,36 @@ static void TestPropertyPrepViewModel(string root)
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(renamed, "主按钮在改名模式下必须走 rename Worker，而不是装配转换");
 
+    var convertedAfterFilePick = false;
+    var renamedAfterFilePick = false;
+    using var switched = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(probe),
+        (_, _, _) =>
+        {
+            convertedAfterFilePick = true;
+            return Task.FromResult(0);
+        },
+        static _ => { },
+        Dispatcher.CurrentDispatcher,
+        renameWorker: (_, _, _) =>
+        {
+            renamedAfterFilePick = true;
+            return Task.FromResult(0);
+        });
+    switched.SetAssemblySource(assembly);
+    Equal(MappingContent.SolidWorksAssemblyToSolidWorksAssembly, switched.SelectedMappingContent.Kind,
+        "未先选属性整备时，选 .SLDASM 会落到特征整备");
+    switched.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    switched.DrawingPrefix = "ZS-LHL";
+    switched.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(switched.IsRenameMode, "页面切到属性整备后必须进入改名模式");
+    switched.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(renamedAfterFilePick, "先选文件再切到改名，按图号改名必须走 rename Worker");
+    True(!convertedAfterFilePick, "改名不得走装配转换，也就不得生成 XT");
+
     var stripDirectory = Path.Combine(root, "property-prep-vm-strip");
     Directory.CreateDirectory(stripDirectory);
     var numberedAssembly = Path.Combine(stripDirectory, "ZS-LHL-00 总装.SLDASM");
@@ -2557,6 +2587,8 @@ static void TestUiModuleRegistration(string root)
             using var actionSet = JsonDocument.Parse(actionsJson);
             True(actionSet.RootElement.GetProperty("actions").GetArrayLength() >= 4,
                 "Minerva 页面必须声明转换和来源动作");
+            True(actionsJson.Contains("{selection.minerva.content.value}", StringComparison.Ordinal),
+                "解析/改名/洗图号必须带上页面当前转换内容，避免改名页误走特征整备");
             var dataResult = context.Bus.ExecuteAsync("minerva.ui.data view=status", "UI").GetAwaiter().GetResult();
             True(!dataResult.Success && dataResult.Message.Contains("parts", StringComparison.Ordinal),
                 "Minerva 页面不得再提供 status 数据源");
@@ -2592,6 +2624,22 @@ static void TestUiModuleRegistration(string root)
                 .ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult().Data;
             True(assemblyRows is { Count: 0 },
                 $"选完装配体不得自动解析，零件表应仍为空，实得 {assemblyRows?.Count}");
+            var renameContent = MappingContentOption.Available
+                .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep)
+                .DisplayName;
+            var stripOnRenamePage = context.Bus.ExecuteAsync(
+                "minerva.conversion.strip content=" + CommandParser.QuoteArg(renameContent), "UI")
+                .GetAwaiter().GetResult();
+            True(!stripOnRenamePage.Success
+                 && stripOnRenamePage.Message.Contains("请先解析", StringComparison.Ordinal)
+                 && !stripOnRenamePage.Message.Contains("特征整备", StringComparison.Ordinal),
+                "改名页洗图号必须进入改名模式，不得报只能在特征整备用。实得：" + stripOnRenamePage.Message);
+            var runOnRenamePage = context.Bus.ExecuteAsync(
+                "minerva.conversion.run content=" + CommandParser.QuoteArg(renameContent), "UI")
+                .GetAwaiter().GetResult();
+            True(!runOnRenamePage.Success
+                 && runOnRenamePage.Message.Contains("请先解析", StringComparison.Ordinal),
+                "改名页按图号改名必须走改名分支，不得开始转换生成 XT。实得：" + runOnRenamePage.Message);
         }
         catch (Exception ex)
         {

@@ -42,7 +42,7 @@ public sealed partial class AssemblyViewModel
         get
         {
             if (!IsRenameMode)
-                return "洗图号只在属性整备改名模式下可用。";
+                return "洗图号只在「属性整备（改名）」下可用，不能在特征整备或转换模式里用。";
             if (!CanEdit)
                 return "正在执行操作。";
             if (_probeResult is null)

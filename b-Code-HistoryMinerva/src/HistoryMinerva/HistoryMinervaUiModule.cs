@@ -13,6 +13,16 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     private MappingRuntimePaths? _runtimePaths;
     private AssemblyViewModel? _viewModel;
 
+    private static readonly ParameterSpec[] PageContentParameters =
+    [
+        new ParameterSpec
+        {
+            Name = "content",
+            Description = "页面当前转换内容",
+            Required = false,
+        },
+    ];
+
     public void Attach(IModuleContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -35,6 +45,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 Example = "minerva.conversion.probe",
                 Readonly = true,
                 RequiresUiThread = true,
+                Parameters = PageContentParameters,
                 Handler = ProbeCurrentAsync,
             });
             registry.Register(new CommandDescriptor
@@ -44,6 +55,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 Summary = "通过命令总线执行当前选择的 Minerva 转换",
                 Example = "minerva.conversion.run",
                 RequiresUiThread = true,
+                Parameters = PageContentParameters,
                 Handler = ConvertCurrentAsync,
             });
             registry.Register(new CommandDescriptor
@@ -53,6 +65,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 Summary = "通过命令总线按空格洗掉当前装配体的图号",
                 Example = "minerva.conversion.strip",
                 RequiresUiThread = true,
+                Parameters = PageContentParameters,
                 Handler = StripCurrentAsync,
             });
             registry.Register(new CommandDescriptor
@@ -144,6 +157,10 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
     private Task<CommandResult> ProbeCurrentAsync(CommandContext command)
     {
+        var contentError = ApplyPageContent(command);
+        if (contentError is not null)
+            return Task.FromResult(contentError);
+
         var viewModel = GetViewModel();
         if (!viewModel.CanProbe)
             return Task.FromResult(CommandResult.Fail(viewModel.StatusText));
@@ -153,6 +170,10 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
     private Task<CommandResult> ConvertCurrentAsync(CommandContext command)
     {
+        var contentError = ApplyPageContent(command);
+        if (contentError is not null)
+            return Task.FromResult(contentError);
+
         var viewModel = GetViewModel();
         if (!viewModel.CanConvert)
             return Task.FromResult(CommandResult.Fail(
@@ -163,11 +184,30 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
     private Task<CommandResult> StripCurrentAsync(CommandContext command)
     {
+        var contentError = ApplyPageContent(command);
+        if (contentError is not null)
+            return Task.FromResult(contentError);
+
         var viewModel = GetViewModel();
         if (!viewModel.CanExecuteStrip)
             return Task.FromResult(CommandResult.Fail(viewModel.StripBlockedReason));
 
         return ConversionCommandHandlers.StripAsync(viewModel, command);
+    }
+
+    /// <summary>
+    /// Aurora 转换内容下拉只改选择通道，不会调用 <c>minerva.ui.content</c>。
+    /// 选 .SLDASM 时 ViewModel 会落到特征整备。按钮必须带上页面当前内容，
+    /// 否则改名页的「按图号改名」会去生成 XT，「洗图号」会按错模式拒绝。
+    /// </summary>
+    private CommandResult? ApplyPageContent(CommandContext command)
+    {
+        var content = command.GetString("content")?.Trim();
+        if (string.IsNullOrWhiteSpace(content))
+            return null;
+
+        var result = SetContent(command);
+        return result.Success ? null : result;
     }
 
     private CommandResult CancelCurrent(CommandContext _)
@@ -347,9 +387,9 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
           "owner": "HistoryMinerva",
           "actions": [
             { "id": "minerva.source.set", "title": "设置来源", "command": "minerva.ui.source", "args": { "path": "{value}" }, "summary": "设置文件或文件夹作为转换来源" },
-            { "id": "minerva.conversion.probe", "title": "解析装配体", "command": "minerva.conversion.probe", "summary": "解析当前装配体来源" },
-            { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "summary": "执行当前转换" },
-            { "id": "minerva.conversion.strip", "title": "按空格洗图号", "command": "minerva.conversion.strip", "summary": "按文件名第一个空格洗掉图号" },
+            { "id": "minerva.conversion.probe", "title": "解析装配体", "command": "minerva.conversion.probe", "args": { "content": "{selection.minerva.content.value}" }, "summary": "解析当前装配体来源" },
+            { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "args": { "content": "{selection.minerva.content.value}" }, "summary": "执行当前转换" },
+            { "id": "minerva.conversion.strip", "title": "按空格洗图号", "command": "minerva.conversion.strip", "args": { "content": "{selection.minerva.content.value}" }, "summary": "按文件名第一个空格洗掉图号" },
             { "id": "minerva.conversion.cancel", "title": "取消", "command": "minerva.conversion.cancel", "summary": "取消当前操作" },
             { "id": "minerva.options.recognize", "title": "更新识别选项", "command": "minerva.ui.options", "args": { "option": "recognize", "value": "{value}" }, "summary": "开启或关闭特征与草图识别" },
             { "id": "minerva.options.continue", "title": "更新失败策略", "command": "minerva.ui.options", "args": { "option": "continue", "value": "{value}" }, "summary": "设置零件失败时是否继续" },
