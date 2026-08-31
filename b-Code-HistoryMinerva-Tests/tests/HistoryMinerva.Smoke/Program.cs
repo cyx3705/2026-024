@@ -2569,8 +2569,8 @@ static void TestUiModuleRegistration(string root)
         "Minerva must expose a source setter for the descriptive page");
     True(context.Registry.TryGet("minerva.ui.picksource", out var pick),
         "Minerva must own the source file dialog so it does not open the last CAD folder");
-    True(pick.RequiresUiThread && pick.HiddenReason is not null,
-        "minerva.ui.picksource 必须在 UI 线程上，且不对远程面暴露");
+    True(pick.RequiresUiThread && pick.HiddenReason is not null && pick.AllowUnspecifiedParameters,
+        "minerva.ui.picksource 必须在 UI 线程上，接受页面转换内容，且不对远程面暴露");
     True(context.Registry.TryGet("minerva.ui.content", out var content),
         "Minerva must expose a content setter for the descriptive page");
     True(describe.Readonly && data.Readonly && actions.Readonly,
@@ -2657,8 +2657,10 @@ static void TestUiModuleRegistration(string root)
                 "Minerva 页面必须使用 Aurora switch 分支");
             True(pageJson.Contains("\"kind\": \"sourcePicker\"", StringComparison.Ordinal),
                 "Minerva 页面必须使用 Aurora 来源选择器");
-            True(pageJson.Contains("minerva.ui.picksource", StringComparison.Ordinal),
-                "来源选择器必须走 Minerva 自己的选文件命令，不得打开宿主上次的 CAD 目录");
+            True(pageJson.Contains("\"selectCommand\": \"minerva.ui.picksource content={selection.minerva.content.value}\"", StringComparison.Ordinal),
+                "来源选择必须带上页面当前转换内容，属性整备才能打开装配体文件对话框");
+            True(pageJson.Contains("minerva.content.set", StringComparison.Ordinal),
+                "转换内容下拉必须把当前项写进模块，属性整备才能选装配体");
             True(!pageJson.Contains("aurora.ui.selectfile", StringComparison.Ordinal),
                 "来源选择不得再调用 aurora.ui.selectfile");
             True(!pageJson.Contains("设置来源", StringComparison.Ordinal)
@@ -2670,8 +2672,10 @@ static void TestUiModuleRegistration(string root)
             using var actionSet = JsonDocument.Parse(actionsJson);
             True(actionSet.RootElement.GetProperty("actions").GetArrayLength() >= 4,
                 "Minerva 页面必须声明转换和来源动作");
-            True(actionsJson.Contains("{selection.minerva.content.value}", StringComparison.Ordinal),
-                "解析/改名/洗图号必须带上页面当前转换内容，避免改名页误走特征整备");
+            True(actionsJson.Contains("\"path\": \"{value}\", \"content\": \"{selection.minerva.content.value}\"", StringComparison.Ordinal),
+                "设置来源必须带上页面当前转换内容，属性整备才能收下装配体文件");
+            True(actionsJson.Contains("minerva.content.set", StringComparison.Ordinal),
+                "转换内容必须声明写回动作");
             var dataResult = context.Bus.ExecuteAsync("minerva.ui.data view=status", "UI").GetAwaiter().GetResult();
             True(!dataResult.Success && dataResult.Message.Contains("parts", StringComparison.Ordinal),
                 "Minerva 页面不得再提供 status 数据源");
@@ -2731,6 +2735,16 @@ static void TestUiModuleRegistration(string root)
             var renameContent = MappingContentOption.Available
                 .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep)
                 .DisplayName;
+            var propertySource = context.Bus.ExecuteAsync(
+                "minerva.ui.source content=" + CommandParser.QuoteArg(renameContent)
+                + " path=" + CommandParser.QuoteArg(assemblyFile), "UI")
+                .GetAwaiter().GetResult();
+            True(propertySource.Success && !propertySource.Message.StartsWith("未更改来源：", StringComparison.Ordinal),
+                "属性整备必须选 .SLDASM 装配体，不得当零件文件夹。实得：" + propertySource.Message);
+            var propertyRows = (IReadOnlyList<IReadOnlyDictionary<string, string>>?)context.Bus
+                .ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult().Data;
+            True(propertyRows is { Count: 0 },
+                $"属性整备选完装配体不得自动解析，实得 {propertyRows?.Count}");
             var stripOnRenamePage = context.Bus.ExecuteAsync(
                 "minerva.conversion.strip content=" + CommandParser.QuoteArg(renameContent), "UI")
                 .GetAwaiter().GetResult();

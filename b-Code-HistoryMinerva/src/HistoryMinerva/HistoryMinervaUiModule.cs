@@ -119,6 +119,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 CommandClass = "ui",
                 Summary = "按当前转换内容选择装配体文件或零件文件夹",
                 RequiresUiThread = true,
+                AllowUnspecifiedParameters = true,
                 HiddenReason = "Aurora 来源选择器内部协议，不对远程消费面暴露",
                 Handler = CommandDescriptor.Sync(PickSource),
             });
@@ -204,14 +205,13 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     }
 
     /// <summary>
-    /// Aurora 转换内容下拉只改选择通道，不会调用 <c>minerva.ui.content</c>。
-    /// 选 .SLDASM 时 ViewModel 会落到特征整备。按钮必须带上页面当前内容，
-    /// 否则改名页的「按图号改名」会去生成 XT，「洗图号」会按错模式拒绝。
+    /// Aurora 转换内容下拉默认只改选择通道。选来源、解析、改名必须先套用页面当前内容，
+    /// 否则属性整备仍按默认零件文件夹去选目录。
     /// </summary>
     private CommandResult? ApplyPageContent(CommandContext command)
     {
         var content = command.GetString("content")?.Trim();
-        if (string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(content) || content.StartsWith('{'))
             return null;
 
         var result = SetContent(command);
@@ -228,10 +228,14 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             : CommandResult.Fail("Minerva 当前没有可取消的操作。");
     }
 
-    private CommandResult PickSource(CommandContext _)
+    private CommandResult PickSource(CommandContext command)
     {
         try
         {
+            var contentError = ApplyPageContent(command);
+            if (contentError is not null)
+                return CommandResult.Ok("未选择来源：" + contentError.Message);
+
             var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive)
                 ?? Application.Current?.MainWindow;
             var picked = GetViewModel().SelectedMappingContent.IsAssemblySource
@@ -249,6 +253,10 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
     private CommandResult SetSource(CommandContext command)
     {
+        var contentError = ApplyPageContent(command);
+        if (contentError is not null)
+            return CommandResult.Ok("未更改来源：" + contentError.Message);
+
         var path = command.GetString("path")?.Trim();
         if (string.IsNullOrWhiteSpace(path))
             return CommandResult.Ok("来源路径为空，未更改。");
@@ -260,8 +268,6 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         }
         catch (Exception ex)
         {
-            // 文件对话框刚关上时，失败指令会让宿主抢控制台并重排停靠，
-            // 整窗像死了。类型不对、路径无效都必须把错误说清楚，但命令本身成功返回。
             return CommandResult.Ok("未更改来源：" + ex.Message);
         }
     }
@@ -367,8 +373,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             "placement": { "side": "center", "ratio": 0.75, "visible": true, "singleton": true },
             "content": { "type": "stack", "gap": "tight", "children": [
               { "type": "panel", "id": "mapping-controls", "rows": [{ "mode": "flex", "widgets": [
-                { "kind": "sourcePicker", "id": "source", "label": "来源", "value": "", "selectCommand": "minerva.ui.picksource", "commitAction": "minerva.source.set", "flex": true },
-                { "kind": "textbox", "id": "content", "label": "转换内容", "mode": "select", "value": "Solid Edge .par → SolidWorks .SLDPRT", "channel": "minerva.content", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "content" } }, "minWidth": 260 }
+                { "kind": "sourcePicker", "id": "source", "label": "来源", "value": "", "selectCommand": "minerva.ui.picksource content={selection.minerva.content.value}", "commitAction": "minerva.source.set", "flex": true },
+                { "kind": "textbox", "id": "content", "label": "转换内容", "mode": "select", "value": "Solid Edge .par → SolidWorks .SLDPRT", "channel": "minerva.content", "commitAction": "minerva.content.set", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "content" } }, "minWidth": 260 }
               ] }] },
               { "type": "switch", "id": "mapping-modes", "source": "{selection.minerva.content.value}", "children": [
                 { "case": "Solid Edge .par → SolidWorks .SLDPRT", "type": "stack", "gap": "tight", "children": [
@@ -402,7 +408,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
           "schemaVersion": 1,
           "owner": "HistoryMinerva",
           "actions": [
-            { "id": "minerva.source.set", "title": "设置来源", "command": "minerva.ui.source", "args": { "path": "{value}" }, "summary": "设置文件或文件夹作为转换来源" },
+            { "id": "minerva.source.set", "title": "设置来源", "command": "minerva.ui.source", "args": { "path": "{value}", "content": "{selection.minerva.content.value}" }, "summary": "按当前转换内容设置装配体文件或零件文件夹" },
+            { "id": "minerva.content.set", "title": "设置转换内容", "command": "minerva.ui.content", "args": { "content": "{value}" }, "summary": "把页面当前转换内容写进模块" },
             { "id": "minerva.conversion.probe", "title": "解析装配体", "command": "minerva.conversion.probe", "args": { "content": "{selection.minerva.content.value}" }, "summary": "解析当前装配体来源" },
             { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "args": { "content": "{selection.minerva.content.value}" }, "summary": "执行当前转换" },
             { "id": "minerva.conversion.strip", "title": "按空格洗图号", "command": "minerva.conversion.strip", "args": { "content": "{selection.minerva.content.value}" }, "summary": "按文件名第一个空格洗掉图号" },
