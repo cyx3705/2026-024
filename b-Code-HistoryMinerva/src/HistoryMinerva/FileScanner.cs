@@ -8,7 +8,10 @@ public static class FileScanner
     public static bool HasPartFiles(string selectedDirectory)
     {
         var workingDirectory = NormalizeExistingDirectory(selectedDirectory);
-        return Directory.EnumerateFiles(workingDirectory, "*", SearchOption.TopDirectoryOnly)
+        return Directory.EnumerateFiles(
+                workingDirectory,
+                "*" + ConversionPathLayout.SolidEdgePartExtension,
+                SearchOption.TopDirectoryOnly)
             .Any(path => ConversionPathLayout.HasExtension(path, ConversionPathLayout.SolidEdgePartExtension));
     }
 
@@ -30,7 +33,10 @@ public static class FileScanner
         var xtDirectory = mode == ConversionMode.Ohs ? layout!.XtDirectory : externalDirectories!.XtDirectory;
         var swDirectory = mode == ConversionMode.Ohs ? layout!.SolidWorksDirectory : externalDirectories!.SolidWorksDirectory;
 
-        return Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.TopDirectoryOnly)
+        return Directory.EnumerateFiles(
+                sourceDirectory,
+                "*" + ConversionPathLayout.SolidEdgePartExtension,
+                SearchOption.TopDirectoryOnly)
             .Where(path => ConversionPathLayout.HasExtension(path, ConversionPathLayout.SolidEdgePartExtension))
             .OrderBy(path => Path.GetFileName(path), StringComparer.CurrentCultureIgnoreCase)
             .Select(path =>
@@ -49,9 +55,6 @@ public static class FileScanner
     {
         if (string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("请选择文件夹。", nameof(path));
-        var fullPath = Path.GetFullPath(path.Trim());
-        if (!Directory.Exists(fullPath))
-            throw new DirectoryNotFoundException($"文件夹不存在：{fullPath}");
-        return fullPath;
+        return Path.GetFullPath(path.Trim());
     }
 }
