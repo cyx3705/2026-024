@@ -65,9 +65,10 @@ internal static class SolidWorksAssemblyExplorer
 
             var occurrences = new List<AssemblyOccurrence>();
             var warnings = new List<string>();
+            var skippedPurchased = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var documents = new List<AssemblyDocumentReading>
             {
-                ReadDocument(interop, rootPath, occurrences, warnings, cancellationToken),
+                ReadDocument(interop, rootPath, occurrences, warnings, cancellationToken, rootPath, skippedPurchased),
             };
 
             var uniqueParts = occurrences
@@ -79,18 +80,27 @@ internal static class SolidWorksAssemblyExplorer
 
             // 每个唯一子装配都作为**独立顶层文档**再打开一次，读到的矩阵天然就是它自己
             // 坐标系下的局部矩阵，不需要拿父级世界矩阵求逆换算（与 V3.3 方案 A 同源）。
+            // 子文件夹里的外购件装配体不打开。
             var subAssemblyPaths = occurrences
                 .Where(item => item.IsSubAssembly && !item.IsSuppressed && File.Exists(item.SourcePath))
                 .Select(item => Path.GetFullPath(item.SourcePath))
                 .Where(path => ConversionPathLayout.HasExtension(
-                    path, ConversionPathLayout.SolidWorksAssemblyExtension))
+                    path, ConversionPathLayout.SolidWorksAssemblyExtension)
+                    && !ConversionPathLayout.IsOutsideAssemblyDirectory(path, rootPath))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(path => path, StringComparer.CurrentCultureIgnoreCase)
                 .ToArray();
             foreach (var path in subAssemblyPaths)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                documents.Add(ReadDocument(interop, path, output: null, warnings, cancellationToken));
+                documents.Add(ReadDocument(
+                    interop, path, output: null, warnings, cancellationToken, rootPath, skippedPurchased));
+            }
+
+            if (skippedPurchased.Count > 0)
+            {
+                warnings.Add(
+                    $"已跳过 {skippedPurchased.Count} 个外购件（子文件夹，与装配体不同级）。");
             }
 
             return new AssemblyProbeResult(
@@ -142,7 +152,9 @@ internal static class SolidWorksAssemblyExplorer
         string assemblyPath,
         List<AssemblyOccurrence>? output,
         List<string> warnings,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string rootAssemblyPath,
+        HashSet<string> skippedPurchased)
     {
         var hash = ComputeSha256(assemblyPath);
         var children = new List<AssemblyChild>();
@@ -177,9 +189,13 @@ internal static class SolidWorksAssemblyExplorer
                 local.Add($"轻化组件解析返回 {resolved}：{Path.GetFileName(assemblyPath)}");
 
             var directChildren = interop.GetAssemblyComponents(model, topLevelOnly: true);
+            var keptDirect = new List<object>();
             foreach (var component in directChildren)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (TrySkipPurchased(interop, component, rootAssemblyPath, skippedPurchased))
+                    continue;
+                keptDirect.Add(component);
                 children.Add(ReadChild(interop, component));
             }
 
@@ -188,11 +204,13 @@ internal static class SolidWorksAssemblyExplorer
                 foreach (var component in interop.GetAssemblyComponents(model, topLevelOnly: false))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (TrySkipPurchased(interop, component, rootAssemblyPath, skippedPurchased))
+                        continue;
                     output.Add(ReadOccurrence(interop, component, warnings));
                 }
             }
 
-            relations.AddRange(ReadRelations(interop, model, assemblyPath, directChildren, local, cancellationToken));
+            relations.AddRange(ReadRelations(interop, model, assemblyPath, keptDirect, local, cancellationToken));
 
             if (openedHere)
             {
@@ -661,6 +679,31 @@ internal static class SolidWorksAssemblyExplorer
         (direction[0] * transform[1]) + (direction[1] * transform[4]) + (direction[2] * transform[7]),
         (direction[0] * transform[2]) + (direction[1] * transform[5]) + (direction[2] * transform[8]),
     ];
+
+    /// <summary>
+    /// 子文件夹里的外购件只看路径、不 Exists、不打开模型。正式零件与装配体同级。
+    /// </summary>
+    private static bool TrySkipPurchased(
+        SolidWorksInteropBridge interop,
+        object component,
+        string rootAssemblyPath,
+        HashSet<string> skippedPurchased)
+    {
+        var rawPath = interop.GetComponentPath(component);
+        if (!ConversionPathLayout.IsOutsideAssemblyDirectory(rawPath, rootAssemblyPath))
+            return false;
+
+        try
+        {
+            skippedPurchased.Add(Path.GetFullPath(rawPath.Trim()));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            skippedPurchased.Add(rawPath.Trim());
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// GetPathName 可能是缺失文件、直接给出的 <c>.lnk</c>，或虚拟件空路径。
