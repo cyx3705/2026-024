@@ -2,8 +2,6 @@ using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Modules;
 using HistoryMinerva.Contracts;
 using System.IO;
-using System.Windows;
-using System.Windows.Threading;
 
 namespace HistoryMinerva;
 
@@ -112,7 +110,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 Summary = "设置 Minerva 转换来源路径",
                 RequiresUiThread = true,
                 AllowUnspecifiedParameters = true,
-                Handler = SetSourceAsync,
+                Handler = CommandDescriptor.Sync(SetSource),
             });
             registry.Register(new CommandDescriptor
             {
@@ -220,19 +218,6 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             : CommandResult.Fail("Minerva 当前没有可取消的操作。");
     }
 
-    /// <summary>
-    /// 选完文件后 Aurora 会立刻刷新本页表格。必须先把对话框那一层消息泵收掉，
-    /// 否则列宽分摊和半像素抖动叠在同一帧，整窗像死了。这里不解析装配体。
-    /// </summary>
-    private async Task<CommandResult> SetSourceAsync(CommandContext command)
-    {
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher is not null && dispatcher.CheckAccess())
-            await dispatcher.InvokeAsync(static () => { }, DispatcherPriority.Background);
-
-        return SetSource(command);
-    }
-
     private CommandResult SetSource(CommandContext command)
     {
         var path = command.GetString("path")?.Trim();
@@ -244,9 +229,11 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             GetViewModel().SetSourcePath(path);
             return CommandResult.Ok("已设置 Minerva 转换来源。");
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException)
+        catch (Exception ex)
         {
-            return CommandResult.Fail(ex.Message);
+            // 文件对话框刚关上时，失败指令会让宿主抢控制台并重排停靠，
+            // 整窗像死了。类型不对、路径无效都必须把错误说清楚，但命令本身成功返回。
+            return CommandResult.Ok("未更改来源：" + ex.Message);
         }
     }
 

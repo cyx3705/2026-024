@@ -2640,6 +2640,22 @@ static void TestUiModuleRegistration(string root)
             True(!runOnRenamePage.Success
                  && runOnRenamePage.Message.Contains("请先解析", StringComparison.Ordinal),
                 "改名页按图号改名必须走改名分支，不得开始转换生成 XT。实得：" + runOnRenamePage.Message);
+            var wrongType = context.Bus.ExecuteAsync(
+                "minerva.ui.source path=" + CommandParser.QuoteArg(Path.Combine(root, "readme.docx")), "UI")
+                .GetAwaiter().GetResult();
+            True(wrongType.Success, "不支持的文件类型不得失败去抢控制台卡死整窗。实得：" + wrongType.Message);
+            True(wrongType.Message.StartsWith("未更改来源：", StringComparison.Ordinal),
+                "不支持的文件类型必须说明未更改来源。实得：" + wrongType.Message);
+            var stillAssembly = (IReadOnlyList<IReadOnlyDictionary<string, string>>?)context.Bus
+                .ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult().Data;
+            True(stillAssembly is { Count: 0 },
+                "类型错误后不得改掉已经选好的装配来源");
+            var keptSource = context.Bus.ExecuteAsync(
+                "minerva.conversion.run content=" + CommandParser.QuoteArg(renameContent), "UI")
+                .GetAwaiter().GetResult();
+            True(!keptSource.Success
+                 && keptSource.Message.Contains("请先解析", StringComparison.Ordinal),
+                "类型错误后必须仍保留已选装配来源。实得：" + keptSource.Message);
         }
         catch (Exception ex)
         {

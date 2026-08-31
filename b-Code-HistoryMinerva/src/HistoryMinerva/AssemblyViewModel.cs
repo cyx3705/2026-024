@@ -260,7 +260,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     public bool IsPartDirectoryMode => SourceKind == ConversionSourceKind.PartDirectory
         || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource;
     public bool CanEdit => !IsBusy;
-    public bool CanProbe => CanEdit && IsAssemblyMode && File.Exists(SourceAssemblyPath)
+    public bool CanProbe => CanEdit && IsAssemblyMode
+        && !string.IsNullOrWhiteSpace(SourceAssemblyPath)
         && ConversionPathLayout.HasExtension(
             SourceAssemblyPath, ConversionPathLayout.GetSourceAssemblyExtension(SourceFormat));
     public bool CanConvert => CanEdit && (IsRenameMode
@@ -352,15 +353,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             return;
 
         var trimmed = path.Trim();
-        if (Directory.Exists(trimmed))
-        {
-            SetPartDirectory(trimmed);
-            return;
-        }
-
-        if (!File.Exists(trimmed))
-            throw new FileNotFoundException("来源路径不存在。", trimmed);
-
+        // 只按扩展名分流。文件对话框已经选过文件；再 Exists 会在网盘 CAD 路径上
+        // 把 UI 线程卡住，整窗像死了。文件在不在，解析/转换时再查。
         if (MappingContentOption.ForAssemblyFile(trimmed) is not null)
         {
             SetAssemblySource(trimmed);
@@ -370,9 +364,15 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         if (ConversionPathLayout.HasExtension(trimmed, ConversionPathLayout.SolidEdgePartExtension))
         {
             var directory = Path.GetDirectoryName(Path.GetFullPath(trimmed));
-            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            if (string.IsNullOrWhiteSpace(directory))
                 throw new DirectoryNotFoundException($"零件文件所在文件夹不存在：{trimmed}");
             SetPartDirectory(directory);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(Path.GetExtension(trimmed)))
+        {
+            SetPartDirectory(trimmed);
             return;
         }
 
@@ -410,9 +410,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             return;
 
         var fullPath = Path.GetFullPath(path.Trim());
-        if (!Directory.Exists(fullPath))
-            throw new DirectoryNotFoundException($"文件夹不存在：{fullPath}");
-
         SelectMappingContentForSource(MappingContent.SolidEdgePartToSolidWorksPart);
         ClearSourceResults();
         ResetOutputDirectories();

@@ -95,7 +95,7 @@ public sealed partial class AssemblyViewModel
 
     internal bool CanKeepSolidWorksAssembly(MappingContentOption next)
         => _sourceKind == ConversionSourceKind.Assembly
-           && File.Exists(_sourceAssemblyPath)
+           && !string.IsNullOrWhiteSpace(_sourceAssemblyPath)
            && SelectedMappingContent.IsAssemblySource
            && next.IsAssemblySource
            && SelectedMappingContent.SourceFormat == next.SourceFormat
