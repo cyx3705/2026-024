@@ -400,7 +400,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         if (!(SelectedMappingContent.IsAssemblySource
               && SelectedMappingContent.SourceFormat == option.SourceFormat))
             SelectMappingContentForSource(option.Kind);
-        StatusText = "正在准备解析装配体";
+        StatusText = "已选择装配体，点击解析装配体";
         NotifySourceChanged();
     }
 

@@ -2,6 +2,8 @@ using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Modules;
 using HistoryMinerva.Contracts;
 using System.IO;
+using System.Windows;
+using System.Windows.Threading;
 
 namespace HistoryMinerva;
 
@@ -97,7 +99,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 Summary = "设置 Minerva 转换来源路径",
                 RequiresUiThread = true,
                 AllowUnspecifiedParameters = true,
-                Handler = CommandDescriptor.Sync(SetSource),
+                Handler = SetSourceAsync,
             });
             registry.Register(new CommandDescriptor
             {
@@ -178,11 +180,24 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             : CommandResult.Fail("Minerva 当前没有可取消的操作。");
     }
 
+    /// <summary>
+    /// 选完文件后 Aurora 会立刻刷新本页表格。必须先把对话框那一层消息泵收掉，
+    /// 否则列宽分摊和半像素抖动叠在同一帧，整窗像死了。这里不解析装配体。
+    /// </summary>
+    private async Task<CommandResult> SetSourceAsync(CommandContext command)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && dispatcher.CheckAccess())
+            await dispatcher.InvokeAsync(static () => { }, DispatcherPriority.Background);
+
+        return SetSource(command);
+    }
+
     private CommandResult SetSource(CommandContext command)
     {
         var path = command.GetString("path")?.Trim();
         if (string.IsNullOrWhiteSpace(path))
-            return CommandResult.Fail("缺少 path");
+            return CommandResult.Ok("来源路径为空，未更改。");
 
         try
         {
@@ -218,7 +233,10 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     {
         var option = command.GetString("option")?.Trim().ToLowerInvariant();
         var value = command.GetString("value")?.Trim();
-        if (string.IsNullOrWhiteSpace(option) || string.IsNullOrWhiteSpace(value))
+        if (string.IsNullOrWhiteSpace(option))
+            return CommandResult.Fail("需要 option");
+        if (!string.Equals(option, "prefix", StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(value))
             return CommandResult.Fail("需要 option 和 value");
 
         var model = GetViewModel();
@@ -227,16 +245,16 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             switch (option)
             {
                 case "recognize":
-                    model.RecognizeFeatures = ParseSwitch(value);
+                    model.RecognizeFeatures = ParseSwitch(value ?? string.Empty);
                     break;
                 case "continue":
-                    model.ContinueWhenPartFails = ParseSwitch(value);
+                    model.ContinueWhenPartFails = ParseSwitch(value ?? string.Empty);
                     break;
                 case "mates":
-                    model.RebuildMates = ParseSwitch(value);
+                    model.RebuildMates = ParseSwitch(value ?? string.Empty);
                     break;
                 case "prefix":
-                    model.DrawingPrefix = value;
+                    model.DrawingPrefix = value ?? string.Empty;
                     break;
                 default:
                     return CommandResult.Fail("未知转换选项");

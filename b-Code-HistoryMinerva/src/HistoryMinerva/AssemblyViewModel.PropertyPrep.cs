@@ -160,7 +160,7 @@ public sealed partial class AssemblyViewModel
             if (keptProbe is not null && keptPlan is not null && keptHash is not null)
                 ApplyProbeResult(keptProbe, keptPlan, keptHash);
             else
-                StatusText = "正在准备解析装配体";
+                StatusText = "已选择装配体，点击解析装配体";
             SyncFeatureRecognitionDefault(value.Kind);
             return;
         }

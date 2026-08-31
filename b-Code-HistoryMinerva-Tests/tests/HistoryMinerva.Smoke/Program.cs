@@ -2576,6 +2576,22 @@ static void TestUiModuleRegistration(string root)
             var rows = (IReadOnlyList<IReadOnlyDictionary<string, string>>?)partRows.Data;
             True(rows is { Count: 1 }, $"选完 .par 后零件表应有 1 行，实得 {rows?.Count}");
             Equal("阀体.par", rows![0]["file"], "零件表第一行必须是所选 .par 文件名");
+
+            var emptySource = context.Bus.ExecuteAsync("minerva.ui.source", "UI").GetAwaiter().GetResult();
+            True(emptySource.Success, "空来源路径不得失败去抢控制台。实得：" + emptySource.Message);
+            var emptyPrefix = context.Bus.ExecuteAsync(
+                "minerva.ui.options option=prefix value=" + CommandParser.QuoteArg(string.Empty), "UI")
+                .GetAwaiter().GetResult();
+            True(emptyPrefix.Success, "空图号前缀失焦不得失败。实得：" + emptyPrefix.Message);
+            var assemblyFile = Path.Combine(root, "ui-source-asm.SLDASM");
+            File.WriteAllText(assemblyFile, "asm");
+            var pickedAssembly = context.Bus.ExecuteAsync(
+                "minerva.ui.source path=" + CommandParser.QuoteArg(assemblyFile), "UI").GetAwaiter().GetResult();
+            True(pickedAssembly.Success, "选 .SLDASM 必须只写入装配来源。实得：" + pickedAssembly.Message);
+            var assemblyRows = (IReadOnlyList<IReadOnlyDictionary<string, string>>?)context.Bus
+                .ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult().Data;
+            True(assemblyRows is { Count: 0 },
+                $"选完装配体不得自动解析，零件表应仍为空，实得 {assemblyRows?.Count}");
         }
         catch (Exception ex)
         {
