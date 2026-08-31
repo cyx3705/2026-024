@@ -615,7 +615,7 @@ static void TestSingleShotCancellation(string root)
         static (_, _, _) => Task.FromResult(0),
         static _ => { },
         Dispatcher.CurrentDispatcher);
-    viewModel.SetAssemblySource(assembly);
+    UseAssemblySource(viewModel, assembly);
     var run = viewModel.ProbeAsync();
     True(started.Wait(TimeSpan.FromSeconds(3)), "取消 Smoke 的探查任务必须启动");
     True(viewModel.CanCancel && viewModel.Cancel(), "运行期间第一次取消必须生效");
@@ -664,7 +664,7 @@ static void TestConversionCommandBusOutcomes(string root)
                throw new InvalidOperationException("模拟 Worker 失败");
            }))
     {
-        failedViewModel.SetAssemblySource(sourceAssembly);
+        UseAssemblySource(failedViewModel, sourceAssembly);
         var (bus, log) = CreateProbeBus(failedViewModel);
         var result = bus.ExecuteAsync("minerva.conversion.probe", "Smoke").GetAwaiter().GetResult();
         True(!result.Success && result.Message.Contains("模拟 Worker 失败", StringComparison.Ordinal),
@@ -690,7 +690,7 @@ static void TestConversionCommandBusOutcomes(string root)
                throw new InvalidOperationException("不可达");
            }))
     {
-        canceledViewModel.SetAssemblySource(sourceAssembly);
+        UseAssemblySource(canceledViewModel, sourceAssembly);
         var (bus, log) = CreateProbeBus(canceledViewModel);
         var run = bus.ExecuteAsync("minerva.conversion.probe", "Smoke");
         True(started.Wait(TimeSpan.FromSeconds(3)) && canceledViewModel.Cancel(),
@@ -2084,7 +2084,7 @@ static void TestPropertyPrepViewModel(string root)
         });
     viewModel.SelectedMappingContent = MappingContentOption.Available
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
-    viewModel.SetAssemblySource(assembly);
+    UseAssemblySource(viewModel, assembly);
     Equal(MappingContent.SolidWorksAssemblyPropertyPrep, viewModel.SelectedMappingContent.Kind,
         "已经选了属性整备时，再选 .SLDASM 不得被切回特征整备");
     True(viewModel.IsRenameMode, "属性整备项必须进入改名模式");
@@ -2119,9 +2119,9 @@ static void TestPropertyPrepViewModel(string root)
             renamedAfterFilePick = true;
             return Task.FromResult(0);
         });
-    switched.SetAssemblySource(assembly);
+    UseAssemblySource(switched, assembly);
     Equal(MappingContent.SolidWorksAssemblyToSolidWorksAssembly, switched.SelectedMappingContent.Kind,
-        "未先选属性整备时，选 .SLDASM 会落到特征整备");
+        "未先选属性整备时，装配体来源跟当前特征整备走，不得靠文件改转换内容");
     switched.SelectedMappingContent = MappingContentOption.Available
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
     switched.DrawingPrefix = "ZS-LHL";
@@ -2163,7 +2163,7 @@ static void TestPropertyPrepViewModel(string root)
         });
     stripModel.SelectedMappingContent = MappingContentOption.Available
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
-    stripModel.SetAssemblySource(numberedAssembly);
+    UseAssemblySource(stripModel, numberedAssembly);
     stripModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(!stripModel.CanConvert, "未填前缀时不得按图号改名");
@@ -2589,10 +2589,10 @@ static void TestUiModuleRegistration(string root)
     {
         try
         {
-            var dialog = SourcePickDialog.Create();
+            var dialog = SourcePickDialog.CreateFile();
             True(!dialog.CheckFileExists && !dialog.CheckPathExists && !dialog.DereferenceLinks && dialog.RestoreDirectory,
                 "选文件不得核验网盘路径，也不得跟踪快捷方式进 CAD 库");
-            True(!dialog.AddToRecent && dialog.ClientGuid == SourcePickDialog.ClientId,
+            True(!dialog.AddToRecent && dialog.ClientGuid == SourcePickDialog.FileClientId,
                 "选文件不得写入最近项，也不得与宿主 aurora.ui.selectfile 共用上次目录");
             True(string.IsNullOrEmpty(dialog.Filter), "不得靠文件类型过滤器防卡");
             var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -2610,6 +2610,12 @@ static void TestUiModuleRegistration(string root)
             True(
                 string.Equals(dialog.DefaultDirectory, dialog.InitialDirectory, StringComparison.OrdinalIgnoreCase),
                 "DefaultDirectory 必须与 InitialDirectory 同为桌面，避免 Windows 回退到上次 CAD 库");
+            var folderDialog = SourcePickDialog.CreateFolder();
+            True(!folderDialog.AddToRecent && folderDialog.ClientGuid == SourcePickDialog.FolderClientId,
+                "选文件夹必须与选装配体文件分开，不得共用上次 CAD 目录");
+            True(
+                string.Equals(folderDialog.InitialDirectory, dialog.InitialDirectory, StringComparison.OrdinalIgnoreCase),
+                "选文件夹同样从桌面打开");
 
             var result = context.Bus.ExecuteAsync("minerva.ui.describe", "UI").GetAwaiter().GetResult();
             var descriptionJson = result.Data as string ?? result.Message;
@@ -2677,14 +2683,19 @@ static void TestUiModuleRegistration(string root)
             Directory.CreateDirectory(partsDir);
             var partFile = Path.Combine(partsDir, "阀体.par");
             File.WriteAllText(partFile, "part");
-            var pickedPart = context.Bus.ExecuteAsync(
+            var rejectedPartFile = context.Bus.ExecuteAsync(
                 "minerva.ui.source path=" + CommandParser.QuoteArg(partFile), "UI").GetAwaiter().GetResult();
-            True(pickedPart.Success, "选 .par 文件必须当成零件文件夹来源，不得抛成装配体错误。实得：" + pickedPart.Message);
+            True(rejectedPartFile.Success && rejectedPartFile.Message.StartsWith("未更改来源：", StringComparison.Ordinal),
+                "零件转换内容下选 .par 文件不得混成文件夹。实得：" + rejectedPartFile.Message);
+
+            var pickedFolder = context.Bus.ExecuteAsync(
+                "minerva.ui.source path=" + CommandParser.QuoteArg(partsDir), "UI").GetAwaiter().GetResult();
+            True(pickedFolder.Success, "零件转换内容下必须选文件夹。实得：" + pickedFolder.Message);
             var partRows = context.Bus.ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult();
-            True(partRows.Success, "选完 .par 后零件表必须能取数");
+            True(partRows.Success, "选完零件文件夹后零件表必须能取数");
             var rows = (IReadOnlyList<IReadOnlyDictionary<string, string>>?)partRows.Data;
-            True(rows is { Count: 1 }, $"选完 .par 后零件表应有 1 行，实得 {rows?.Count}");
-            Equal("阀体.par", rows![0]["file"], "零件表第一行必须是所选 .par 文件名");
+            True(rows is { Count: 1 }, $"选完零件文件夹后零件表应有 1 行，实得 {rows?.Count}");
+            Equal("阀体.par", rows![0]["file"], "零件表第一行必须是文件夹里的 .par 文件名");
 
             var emptySource = context.Bus.ExecuteAsync("minerva.ui.source", "UI").GetAwaiter().GetResult();
             True(emptySource.Success, "空来源路径不得失败去抢控制台。实得：" + emptySource.Message);
@@ -2694,9 +2705,25 @@ static void TestUiModuleRegistration(string root)
             True(emptyPrefix.Success, "空图号前缀失焦不得失败。实得：" + emptyPrefix.Message);
             var assemblyFile = Path.Combine(root, "ui-source-asm.SLDASM");
             File.WriteAllText(assemblyFile, "asm");
+            var mixedAssembly = context.Bus.ExecuteAsync(
+                "minerva.ui.source path=" + CommandParser.QuoteArg(assemblyFile), "UI").GetAwaiter().GetResult();
+            True(mixedAssembly.Success && mixedAssembly.Message.StartsWith("未更改来源：", StringComparison.Ordinal),
+                "零件转换内容下选装配体不得改来源。实得：" + mixedAssembly.Message);
+            var keptFolderRows = (IReadOnlyList<IReadOnlyDictionary<string, string>>?)context.Bus
+                .ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult().Data;
+            True(keptFolderRows is { Count: 1 }, "拒收装配体后必须仍是零件文件夹");
+
+            var featureContent = MappingContentOption.Available
+                .Single(option => option.Kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly)
+                .DisplayName;
+            var setFeature = context.Bus.ExecuteAsync(
+                "minerva.ui.content content=" + CommandParser.QuoteArg(featureContent), "UI")
+                .GetAwaiter().GetResult();
+            True(setFeature.Success, "必须能改到装配体转换内容。实得：" + setFeature.Message);
             var pickedAssembly = context.Bus.ExecuteAsync(
                 "minerva.ui.source path=" + CommandParser.QuoteArg(assemblyFile), "UI").GetAwaiter().GetResult();
-            True(pickedAssembly.Success, "选 .SLDASM 必须只写入装配来源。实得：" + pickedAssembly.Message);
+            True(pickedAssembly.Success && !pickedAssembly.Message.StartsWith("未更改来源：", StringComparison.Ordinal),
+                "装配体转换内容下选 .SLDASM 必须写入来源。实得：" + pickedAssembly.Message);
             var assemblyRows = (IReadOnlyList<IReadOnlyDictionary<string, string>>?)context.Bus
                 .ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult().Data;
             True(assemblyRows is { Count: 0 },
@@ -3006,9 +3033,15 @@ static void TestNativeSolidWorksPartRecognition(string root)
     {
         Equal(MappingContent.SolidEdgePartToSolidWorksPart, fromParts.SelectedMappingContent.Kind,
             "默认转换内容是零件文件夹");
+        Throws<InvalidOperationException>(() => fromParts.SetSourcePath(assembly));
+        Equal(MappingContent.SolidEdgePartToSolidWorksPart, fromParts.SelectedMappingContent.Kind,
+            "零件转换内容下选装配体不得改转换内容");
+        True(!fromParts.CanProbe, "未改转换内容时选装配体不得当成已选来源");
+        fromParts.SelectedMappingContent = MappingContentOption.Available
+            .Single(option => option.Kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly);
         fromParts.SetAssemblySource(assembly);
         Equal(MappingContent.SolidWorksAssemblyToSolidWorksAssembly, fromParts.SelectedMappingContent.Kind,
-            "选 .SLDASM 必须切到特征整备");
+            "先选特征整备再选 .SLDASM 必须留在特征整备");
         True(fromParts.CanProbe, "选完装配体后必须能解析");
         True(!fromParts.StatusText.Contains("请选择转换来源", StringComparison.Ordinal),
             $"选完装配体不得停在请选择转换来源，实得：{fromParts.StatusText}");
@@ -3019,7 +3052,7 @@ static void TestNativeSolidWorksPartRecognition(string root)
     viewModel.SelectedMappingContent = MappingContentOption.Available
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly);
     True(viewModel.RecognizeFeatures, "切到特征整备必须默认打开识别特征与草图");
-    viewModel.SetAssemblySource(assembly);
+    UseAssemblySource(viewModel, assembly);
     Equal(MappingContent.SolidWorksAssemblyToSolidWorksAssembly, viewModel.SelectedMappingContent.Kind,
         "选 .SLDASM 且当前是特征整备时必须留在特征整备");
     True(viewModel.RecognizeFeatures, "选完源装配后识别开关不得被关掉");
@@ -3053,7 +3086,7 @@ static void TestNativeSolidWorksPartRecognition(string root)
         Dispatcher.CurrentDispatcher);
     blocked.SelectedMappingContent = MappingContentOption.Available
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly);
-    blocked.SetAssemblySource(assembly);
+    UseAssemblySource(blocked, assembly);
     blocked.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(blocked.CanConvert, "子文件夹里的同名外购件不得挡住正式零件转换");
@@ -3258,19 +3291,19 @@ static void TestUnifiedPartDirectoryFlow(string root)
             return Task.FromResult(partRunCount == 1 ? 1 : 0);
         });
 
-    viewModel.SetAssemblySource(assembly);
+    UseAssemblySource(viewModel, assembly);
     viewModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     Equal(1, probeCount, "一次装配来源选择只能执行一次显式探查");
     Equal(1, viewModel.AssemblyTree.Count, "装配探查应建立树");
 
     viewModel.ContinueWhenPartFails = true;
-    viewModel.SetPartDirectory(directory);
+    UsePartDirectory(viewModel, directory);
     Equal(ConversionSourceKind.PartDirectory, viewModel.SourceKind, "选择文件夹后必须切换到零件来源");
     Equal(3, viewModel.Parts.Count, "文件夹模式只扫描顶层 .par");
-    viewModel.SetSourcePath(Path.Combine(directory, "A.par"));
-    Equal(ConversionSourceKind.PartDirectory, viewModel.SourceKind, "选单个 .par 必须落到所在文件夹，不得当装配体抛错");
-    Equal(3, viewModel.Parts.Count, "选 .par 后仍扫描该文件夹顶层零件");
+    Throws<InvalidOperationException>(() => viewModel.SetSourcePath(Path.Combine(directory, "A.par")));
+    Equal(ConversionSourceKind.PartDirectory, viewModel.SourceKind, "零件模式选零件文件不得改成混搭来源");
+    Equal(3, viewModel.Parts.Count, "拒收零件文件后仍保留文件夹扫描结果");
     True(viewModel.Parts.All(row => !string.Equals(row.SourcePath, nestedPart, StringComparison.OrdinalIgnoreCase)),
         "文件夹模式不得递归扫描子目录");
     Equal(0, viewModel.AssemblyTree.Count, "切到文件夹必须清除旧装配树");
@@ -3316,14 +3349,14 @@ static void TestUnifiedPartDirectoryFlow(string root)
         "重试成功后必须重扫并把全部项目更新为已存在");
     True(!viewModel.CanConvert, "全部已有产物后不得重复转换");
 
-    viewModel.SetAssemblySource(assembly);
+    UseAssemblySource(viewModel, assembly);
     True(!viewModel.CanConvert && viewModel.Parts.Count == 0 && viewModel.AssemblyTree.Count == 0,
         "从文件夹切回装配必须清空零件结果和旧计划");
     Equal(ConversionSourceKind.Assembly, viewModel.SourceKind, "来源状态必须回到装配体");
 
     var empty = Path.Combine(root, "unified-empty");
     Directory.CreateDirectory(empty);
-    viewModel.SetPartDirectory(empty);
+    UsePartDirectory(viewModel, empty);
     Equal(0, viewModel.Parts.Count, "空文件夹必须得到空清单");
     True(!viewModel.CanConvert && viewModel.StatusText.Contains("未找到", StringComparison.Ordinal),
         "空文件夹应禁用转换并给出明确状态");
@@ -3364,7 +3397,7 @@ static void TestAssemblyMateSwitchAndReport(string root)
         Dispatcher.CurrentDispatcher);
     using (withoutRelations)
     {
-        withoutRelations.SetSourceFile(assembly);
+        UseAssemblySource(withoutRelations, assembly);
         withoutRelations.ProbeAsync().GetAwaiter().GetResult();
         Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
         True(!withoutRelations.CanRebuildMates, "没有装配关系时不得允许勾选重建配合");
@@ -3392,7 +3425,7 @@ static void TestAssemblyMateSwitchAndReport(string root)
         Dispatcher.CurrentDispatcher);
     using (withRelations)
     {
-        withRelations.SetSourceFile(assembly);
+        UseAssemblySource(withRelations, assembly);
         withRelations.ProbeAsync().GetAwaiter().GetResult();
         Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
         True(withRelations.CanRebuildMates, "有装配关系时开关必须可用");
@@ -3443,7 +3476,7 @@ static void TestAssemblyViewModelState(string root)
         static (_, _, _) => Task.FromResult(0),
         static _ => { },
         Dispatcher.CurrentDispatcher);
-    viewModel.SetSourceFile(assembly);
+    UseAssemblySource(viewModel, assembly);
     True(viewModel.CanProbe && !viewModel.CanConvert, "选择 .asm 后只能先解析，不能直接转换");
     viewModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
@@ -3455,7 +3488,7 @@ static void TestAssemblyViewModelState(string root)
     True(!Directory.Exists(Path.Combine(directory, "XT")) && !Directory.Exists(Path.Combine(directory, "SW")),
         "装配窗口解析完成也不得创建输出目录");
 
-    viewModel.SetSourceFile(changedAssembly);
+    UseAssemblySource(viewModel, changedAssembly);
     True(!viewModel.CanConvert && viewModel.Parts.Count == 0 && viewModel.AssemblyTree.Count == 0,
         "切换源文件必须清空旧探查结果并禁用转换");
 }
@@ -3492,7 +3525,7 @@ static void TestAssemblyActiveRunDisposal(string root)
         static (_, _, _) => Task.FromResult(0),
         static _ => { },
         Dispatcher.CurrentDispatcher);
-    viewModel.SetSourceFile(assembly);
+    UseAssemblySource(viewModel, assembly);
     var run = viewModel.ProbeAsync();
     True(workerStarted.Wait(TimeSpan.FromSeconds(3)), "装配假 Worker 必须启动");
     var dispose = Task.Run(viewModel.Dispose);
@@ -3647,6 +3680,24 @@ static void Equal<T>(T expected, T actual, string message)
 {
     if (!EqualityComparer<T>.Default.Equals(expected, actual))
         throw new InvalidOperationException($"{message}。Expected={expected}, Actual={actual}");
+}
+
+static void UseAssemblySource(AssemblyViewModel model, string path)
+{
+    var match = MappingContentOption.ForAssemblyFile(path)
+        ?? throw new InvalidOperationException("测试夹具不是装配体：" + path);
+    if (!(model.SelectedMappingContent.IsAssemblySource
+          && model.SelectedMappingContent.SourceFormat == match.SourceFormat))
+        model.SelectedMappingContent = match;
+    model.SetAssemblySource(path);
+}
+
+static void UsePartDirectory(AssemblyViewModel model, string path)
+{
+    var part = MappingContentOption.Available[0];
+    if (model.SelectedMappingContent.IsAssemblySource)
+        model.SelectedMappingContent = part;
+    model.SetPartDirectory(path);
 }
 
 static void True(bool condition, string message)

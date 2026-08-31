@@ -51,7 +51,12 @@ internal static class Program
         if (folder is not null)
             workspace.UnifiedPage.ViewModel.SetPartDirectory(folder);
         else if (assemblyPath is not null)
+        {
+            var option = MappingContentOption.ForAssemblyFile(assemblyPath)
+                ?? throw new InvalidOperationException("UI Smoke 装配体路径无法匹配转换内容：" + assemblyPath);
+            workspace.UnifiedPage.ViewModel.SelectedMappingContent = option;
             workspace.UnifiedPage.ViewModel.SetAssemblySource(assemblyPath);
+        }
         if (busy)
             workspace.UnifiedPage.DataContext = new BusyPreviewState();
         var window = new Window

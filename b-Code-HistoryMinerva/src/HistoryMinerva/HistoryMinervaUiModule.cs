@@ -117,7 +117,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             {
                 Name = HistoryMinervaIdentity.CommandRoot + ".ui.picksource",
                 CommandClass = "ui",
-                Summary = "选择 Minerva 转换来源文件",
+                Summary = "按当前转换内容选择装配体文件或零件文件夹",
                 RequiresUiThread = true,
                 HiddenReason = "Aurora 来源选择器内部协议，不对远程消费面暴露",
                 Handler = CommandDescriptor.Sync(PickSource),
@@ -234,7 +234,9 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         {
             var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive)
                 ?? Application.Current?.MainWindow;
-            var picked = SourcePickDialog.Show(owner);
+            var picked = GetViewModel().SelectedMappingContent.IsAssemblySource
+                ? SourcePickDialog.ShowFile(owner)
+                : SourcePickDialog.ShowFolder(owner);
             return picked is null
                 ? CommandResult.Ok("已取消选择")
                 : CommandResult.Ok("已选择来源", picked);

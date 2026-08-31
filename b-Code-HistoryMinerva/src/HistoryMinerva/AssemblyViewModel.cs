@@ -343,9 +343,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         => SetSourcePath(path);
 
     /// <summary>
-    /// 来源选择器只给一条路径。零件模式挑的是 <c>.par</c> 文件，装配模式才是
-    /// <c>.asm</c> / <c>.SLDASM</c>；把零件文件丢给装配解析会立刻抛错，而 Aurora
-    /// 失败指令还会去抢控制台焦点，文件对话框刚关上时整窗就像死了。
+    /// 来源格式只跟当前转换内容走：装配体转换收装配体文件，零件转换收文件夹。
+    /// 不得按扩展名改转换内容，也不得在选完来源时解析装配体。
     /// </summary>
     public void SetSourcePath(string path)
     {
@@ -353,31 +352,13 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             return;
 
         var trimmed = path.Trim();
-        // 只按扩展名分流。文件对话框已经选过文件；再 Exists 会在网盘 CAD 路径上
-        // 把 UI 线程卡住，整窗像死了。文件在不在，解析/转换时再查。
-        if (MappingContentOption.ForAssemblyFile(trimmed) is not null)
-        {
+        if (!SelectedMappingContent.AcceptsSourcePath(trimmed))
+            throw new InvalidOperationException(
+                $"当前是「{SelectedMappingContent.DisplayName}」。{SelectedMappingContent.SourceRequirement}。");
+        if (SelectedMappingContent.IsAssemblySource)
             SetAssemblySource(trimmed);
-            return;
-        }
-
-        if (ConversionPathLayout.HasExtension(trimmed, ConversionPathLayout.SolidEdgePartExtension))
-        {
-            var directory = Path.GetDirectoryName(Path.GetFullPath(trimmed));
-            if (string.IsNullOrWhiteSpace(directory))
-                throw new DirectoryNotFoundException($"零件文件所在文件夹不存在：{trimmed}");
-            SetPartDirectory(directory);
-            return;
-        }
-
-        if (string.IsNullOrEmpty(Path.GetExtension(trimmed)))
-        {
+        else
             SetPartDirectory(trimmed);
-            return;
-        }
-
-        throw new InvalidOperationException(
-            "请选择 Solid Edge .par 零件、.asm 装配体、SolidWorks .SLDASM，或包含顶层 .par 的文件夹。");
     }
 
     public void SetAssemblySource(string path)
@@ -385,11 +366,13 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         if (IsBusy)
             return;
 
-        // 源格式由文件本身决定，不由界面当前的选择决定：
-        // 用户拖进来一个 .SLDASM，转换内容就必须跟着切到 SW 自整备那一项。
+        if (!SelectedMappingContent.IsAssemblySource)
+            throw new InvalidOperationException(
+                "当前转换内容是零件文件夹，请选择文件夹。装配体请先改转换内容。");
         var trimmed = path.Trim();
-        var option = MappingContentOption.ForAssemblyFile(trimmed)
-            ?? throw new InvalidOperationException("只支持 Solid Edge .asm 或 SolidWorks .SLDASM 装配体。");
+        var expected = ConversionPathLayout.GetSourceAssemblyExtension(SelectedMappingContent.SourceFormat);
+        if (!ConversionPathLayout.HasExtension(trimmed, expected))
+            throw new InvalidOperationException($"当前转换内容需要 {expected} 装配体文件。");
         ClearSourceResults();
         ResetOutputDirectories();
         _sourceAssemblyPath = Path.GetFullPath(trimmed);
@@ -397,9 +380,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         SetSourceKind(ConversionSourceKind.Assembly);
         RebuildMates = false;
         UpdateAssemblyOutputPaths();
-        if (!(SelectedMappingContent.IsAssemblySource
-              && SelectedMappingContent.SourceFormat == option.SourceFormat))
-            SelectMappingContentForSource(option.Kind);
         StatusText = "已选择装配体，点击解析装配体";
         NotifySourceChanged();
     }
@@ -409,8 +389,10 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         if (IsBusy)
             return;
 
+        if (SelectedMappingContent.IsAssemblySource)
+            throw new InvalidOperationException(
+                "当前转换内容是装配体，请选择装配体文件，不要选择文件夹。");
         var fullPath = Path.GetFullPath(path.Trim());
-        SelectMappingContentForSource(MappingContent.SolidEdgePartToSolidWorksPart);
         ClearSourceResults();
         ResetOutputDirectories();
         _sourceAssemblyPath = string.Empty;

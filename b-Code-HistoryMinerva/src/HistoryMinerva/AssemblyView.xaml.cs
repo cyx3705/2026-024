@@ -1,12 +1,9 @@
-using Microsoft.Win32;
 using HistoryVulcan.Core.Commands;
 using HistoryMinerva.Contracts;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 
 namespace HistoryMinerva;
 
@@ -84,42 +81,17 @@ public partial class AssemblyView : UserControl, IDisposable
         MappingContentSelector.SelectedItem = _viewModel.SelectedMappingContent;
     }
 
-    private async void OnChooseSourceClick(object sender, RoutedEventArgs e)
+    private void OnChooseSourceClick(object sender, RoutedEventArgs e)
     {
         if (!_viewModel.CanEdit)
             return;
-        if (_viewModel.SelectedMappingContent.IsAssemblySource)
-            await ChooseAssemblyAsync();
-        else
-            ChoosePartDirectory();
-    }
-
-    private async Task ChooseAssemblyAsync()
-    {
-        var picked = SourcePickDialog.Show(Window.GetWindow(this));
+        var owner = Window.GetWindow(this);
+        var picked = _viewModel.SelectedMappingContent.IsAssemblySource
+            ? SourcePickDialog.ShowFile(owner)
+            : SourcePickDialog.ShowFolder(owner);
         if (string.IsNullOrWhiteSpace(picked))
             return;
-
         _viewModel.SetSourcePath(picked);
-        if (_commandBus is null || !_viewModel.CanProbe)
-            return;
-        await Dispatcher.InvokeAsync(static () => { }, DispatcherPriority.Background);
-        if (_commandBus is not null && _viewModel.CanProbe)
-            await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.probe", HistoryMinervaIdentity.Name + ":UI");
-    }
-
-    private void ChoosePartDirectory()
-    {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "选择 Solid Edge 零件来源文件夹",
-            Multiselect = false,
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-        };
-        if (dialog.ShowDialog(Window.GetWindow(this)) != true)
-            return;
-
-        _viewModel.SetPartDirectory(dialog.FolderName);
     }
 
     private async void OnConvertClick(object sender, RoutedEventArgs e)

@@ -5,29 +5,24 @@ using Microsoft.Win32;
 namespace HistoryMinerva;
 
 /// <summary>
-/// 来源文件对话框。不得沿用宿主上次打开的 CAD 零件库：
-/// Windows 会记住那个目录，ShowDialog 里 SolidWorks/Solid Edge 预览处理器
-/// 会把整库枚举一遍，主程序当场假死。这与解析装配体、表格刷新无关。
+/// 来源对话框。装配体转换打开文件，零件转换打开文件夹，两套不得混用。
+/// 每次从桌面起步，不沿用宿主上次 CAD 目录。
 /// </summary>
 internal static class SourcePickDialog
 {
-    /// <summary>
-    /// 与宿主 <c>aurora.ui.selectfile</c> 隔离的对话框身份。
-    /// 不设这个 GUID，Windows 会把上次 CAD 零件库记成同一组 LastVisited。
-    /// </summary>
-    internal static readonly Guid ClientId = new("8b3c1e6a-2d47-4f91-9a05-6e4c8b17d2f0");
+    internal static readonly Guid FileClientId = new("8b3c1e6a-2d47-4f91-9a05-6e4c8b17d2f0");
+    internal static readonly Guid FolderClientId = new("c4d9a2b7-6e18-4c3f-8b40-1a7d5e9f3c21");
 
-    public static OpenFileDialog Create()
+    internal static readonly Guid ClientId = FileClientId;
+
+    public static OpenFileDialog Create() => CreateFile();
+
+    public static OpenFileDialog CreateFile()
     {
-        var start = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-        if (string.IsNullOrWhiteSpace(start))
-            start = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        if (string.IsNullOrWhiteSpace(start))
-            start = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
+        var start = StartDirectory();
         return new OpenFileDialog
         {
-            Title = "选择转换来源",
+            Title = "选择装配体文件",
             RestoreDirectory = true,
             DereferenceLinks = false,
             CheckFileExists = false,
@@ -36,22 +31,71 @@ internal static class SourcePickDialog
             AddToRecent = false,
             ValidateNames = false,
             Multiselect = false,
-            ClientGuid = ClientId,
+            ClientGuid = FileClientId,
             DefaultDirectory = start,
             InitialDirectory = start,
         };
     }
 
-    public static string? Show(Window? owner)
+    public static OpenFolderDialog CreateFolder()
     {
-        var dialog = Create();
+        var start = StartDirectory();
+        return new OpenFolderDialog
+        {
+            Title = "选择零件文件夹",
+            Multiselect = false,
+            AddToRecent = false,
+            ClientGuid = FolderClientId,
+            DefaultDirectory = start,
+            InitialDirectory = start,
+        };
+    }
+
+    public static string? Show(Window? owner) => ShowFile(owner);
+
+    public static string? ShowFile(Window? owner)
+    {
+        var dialog = CreateFile();
+        return ShowAndRestore(dialog.InitialDirectory, () =>
+        {
+            var ok = owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
+            return ok == true && !string.IsNullOrWhiteSpace(dialog.FileName)
+                ? dialog.FileName
+                : null;
+        });
+    }
+
+    public static string? ShowFolder(Window? owner)
+    {
+        var dialog = CreateFolder();
+        return ShowAndRestore(dialog.InitialDirectory, () =>
+        {
+            var ok = owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
+            return ok == true && !string.IsNullOrWhiteSpace(dialog.FolderName)
+                ? dialog.FolderName
+                : null;
+        });
+    }
+
+    private static string StartDirectory()
+    {
+        var start = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        if (string.IsNullOrWhiteSpace(start))
+            start = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        if (string.IsNullOrWhiteSpace(start))
+            start = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return start;
+    }
+
+    private static string? ShowAndRestore(string start, Func<string?> show)
+    {
         var cwd = Environment.CurrentDirectory;
         try
         {
             try
             {
-                if (!string.IsNullOrWhiteSpace(dialog.InitialDirectory))
-                    Environment.CurrentDirectory = dialog.InitialDirectory;
+                if (!string.IsNullOrWhiteSpace(start))
+                    Environment.CurrentDirectory = start;
             }
             catch (IOException)
             {
@@ -60,10 +104,7 @@ internal static class SourcePickDialog
             {
             }
 
-            var ok = owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
-            return ok == true && !string.IsNullOrWhiteSpace(dialog.FileName)
-                ? dialog.FileName
-                : null;
+            return show();
         }
         finally
         {

@@ -108,6 +108,15 @@ public static class ConversionPathLayout
         => string.Equals(Path.GetExtension(path), extension, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// 带 CAD 扩展名的是文件，不是零件文件夹。来源选择不得靠扩展名在两种输入之间跳。
+    /// </summary>
+    public static bool IsKnownCadFile(string path)
+        => HasExtension(path, SolidEdgePartExtension)
+            || HasExtension(path, SolidEdgeAssemblyExtension)
+            || HasExtension(path, SolidWorksPartExtension)
+            || HasExtension(path, SolidWorksAssemblyExtension);
+
+    /// <summary>
     /// 正式零件与所选装配体同级。路径落在子文件夹或其它目录即为外购件。
     /// 空路径不算外购件，留给未解析引用诊断。
     /// </summary>

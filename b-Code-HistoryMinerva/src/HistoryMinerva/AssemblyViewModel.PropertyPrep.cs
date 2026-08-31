@@ -101,34 +101,6 @@ public sealed partial class AssemblyViewModel
            && SelectedMappingContent.SourceFormat == next.SourceFormat
            && next.SourceFormat == ConversionSourceFormat.SolidWorks;
 
-    private void SelectMappingContentForSource(MappingContent kind)
-    {
-        var selected = MappingContentOption.Available.Single(option => option.Kind == kind);
-        if (EqualityComparer<MappingContentOption>.Default.Equals(_selectedMappingContent, selected))
-        {
-            SyncFeatureRecognitionDefault(kind);
-            return;
-        }
-
-        _suppressMappingContentChange = true;
-        try
-        {
-            _selectedMappingContent = selected;
-            SyncFeatureRecognitionDefault(kind);
-            OnPropertyChanged(nameof(SelectedMappingContent));
-            OnPropertyChanged(nameof(IsRenameMode));
-            OnPropertyChanged(nameof(ShowConversionOptions));
-            OnPropertyChanged(nameof(PrimaryActionText));
-            OnPropertyChanged(nameof(SourcePartColumnHeader));
-            OnPropertyChanged(nameof(IsAssemblyMode));
-            OnPropertyChanged(nameof(IsPartDirectoryMode));
-        }
-        finally
-        {
-            _suppressMappingContentChange = false;
-        }
-    }
-
     private void SyncFeatureRecognitionDefault(MappingContent kind)
     {
         var next = kind == MappingContent.SolidWorksAssemblyToSolidWorksAssembly;
