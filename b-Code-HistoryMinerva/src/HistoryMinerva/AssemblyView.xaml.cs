@@ -96,32 +96,16 @@ public partial class AssemblyView : UserControl, IDisposable
 
     private async Task ChooseAssemblyAsync()
     {
-        // 过滤器跟着当前选中的转换内容走：选 SW 自整备时不该再让用户去挑 .asm。
-        var isSolidWorksSource =
-            _viewModel.SourceFormat == HistoryMinerva.Contracts.ConversionSourceFormat.SolidWorks;
-        var dialog = new OpenFileDialog
-        {
-            Title = isSolidWorksSource ? "选择 SolidWorks 装配体来源" : "选择 Solid Edge 装配体来源",
-            Filter = isSolidWorksSource
-                ? "SolidWorks 装配体 (*.SLDASM)|*.SLDASM|所有文件 (*.*)|*.*"
-                : "Solid Edge 装配体 (*.asm)|*.asm|所有文件 (*.*)|*.*",
-            CheckFileExists = true,
-            Multiselect = false,
-        };
-        var directory = Path.GetDirectoryName(_viewModel.SourceAssemblyPath);
-        if (Directory.Exists(directory))
-            dialog.InitialDirectory = directory;
-        if (dialog.ShowDialog(Window.GetWindow(this)) == true)
-        {
-            _viewModel.SetSourcePath(dialog.FileName);
-            if (_commandBus is null || !_viewModel.CanProbe)
-                return;
-            // 等文件对话框把嵌套消息泵彻底收掉，再探查。同一拍里跑 COM 查询
-            // 或开始灌零件表，整窗会停在对话框刚关上的那一帧。
-            await Dispatcher.InvokeAsync(static () => { }, DispatcherPriority.Background);
-            if (_commandBus is not null && _viewModel.CanProbe)
-                await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.probe", HistoryMinervaIdentity.Name + ":UI");
-        }
+        var picked = SourcePickDialog.Show(Window.GetWindow(this));
+        if (string.IsNullOrWhiteSpace(picked))
+            return;
+
+        _viewModel.SetSourcePath(picked);
+        if (_commandBus is null || !_viewModel.CanProbe)
+            return;
+        await Dispatcher.InvokeAsync(static () => { }, DispatcherPriority.Background);
+        if (_commandBus is not null && _viewModel.CanProbe)
+            await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.probe", HistoryMinervaIdentity.Name + ":UI");
     }
 
     private void ChoosePartDirectory()
@@ -130,12 +114,8 @@ public partial class AssemblyView : UserControl, IDisposable
         {
             Title = "选择 Solid Edge 零件来源文件夹",
             Multiselect = false,
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
         };
-        var currentDirectory = _viewModel.IsPartDirectoryMode
-            ? _viewModel.SourcePath
-            : Path.GetDirectoryName(_viewModel.SourceAssemblyPath);
-        if (Directory.Exists(currentDirectory))
-            dialog.InitialDirectory = currentDirectory;
         if (dialog.ShowDialog(Window.GetWindow(this)) != true)
             return;
 

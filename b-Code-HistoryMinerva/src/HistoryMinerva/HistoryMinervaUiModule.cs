@@ -2,6 +2,7 @@ using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Modules;
 using HistoryMinerva.Contracts;
 using System.IO;
+using System.Windows;
 
 namespace HistoryMinerva;
 
@@ -114,6 +115,15 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             });
             registry.Register(new CommandDescriptor
             {
+                Name = HistoryMinervaIdentity.CommandRoot + ".ui.picksource",
+                CommandClass = "ui",
+                Summary = "选择 Minerva 转换来源文件",
+                RequiresUiThread = true,
+                HiddenReason = "Aurora 来源选择器内部协议，不对远程消费面暴露",
+                Handler = CommandDescriptor.Sync(PickSource),
+            });
+            registry.Register(new CommandDescriptor
+            {
                 Name = HistoryMinervaIdentity.CommandRoot + ".ui.content",
                 CommandClass = "ui",
                 Summary = "设置 Minerva 转换内容",
@@ -216,6 +226,23 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         return viewModel.Cancel()
             ? CommandResult.Ok("已请求取消 Minerva 当前操作。")
             : CommandResult.Fail("Minerva 当前没有可取消的操作。");
+    }
+
+    private CommandResult PickSource(CommandContext _)
+    {
+        try
+        {
+            var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive)
+                ?? Application.Current?.MainWindow;
+            var picked = SourcePickDialog.Show(owner);
+            return picked is null
+                ? CommandResult.Ok("已取消选择")
+                : CommandResult.Ok("已选择来源", picked);
+        }
+        catch (Exception ex)
+        {
+            return CommandResult.Ok("未选择来源：" + ex.Message);
+        }
     }
 
     private CommandResult SetSource(CommandContext command)
@@ -338,7 +365,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             "placement": { "side": "center", "ratio": 0.75, "visible": true, "singleton": true },
             "content": { "type": "stack", "gap": "tight", "children": [
               { "type": "panel", "id": "mapping-controls", "rows": [{ "mode": "flex", "widgets": [
-                { "kind": "sourcePicker", "id": "source", "label": "来源", "value": "", "selectCommand": "aurora.ui.selectfile", "commitAction": "minerva.source.set", "flex": true },
+                { "kind": "sourcePicker", "id": "source", "label": "来源", "value": "", "selectCommand": "minerva.ui.picksource", "commitAction": "minerva.source.set", "flex": true },
                 { "kind": "textbox", "id": "content", "label": "转换内容", "mode": "select", "value": "Solid Edge .par → SolidWorks .SLDPRT", "channel": "minerva.content", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "content" } }, "minWidth": 260 }
               ] }] },
               { "type": "switch", "id": "mapping-modes", "source": "{selection.minerva.content.value}", "children": [

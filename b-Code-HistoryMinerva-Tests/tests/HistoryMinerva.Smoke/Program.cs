@@ -2567,6 +2567,10 @@ static void TestUiModuleRegistration(string root)
         "Minerva must register the Aurora actions declaration command");
     True(context.Registry.TryGet("minerva.ui.source", out var source),
         "Minerva must expose a source setter for the descriptive page");
+    True(context.Registry.TryGet("minerva.ui.picksource", out var pick),
+        "Minerva must own the source file dialog so it does not open the last CAD folder");
+    True(pick.RequiresUiThread && pick.HiddenReason is not null,
+        "minerva.ui.picksource 必须在 UI 线程上，且不对远程面暴露");
     True(context.Registry.TryGet("minerva.ui.content", out var content),
         "Minerva must expose a content setter for the descriptive page");
     True(describe.Readonly && data.Readonly && actions.Readonly,
@@ -2585,6 +2589,28 @@ static void TestUiModuleRegistration(string root)
     {
         try
         {
+            var dialog = SourcePickDialog.Create();
+            True(!dialog.CheckFileExists && !dialog.CheckPathExists && !dialog.DereferenceLinks && dialog.RestoreDirectory,
+                "选文件不得核验网盘路径，也不得跟踪快捷方式进 CAD 库");
+            True(!dialog.AddToRecent && dialog.ClientGuid == SourcePickDialog.ClientId,
+                "选文件不得写入最近项，也不得与宿主 aurora.ui.selectfile 共用上次目录");
+            True(string.IsNullOrEmpty(dialog.Filter), "不得靠文件类型过滤器防卡");
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            True(
+                string.Equals(dialog.InitialDirectory, desktop, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    dialog.InitialDirectory,
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    dialog.InitialDirectory,
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    StringComparison.OrdinalIgnoreCase),
+                "选文件必须从桌面打开，不得沿用宿主上次的 CAD 目录");
+            True(
+                string.Equals(dialog.DefaultDirectory, dialog.InitialDirectory, StringComparison.OrdinalIgnoreCase),
+                "DefaultDirectory 必须与 InitialDirectory 同为桌面，避免 Windows 回退到上次 CAD 库");
+
             var result = context.Bus.ExecuteAsync("minerva.ui.describe", "UI").GetAwaiter().GetResult();
             var descriptionJson = result.Data as string ?? result.Message;
             True(result.Success && descriptionJson.TrimStart().StartsWith("{", StringComparison.Ordinal), "Aurora 页面描述必须返回 JSON 字符串");
@@ -2625,6 +2651,10 @@ static void TestUiModuleRegistration(string root)
                 "Minerva 页面必须使用 Aurora switch 分支");
             True(pageJson.Contains("\"kind\": \"sourcePicker\"", StringComparison.Ordinal),
                 "Minerva 页面必须使用 Aurora 来源选择器");
+            True(pageJson.Contains("minerva.ui.picksource", StringComparison.Ordinal),
+                "来源选择器必须走 Minerva 自己的选文件命令，不得打开宿主上次的 CAD 目录");
+            True(!pageJson.Contains("aurora.ui.selectfile", StringComparison.Ordinal),
+                "来源选择不得再调用 aurora.ui.selectfile");
             True(!pageJson.Contains("设置来源", StringComparison.Ordinal)
                 && !pageJson.Contains("应用内容", StringComparison.Ordinal),
                 "Minerva 页面不得展示设置来源或应用内容按钮");
