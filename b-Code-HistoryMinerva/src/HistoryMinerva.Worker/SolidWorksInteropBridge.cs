@@ -6,7 +6,7 @@ using HistoryMinerva.Contracts;
 
 namespace HistoryMinerva.Worker;
 
-internal sealed class SolidWorksInteropBridge : IDisposable
+internal sealed partial class SolidWorksInteropBridge : IDisposable
 {
     private readonly object _application;
     private readonly Type _applicationInterface;
@@ -31,6 +31,9 @@ internal sealed class SolidWorksInteropBridge : IDisposable
     private readonly Type _mateEntityInterface;
     private readonly Type _displayDimensionInterface;
     private readonly Type _dimensionInterface;
+    private readonly Type _customPropertyInterface;
+    private readonly Type _configurationManagerInterface;
+    private readonly Type _configurationInterface;
     private readonly string _installDirectory;
     private Type? _featureWorksInterface;
 
@@ -59,6 +62,9 @@ internal sealed class SolidWorksInteropBridge : IDisposable
         _mateEntityInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IMateEntity2");
         _displayDimensionInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IDisplayDimension");
         _dimensionInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IDimension");
+        _customPropertyInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.ICustomPropertyManager");
+        _configurationManagerInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IConfigurationManager");
+        _configurationInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IConfiguration");
 
         var unknown = Marshal.GetIUnknownForObject(application);
         try

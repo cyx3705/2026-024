@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using HistoryMinerva;
 using HistoryMinerva.Contracts;
@@ -56,6 +57,10 @@ try
     TestSolidWorksSelfPipelineContracts();
     TestPropertyPrepDrawingNumbers(root);
     TestPropertyPrepViewModel(root);
+    TestPropertyPrepPropertyWrite(root);
+    TestPropertyPrepProbedProperties(root);
+    TestPropertyPrepLargeTableUpdatesInPlace(root);
+    TestPropertyPrepReindexAfterRename(root);
     TestSolidWorksSelfPipelinePlanning(root);
     TestSolidWorksSelfPipelineDefaultDirectories(root);
     TestPreflightValidatorAcceptsSolidWorksSource(root);
@@ -2091,17 +2096,17 @@ static void TestPropertyPrepViewModel(string root)
     viewModel.DrawingPrefix = "ZS-LHL";
     viewModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(viewModel.CanConvert, "解析成功且前缀有效后必须允许按图号改名");
+    True(viewModel.CanConvert, "解析成功且前缀有效后必须允许写入");
     True(viewModel.CanStrip, "解析完成后洗图号按钮必须可点，不得因文件名没有空格而灰掉");
-    True(viewModel.Parts.Any(row => row.RenamePreview.Contains("ZS-LHL-00", StringComparison.Ordinal)
-                                    || row.RenamePreview.Contains("ZS-LHL-01", StringComparison.Ordinal)),
-        "改名预览必须展示规划后的文件名");
+    True(viewModel.Parts.Any(row => row.DisplayName.Contains("ZS-LHL-00", StringComparison.Ordinal)
+                                    || row.DisplayName.Contains("ZS-LHL-01", StringComparison.Ordinal)),
+        "「文件」列必须直接展示规划后的文件名，不再另开一列改名后预览");
     True(viewModel.Parts.Any(row => row.Detail.Contains("ZS-LHL-00", StringComparison.Ordinal)
                                     || row.Detail.Contains("ZS-LHL-01", StringComparison.Ordinal)),
         "改名预览必须展示规划后的文件名");
     viewModel.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(renamed, "主按钮在改名模式下必须走 rename Worker，而不是装配转换");
+    True(renamed, "主按钮在属性整备下必须走 rename Worker，而不是装配转换");
 
     var convertedAfterFilePick = false;
     var renamedAfterFilePick = false;
@@ -2130,7 +2135,7 @@ static void TestPropertyPrepViewModel(string root)
     True(switched.IsRenameMode, "页面切到属性整备后必须进入改名模式");
     switched.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(renamedAfterFilePick, "先选文件再切到改名，按图号改名必须走 rename Worker");
+    True(renamedAfterFilePick, "先选文件再切到属性整备，写入必须走 rename Worker");
     True(!convertedAfterFilePick, "改名不得走装配转换，也就不得生成 XT");
 
     var stripDirectory = Path.Combine(root, "property-prep-vm-strip");
@@ -2166,17 +2171,406 @@ static void TestPropertyPrepViewModel(string root)
     UseAssemblySource(stripModel, numberedAssembly);
     stripModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(!stripModel.CanConvert, "未填前缀时不得按图号改名");
+    True(!stripModel.CanConvert, "未填前缀时不得写入");
     True(stripModel.CanStrip, "解析完成后洗图号按钮必须可点");
     True(stripModel.CanExecuteStrip, "文件名带空格时必须允许按空格洗图号");
-    Equal("请填写图号前缀后再按图号改名。", stripModel.RenameBlockedReason,
-        "未填前缀时按图号改名必须给出可读原因，不得沿用转换状态文案");
-    True(stripModel.Parts.Any(row => row.RenamePreview.Contains("总装", StringComparison.Ordinal)
-                                    || row.RenamePreview.Contains("阀体", StringComparison.Ordinal)),
-        "未填前缀时预览必须展示洗掉图号后的文件名");
+    Equal("请填写图号前缀后再写入。", stripModel.RenameBlockedReason,
+        "未填前缀时写入必须给出可读原因，不得沿用转换状态文案");
+    True(stripModel.Parts.Any(row => row.DisplayName.Contains("总装", StringComparison.Ordinal)
+                                    || row.DisplayName.Contains("阀体", StringComparison.Ordinal)),
+        "未填前缀时「文件」列必须展示洗掉图号后的文件名");
     stripModel.StripDrawingNumbersAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(stripRequest is { StripBySpace: true }, "洗图号按钮必须走 rename Worker 并带上 StripBySpace");
+    True(stripRequest is { WriteProperties: false },
+        "洗图号是反向操作，不得顺手把七个属性槽也写一遍");
+    var cleared = SolidWorksDocumentRenamer.DescribePropertyTargets(stripRequest!);
+    True(cleared.Count == 1
+         && cleared[0].Pairs.Count == 1
+         && cleared[0].Pairs[0].Key == PartPropertyNames.DrawingNumber
+         && cleared[0].Pairs[0].Value.Length == 0,
+        "洗图号必须把零件的「图号」属性清成空串，且只动这一槽");
+}
+
+/// <summary>
+/// V4.7：写入 = 改名 + 写零件属性。
+///
+/// 三条真正会翻车的路都在这里钉住：属性只落到零件、名字已经对了仍然能写、
+/// 以及改一次图号前缀不许把用户填了一半的材料冲掉。
+/// </summary>
+static void TestPropertyPrepPropertyWrite(string root)
+{
+    var directory = Path.Combine(root, "property-prep-write");
+    Directory.CreateDirectory(directory);
+    var assembly = Path.Combine(directory, "ZS-LHL-00 总装.SLDASM");
+    var part = Path.Combine(directory, "ZS-LHL-01 阀体.SLDPRT");
+    File.WriteAllText(assembly, "asm");
+    File.WriteAllText(part, "part");
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var probe = new AssemblyProbeResult(
+        assembly,
+        [new AssemblyOccurrence("阀体-1", null, part, false, false, false, identity, null)],
+        [part],
+        0, 0, 1, 0, [],
+        [
+            new AssemblyDocumentReading(assembly,
+            [
+                new AssemblyChild("阀体-1", part, false, false, identity),
+            ], []),
+        ]);
+
+    AssemblyRenameRequest? request = null;
+    using var model = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(probe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher,
+        renameWorker: (sent, _, _) =>
+        {
+            request = sent;
+            return Task.FromResult(0);
+        });
+    model.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    UseAssemblySource(model, assembly);
+    model.DrawingPrefix = "ZS-LHL";
+    model.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    // 文件名已经与规则一致：这一版之前 CanRename 是 false，用户就永远写不进属性。
+    True(!model.Parts.Any(row => row.Status == ConversionFileRow.ReadyStatus),
+        "样例装配的文件名本就与图号规则一致，不应有待改名行");
+    True(model.CanConvert, "名字已经对了但属性还没写时，写入按钮必须可点");
+
+    var partRow = model.Parts.Single(row => row.FileName.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase));
+    var assemblyRow = model.Parts.Single(row => row.FileName.EndsWith(".SLDASM", StringComparison.OrdinalIgnoreCase));
+    True(model.WritesProperties(partRow.Id), "编号零件必须进属性写入清单");
+    True(!model.WritesProperties(assemblyRow.Id), "装配体不写属性，界面不得让用户往它上面填材料");
+    True(!model.SetPartProperty(assemblyRow.Id, PartPropertyField.Material, "Q235", "GB 补充"),
+        "往装配体行写材料必须被拒，不能假装成功");
+
+    Equal(1, model.SetAllPartProperties(PartPropertyField.SurfaceTreatment, "本色阳极氧化"),
+        "一键刷满只刷会写属性的零件行");
+    True(model.SetPartProperty(partRow.Id, PartPropertyField.Material, "304不锈钢", "GB 补充"),
+        "逐格改材料必须落到行上");
+    model.Designer = "张三";
+    var today = model.SetDateToday();
+    Equal(DateTime.Now.ToString(PartPropertyNames.DateFormat, CultureInfo.InvariantCulture), today,
+        "一键设置日期写的必须是系统当日，格式与属性槽约定一致");
+
+    // 前缀一改，计划与行整份重建。填了一半的材料不许跟着一起消失。
+    model.DrawingPrefix = "ZS-LHM";
+    model.DrawingPrefix = "ZS-LHL";
+    var reborn = model.Parts.Single(row => row.FileName.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase));
+    Equal("304不锈钢", reborn.Material, "改图号前缀不得冲掉用户已填的材料");
+    Equal("本色阳极氧化", reborn.SurfaceTreatment, "改图号前缀不得冲掉用户已填的表面处理");
+    // V4.8：条目 id 按源路径定死，行因此可以原地更新而不是整表重画——那是"改一格卡一下"的来源。
+    // 随机 id 还会让用户此刻点开的那一格指向一个已经不存在的行。
+    True(ReferenceEquals(partRow, reborn), "改图号前缀必须原地更新同一行，不得整表重建");
+    Equal(partRow.Id, reborn.Id, "同一个零件在前后两份计划里必须是同一个行 Id");
+
+    model.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(request is { WriteProperties: true, StripBySpace: false }, "写入必须带上 WriteProperties");
+    True(request!.Entries.Count == 2,
+        "整份清单都要送到 Worker：只送待改名条目，第二次写入会一个属性都写不进去");
+
+    var targets = SolidWorksDocumentRenamer.DescribePropertyTargets(request);
+    Equal(1, targets.Count, "属性只写识别出的零件，装配体不写");
+    var slots = targets[0].Pairs.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+    Equal("ZS-LHL-01", slots[PartPropertyNames.DrawingNumber], "图号属性必须与文件名里的图号一致");
+    Equal(PartPropertyNames.MachinedCategory, slots[PartPropertyNames.Category], "类型统一写机加件");
+    Equal(today, slots[PartPropertyNames.Date], "日期写系统当日");
+    Equal("张三", slots[PartPropertyNames.Designer], "设计写文本框里的值");
+    // 「材料」槽写的是链接记号，不是材质名。往它写「304不锈钢」这样的文本，属性标签上
+    // 那一栏纹丝不动（它读的是零件材质），反倒把模板里的链接换成了静态文本。
+    Equal(PartPropertyNames.MaterialLinkValue, slots[PartPropertyNames.Material],
+        "材料槽写的是链接记号 SW-Material，材质本身走 SetMaterialPropertyName2");
+    Equal("本色阳极氧化", slots[PartPropertyNames.SurfaceTreatment], "表面处理写一键刷满的值");
+    True(!slots.ContainsKey(PartPropertyNames.HeatTreatment),
+        "没填的热处理不得写成空串，否则会把模板里已有的值抹掉");
+
+    var withMaterial = request.Entries.Single(entry => entry.Properties is { HasMaterial: true });
+    Equal("304不锈钢", withMaterial.Properties!.Material, "材质名要原样送到 Worker");
+    Equal("GB 补充", withMaterial.Properties.MaterialDatabase, "材质必须带着材料库一起送，否则应用不上去");
+
+    // 只有材质名没有材料库时 SetMaterialPropertyName2 不报错也不生效。整批停住，
+    // 而不是让它变成又一次「跑成功了但材料还是未指定」。
+    var incomplete = request with
+    {
+        Entries = [.. request.Entries.Select(entry => entry.Properties is null
+            ? entry
+            : entry with { Properties = entry.Properties with { MaterialDatabase = string.Empty } })],
+    };
+    Throws<ClassifiedConversionException>(
+        () => SolidWorksDocumentRenamer.DescribePropertyTargets(incomplete));
+
+    // 槽名的权威来源是属性标签模板 `精密零件属性.prtprp` 里每个 Control 的 PropName，
+    // 不是界面上看到的 Label。这一栏 Label 与 PropName 都是「类型选择」；
+    // 曾经按界面标题猜成「类型」，模板槽因此一直是空的，整备"成功"但图框没值。
+    Equal("类型选择", PartPropertyNames.Category, "类型槽的真名是「类型选择」，不得改回「类型」");
+    Equal(8, PartPropertyNames.All.Count, "属性槽是八个，增删必须同步技术合同 REQ-008");
+
+    // V4.8「名称」：没有界面入口，随改名一起写，值是文件名里图号之后的那一段原零件名称。
+    // 让用户在旁边再填一遍只会制造「文件名叫阀体、属性里写着阀盖」的两份真话。
+    Equal("阀体", slots[PartPropertyNames.Name], "名称槽写的是文件名里图号之后的那一段原零件名称");
+    Equal("阀体", withMaterial.PartName, "改名条目必须带上原零件名称，供「名称」槽取值");
+
+    // 三个下拉的候选：表面处理与热处理有模板兜底，任何机器上都不该是空的；
+    // 首项恒为「（不写）」，否则用户选错一次就退不回不写了。
+    True(SolidWorksPropertyOptions.SurfaceTreatments().Count > 0, "表面处理候选不得为空，模板读不到时要有兜底");
+    True(SolidWorksPropertyOptions.HeatTreatments().Count > 0, "热处理候选不得为空，模板读不到时要有兜底");
+    True(PartPropertyNames.FallbackSurfaceTreatments.Contains("本色阳极氧化"),
+        "兜底候选抄自属性标签模板，改模板要同步这里");
+
+    // Worker 失败时，原因必须出现在命令的最终消息里。只说"详见 Vulcan 控制台"，
+    // 用户看到的就是一个没有原因的红叉——Get6 签名错那次正是这样查了半天。
+    using var failing = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(probe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher,
+        renameWorker: (sent, report, _) =>
+        {
+            report(new WorkerEvent(
+                sent.BatchId, null, ConversionStage.Failed, "写属性失败：模板里没有这个槽", IsError: true));
+            return Task.FromResult(1);
+        });
+    failing.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    UseAssemblySource(failing, assembly);
+    failing.DrawingPrefix = "ZS-LHL";
+    failing.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    string? surfaced = null;
+    try
+    {
+        failing.ConvertAsync().GetAwaiter().GetResult();
+    }
+    catch (Exception ex)
+    {
+        surfaced = ex.Message;
+    }
+
+    True(surfaced is not null && surfaced.Contains("模板里没有这个槽", StringComparison.Ordinal),
+        "写入失败时必须把 Worker 报回的第一条原因带进最终消息，实得：" + (surfaced ?? "(没有抛异常)"));
+}
+
+/// <summary>
+/// V4.8：三个槽在**解析装配体**时就从零件上读回来，表格开出来显示的是零件的事实。
+///
+/// 表格一片空白时，用户唯一能做的是把已有的值再选一遍；选错一格就把零件上原本正确的
+/// 材质换掉了，而属性标签上看不出任何异样。
+/// </summary>
+static void TestPropertyPrepProbedProperties(string root)
+{
+    var directory = Path.Combine(root, "property-prep-probed");
+    Directory.CreateDirectory(directory);
+    var assembly = Path.Combine(directory, "ZS-LHL-00 总装.SLDASM");
+    var part = Path.Combine(directory, "ZS-LHL-01 阀体.SLDPRT");
+    File.WriteAllText(assembly, "asm");
+    File.WriteAllText(part, "part");
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var probe = new AssemblyProbeResult(
+        assembly,
+        [new AssemblyOccurrence("阀体-1", null, part, false, false, false, identity, null)],
+        [part],
+        0, 0, 1, 0, [],
+        [
+            new AssemblyDocumentReading(assembly,
+            [
+                new AssemblyChild("阀体-1", part, false, false, identity),
+            ], []),
+        ],
+        [new PartPropertyReading(part, "304不锈钢", "GB 补充", "镀白锌", "调质处理")]);
+
+    AssemblyRenameRequest? request = null;
+    using var model = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(probe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher,
+        renameWorker: (sent, _, _) =>
+        {
+            request = sent;
+            return Task.FromResult(0);
+        });
+    model.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    UseAssemblySource(model, assembly);
+    model.DrawingPrefix = "ZS-LHL";
+    model.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    var partRow = model.Parts.Single(row => row.SourcePath.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase));
+    Equal("304不锈钢", partRow.Material, "解析时读回的材料必须直接出现在表格里");
+    Equal("镀白锌", partRow.SurfaceTreatment, "解析时读回的表面处理必须直接出现在表格里");
+    Equal("调质处理", partRow.HeatTreatment, "解析时读回的热处理必须直接出现在表格里");
+
+    // 用户改一格，改的是记账；解析读回来的值只是起点，不是锁。
+    True(model.SetPartProperty(partRow.Id, PartPropertyField.HeatTreatment, "退火"),
+        "解析预填过的格子仍然要能改");
+    Equal("退火", partRow.HeatTreatment, "改过的值必须落到行上");
+
+    model.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    var written = request!.Entries.Single(entry => entry.Properties is { HasMaterial: true }).Properties!;
+    Equal("304不锈钢", written.Material, "没动过的材料按解析读回的原值写回去，不得变成空");
+    Equal("GB 补充", written.MaterialDatabase, "材料库要跟着解析读数一起带下来，否则材质应用不上去");
+    Equal("退火", written.HeatTreatment, "用户改过的那一格要盖过解析读回的旧值");
+}
+
+/// <summary>
+/// V4.8：大表格改图号前缀时只更新行内容，不重建集合或行对象。
+///
+/// 这里不设机器相关的毫秒阈值；真正的性能合同是同一批零件不触发 Reset/Add/Remove，
+/// 且末行仍能按稳定 Id 直接定位。这样才能钉住 UI 线程上的控件重建和线性找行两类退化。
+/// </summary>
+static void TestPropertyPrepLargeTableUpdatesInPlace(string root)
+{
+    const int partCount = 200;
+    var directory = Path.Combine(root, "property-prep-large-table");
+    Directory.CreateDirectory(directory);
+    var assembly = Path.Combine(directory, "总装.SLDASM");
+    File.WriteAllText(assembly, "asm");
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var partPaths = Enumerable.Range(1, partCount)
+        .Select(index => Path.Combine(directory, $"零件-{index:000}.SLDPRT"))
+        .ToArray();
+    foreach (var partPath in partPaths)
+        File.WriteAllText(partPath, "part");
+
+    var occurrences = partPaths
+        .Select((path, index) => new AssemblyOccurrence(
+            $"零件-{index + 1:000}-1", null, path, false, false, false, identity, null))
+        .ToArray();
+    var children = partPaths
+        .Select((path, index) => new AssemblyChild(
+            $"零件-{index + 1:000}-1", path, false, false, identity))
+        .ToArray();
+    var probe = new AssemblyProbeResult(
+        assembly,
+        occurrences,
+        partPaths,
+        0, 0, partCount, 0, [],
+        [new AssemblyDocumentReading(assembly, children, [])]);
+
+    using var model = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(probe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher,
+        renameWorker: static (_, _, _) => Task.FromResult(0));
+    model.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    UseAssemblySource(model, assembly);
+    model.DrawingPrefix = "ZS-LHL";
+    model.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    Equal(partCount + 1, model.Parts.Count, "大表格样例必须包含总装与全部零件");
+    var rowsById = model.Parts.ToDictionary(row => row.Id, StringComparer.Ordinal);
+    var collectionChanges = 0;
+    model.Parts.CollectionChanged += (_, _) => collectionChanges++;
+
+    model.DrawingPrefix = "ZS-LHM";
+
+    Equal(0, collectionChanges, "只改图号前缀不得 Reset/Add/Remove 零件集合");
+    Equal(rowsById.Count, model.Parts.Count, "只改图号前缀不得改变表格行数");
+    True(model.Parts.All(row => rowsById.TryGetValue(row.Id, out var oldRow)
+                                && ReferenceEquals(row, oldRow)),
+        "大表格的每一行都必须保留原对象与稳定 Id");
+
+    var lastPart = model.Parts.Last(row => row.WritesProperties);
+    True(model.SetPartProperty(lastPart.Id, PartPropertyField.HeatTreatment, "调质处理"),
+        "大表格末行必须仍能按 Id 定位并编辑");
+    Equal("调质处理", lastPart.HeatTreatment, "末行属性编辑必须落到原行对象");
+}
+
+/// <summary>
+/// V4.8：改完名之后索引自动跟上，不必重新导入。
+///
+/// 改名成功的那一刻，上一次解析出来的每条路径都指向一个不存在的文件，源装配的哈希也变了；
+/// 这一版之前用户只能重选装配体再解析一遍，而那一遍要再开一次 SolidWorks 走整棵装配树。
+/// </summary>
+static void TestPropertyPrepReindexAfterRename(string root)
+{
+    var directory = Path.Combine(root, "property-prep-reindex");
+    Directory.CreateDirectory(directory);
+    var assembly = Path.Combine(directory, "总装.SLDASM");
+    var part = Path.Combine(directory, "阀体.SLDPRT");
+    File.WriteAllText(assembly, "asm");
+    File.WriteAllText(part, "part");
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var probe = new AssemblyProbeResult(
+        assembly,
+        [new AssemblyOccurrence("阀体-1", null, part, false, false, false, identity, null)],
+        [part],
+        0, 0, 1, 0, [],
+        [
+            new AssemblyDocumentReading(assembly,
+            [
+                new AssemblyChild("阀体-1", part, false, false, identity),
+            ], []),
+        ]);
+
+    // 假 Worker 做真事：真的把文件改名，并把父装配内容改一个字节——真机上
+    // ReplaceReferencedDocument 就会重写父装配，源装配哈希必然变。
+    using var model = new AssemblyViewModel(
+        (_, _, _) => Task.FromResult(probe),
+        static (_, _, _) => Task.FromResult(0),
+        static _ => { },
+        Dispatcher.CurrentDispatcher,
+        renameWorker: (sent, _, _) =>
+        {
+            foreach (var entry in sent.Entries.OrderByDescending(item => item.Depth))
+            {
+                if (AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath))
+                    continue;
+                File.Move(entry.SourcePath, entry.TargetPath);
+            }
+
+            var rootEntry = sent.Entries.Single(
+                item => AssemblyRenamePlan.SamePath(item.SourcePath, sent.SourceAssemblyPath));
+            File.AppendAllText(rootEntry.TargetPath, "-refs-updated");
+            return Task.FromResult(0);
+        });
+    model.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    UseAssemblySource(model, assembly);
+    model.DrawingPrefix = "ZS-LHL";
+    model.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    var partRowId = model.Parts
+        .Single(row => row.SourcePath.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase)).Id;
+    True(model.SetPartProperty(partRowId, PartPropertyField.SurfaceTreatment, "镀白锌"),
+        "改名之前先填一格，改完名之后它必须还在");
+
+    model.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    var renamedAssembly = Path.Combine(directory, "ZS-LHL-00 总装.SLDASM");
+    var renamedPart = Path.Combine(directory, "ZS-LHL-01 阀体.SLDPRT");
+    True(File.Exists(renamedAssembly) && File.Exists(renamedPart), "样例前提：文件确实被改名了");
+    Equal(renamedAssembly, model.SourceAssemblyPath, "来源必须跟到改名后的装配体上");
+    True(model.Parts.All(row => File.Exists(row.SourcePath)),
+        "改完名以后表格里的每一行都必须指向真实存在的文件，用户不必再手动导入一次");
+    True(model.Parts.Any(row => row.DisplayName == "ZS-LHL-01 阀体.SLDPRT"),
+        "「文件」列必须直接显示改名后的名字");
+    True(model.Parts.All(row => row.Status != ConversionFileRow.ReadyStatus),
+        "索引更新之后名字已经与规则一致，不该还有待改名行");
+
+    var reindexedPartRow = model.Parts
+        .Single(row => row.SourcePath.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase));
+    Equal("镀白锌", reindexedPartRow.SurfaceTreatment, "记账按源路径搬到新文件名上，填过的值不得丢");
+
+    // 第二次写入：文件名早就对了，只写属性。这条路以前会被
+    // 「源装配体在解析后发生变化」挡住——改名本身就会重写父装配。
+    True(model.CanConvert, "改完名以后必须仍能直接再写一次属性，而不是逼用户重新解析");
+    model.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(model.LastOperationSucceeded, "第二次写入不得被过期的源装配哈希挡住：" + model.StatusText);
 }
 
 /// <summary>V4.3：SW 源的整备计划与校验。产物绝不能落回源文件本身。</summary>
@@ -2645,14 +3039,25 @@ static void TestUiModuleRegistration(string root)
                 && !pageJson.Contains("sw-property-continue", StringComparison.Ordinal)
                 && !pageJson.Contains("sw-property-mates", StringComparison.Ordinal),
                 "属性整备改名模式不得再展示识别特征、失败继续或重建装配关系");
-            True(pageJson.Contains("\"text\": \"按图号改名\"", StringComparison.Ordinal),
-                "属性整备必须在顶部提供按图号改名按钮");
+            True(pageJson.Contains("\"text\": \"写入\"", StringComparison.Ordinal),
+                "属性整备必须在顶部提供写入按钮（改名并写零件属性）");
+            True(pageJson.Contains("\"action\": \"minerva.property.today\", \"text\": \"一键设置日期\"", StringComparison.Ordinal),
+                "属性整备必须在顶部提供一键设置日期按钮");
             True(pageJson.Contains("\"text\": \"按空格洗图号\"", StringComparison.Ordinal),
                 "属性整备必须在顶部提供按空格洗图号按钮");
-            True(pageJson.Contains("\"id\": \"sw-property-parts\", \"dataSource\": { \"command\": \"minerva.ui.data\", \"args\": { \"view\": \"parts\" } }, \"columns\": [{ \"key\": \"file\", \"title\": \"文件\", \"width\": \"220\" }, { \"key\": \"status\", \"title\": \"状态\", \"width\": \"90\" }, { \"key\": \"preview\", \"title\": \"改名后预览\", \"width\": \"*\" }]", StringComparison.Ordinal),
-                "属性整备零件表必须用改名后预览列，不得再显示特征/草图列");
+            True(pageJson.Contains("\"id\": \"sw-property-parts\", \"dataSource\": { \"command\": \"minerva.ui.data\", \"args\": { \"view\": \"parts\" } }, \"columns\": [{ \"key\": \"file\", \"title\": \"文件\", \"width\": \"*\" }, { \"key\": \"status\", \"title\": \"状态\", \"width\": \"80\" }, { \"key\": \"material\", \"title\": \"材料\", \"width\": \"110\", \"cellAction\": \"minerva.cell.material\" }, { \"key\": \"surface\", \"title\": \"表面处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.surface\" }, { \"key\": \"heat\", \"title\": \"热处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.heat\" }]", StringComparison.Ordinal),
+                "属性整备零件表必须是文件、状态加三个可点属性列，不得再显示特征/草图列");
+            True(!pageJson.Contains("改名后预览", StringComparison.Ordinal),
+                "改名后的名字直接进「文件」列，不得再有独立的改名后预览列");
             True(pageJson.Contains("\"id\": \"prefix\", \"label\": \"图号前缀\", \"commitAction\": \"minerva.options.prefix\"", StringComparison.Ordinal),
                 "属性整备必须保留图号前缀输入框");
+            True(pageJson.Contains("\"id\": \"designer\", \"label\": \"设计\", \"commitAction\": \"minerva.property.designer\"", StringComparison.Ordinal),
+                "「设计」文本框必须与图号前缀同处一行");
+            foreach (var batchBox in new[] { "batch-material", "batch-surface", "batch-heat" })
+            {
+                True(pageJson.Contains($"\"id\": \"{batchBox}\"", StringComparison.Ordinal),
+                    $"属性整备必须提供 {batchBox} 一键批量框");
+            }
             True(pageJson.Contains("\"type\": \"switch\"", StringComparison.Ordinal),
                 "Minerva 页面必须使用 Aurora switch 分支");
             True(pageJson.Contains("\"kind\": \"sourcePicker\"", StringComparison.Ordinal),

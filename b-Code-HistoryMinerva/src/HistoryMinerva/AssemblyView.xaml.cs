@@ -56,7 +56,6 @@ public partial class AssemblyView : UserControl, IDisposable
         FeatureColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
         SketchColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
         ResultColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
-        RenamePreviewColumn.Visibility = rename ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private bool _mappingContentUserPicking;

@@ -314,7 +314,10 @@ public sealed record AssemblyProbeResult(
     int SynchronousPartCount,
     IReadOnlyList<string> Warnings,
     // V3.3：逐文档的一级读数。为 null 表示 V3.0 格式的旧结果（只能展平）。
-    IReadOnlyList<AssemblyDocumentReading>? Documents = null);
+    IReadOnlyList<AssemblyDocumentReading>? Documents = null,
+    // V4.8：逐个唯一零件的属性现值，供属性整备表格预填。为 null 表示本次没有读属性
+    // （Solid Edge 源、或读属性整个失败）——那时表格照旧空白，不是「零件上没有值」。
+    IReadOnlyList<PartPropertyReading>? PartProperties = null);
 
 public sealed record AssemblyBatchRequest(
     string BatchId,

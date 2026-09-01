@@ -176,8 +176,11 @@
                         <!-- 列头跟着源格式走：SW 自整备模式下写死"Solid Edge 零件"是假话。
                              DataGridColumn 不在可视树里，Binding 和 RelativeSource 都解析不到
                              DataContext（试过，列头会变成空白），只能由代码后置赋值。 -->
+                        <!-- 属性整备下 DisplayName 给的是改完之后的文件名，因此不再有
+                             单独的"改名后预览"列：同一个东西占两列，而改名成功以后
+                             "文件"那一列显示的还是一个已经不存在的文件。 -->
                         <DataGridTextColumn x:Name="SourcePartColumn"
-                                            Binding="{Binding FileName}" Width="2*" MinWidth="120" />
+                                            Binding="{Binding DisplayName}" Width="2*" MinWidth="120" />
                         <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="72" />
                         <DataGridTextColumn x:Name="FeatureColumn"
                                             Header="特征" Binding="{Binding FeatureText}" Width="58" />
@@ -185,11 +188,6 @@
                                             Header="草图" Binding="{Binding SketchText}" Width="58" />
                         <DataGridTextColumn x:Name="ResultColumn"
                                             Header="结果" Binding="{Binding Detail}" Width="2.4*" MinWidth="120" />
-                        <DataGridTextColumn x:Name="RenamePreviewColumn"
-                                            Header="改名后预览"
-                                            Binding="{Binding RenamePreview}"
-                                            Width="2.4*" MinWidth="120"
-                                            Visibility="Collapsed" />
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>

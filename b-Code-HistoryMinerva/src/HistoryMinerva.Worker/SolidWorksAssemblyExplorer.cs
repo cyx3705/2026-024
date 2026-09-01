@@ -66,9 +66,14 @@ internal static class SolidWorksAssemblyExplorer
             var occurrences = new List<AssemblyOccurrence>();
             var warnings = new List<string>();
             var skippedPurchased = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // V4.8：属性整备表格要预填的三个槽。只在顶层那一次展平里收，
+            // 因为那一遍就已经走过全部后代组件了。
+            var partProperties = new Dictionary<string, PartPropertyReading>(StringComparer.OrdinalIgnoreCase);
             var documents = new List<AssemblyDocumentReading>
             {
-                ReadDocument(interop, rootPath, occurrences, warnings, cancellationToken, rootPath, skippedPurchased),
+                ReadDocument(
+                    interop, rootPath, occurrences, warnings, cancellationToken, rootPath,
+                    skippedPurchased, partProperties),
             };
 
             var uniqueParts = occurrences
@@ -94,7 +99,8 @@ internal static class SolidWorksAssemblyExplorer
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 documents.Add(ReadDocument(
-                    interop, path, output: null, warnings, cancellationToken, rootPath, skippedPurchased));
+                    interop, path, output: null, warnings, cancellationToken, rootPath,
+                    skippedPurchased, partProperties: null));
             }
 
             if (skippedPurchased.Count > 0)
@@ -113,7 +119,10 @@ internal static class SolidWorksAssemblyExplorer
                 OrderedPartCount: 0,
                 SynchronousPartCount: 0,
                 warnings,
-                documents);
+                documents,
+                partProperties.Values
+                    .OrderBy(item => item.SourcePath, StringComparer.OrdinalIgnoreCase)
+                    .ToArray());
         }
         catch (ClassifiedConversionException)
         {
@@ -146,6 +155,9 @@ internal static class SolidWorksAssemblyExplorer
     ///
     /// <paramref name="output"/> 为 null 表示这是子装配文档——它的后代已经在顶层那一次
     /// 展平里出现过了，再收一遍只会产生重复的 OccurrenceId。
+    ///
+    /// <paramref name="partProperties"/> 同理只在顶层那一次收：V4.8 的零件属性现值，
+    /// 按源文件全路径去重，一个零件读一次就够。
     /// </summary>
     private static AssemblyDocumentReading ReadDocument(
         SolidWorksInteropBridge interop,
@@ -154,7 +166,8 @@ internal static class SolidWorksAssemblyExplorer
         List<string> warnings,
         CancellationToken cancellationToken,
         string rootAssemblyPath,
-        HashSet<string> skippedPurchased)
+        HashSet<string> skippedPurchased,
+        Dictionary<string, PartPropertyReading>? partProperties)
     {
         var hash = ComputeSha256(assemblyPath);
         var children = new List<AssemblyChild>();
@@ -206,7 +219,9 @@ internal static class SolidWorksAssemblyExplorer
                     cancellationToken.ThrowIfCancellationRequested();
                     if (TrySkipPurchased(interop, component, rootAssemblyPath, skippedPurchased))
                         continue;
-                    output.Add(ReadOccurrence(interop, component, warnings));
+                    var occurrence = ReadOccurrence(interop, component, warnings);
+                    output.Add(occurrence);
+                    CollectPartProperties(interop, component, occurrence, partProperties);
                 }
             }
 
@@ -250,6 +265,34 @@ internal static class SolidWorksAssemblyExplorer
         if (children.Count == 0)
             warnings.Add($"装配没有可读的一级实例：{assemblyPath}");
         return new AssemblyDocumentReading(assemblyPath, children, local, relations);
+    }
+
+    /// <summary>
+    /// 顺手收下这个零件当前的三个属性槽，供属性整备表格预填（V4.8）。
+    ///
+    /// 只收真正会被写属性的那一类：未抑制、文件存在的 <c>.SLDPRT</c>。抑制件在会话里
+    /// 根本没有文档，装配体本来就不写属性，两者读了也只是白花一次 COM 往返。
+    /// </summary>
+    private static void CollectPartProperties(
+        SolidWorksInteropBridge interop,
+        object component,
+        AssemblyOccurrence occurrence,
+        Dictionary<string, PartPropertyReading>? partProperties)
+    {
+        if (partProperties is null || occurrence.IsSubAssembly || occurrence.IsSuppressed)
+            return;
+        if (!File.Exists(occurrence.SourcePath)
+            || !ConversionPathLayout.HasExtension(
+                occurrence.SourcePath, ConversionPathLayout.SolidWorksPartExtension))
+        {
+            return;
+        }
+
+        var key = Path.GetFullPath(occurrence.SourcePath);
+        if (partProperties.ContainsKey(key))
+            return;
+        if (SolidWorksPartPropertyReader.Read(interop, component, key) is { } reading)
+            partProperties[key] = reading;
     }
 
     /// <summary>一级组件 → <see cref="AssemblyChild"/>。矩阵是本文档坐标系下的局部矩阵。</summary>
