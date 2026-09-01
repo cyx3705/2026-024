@@ -179,7 +179,15 @@ $uiCommands = @(
         ForEach-Object { $commandRoot + $_.Groups['suffix'].Value } |
         Sort-Object -Unique
 )
-$sourceCommands = @($backendCommands + $uiCommands | Sort-Object -Unique)
+# Aurora 描述式页面的 minerva.ui.* 也是模块对外登记的命令，必须一起进目录比对。
+# 4.6 之前这里只抽 conversion，于是文档表里的 ui.* 全成了"多出来的行"——
+# 门禁把一份如实的文档判成漂移，真正的漂移反而藏在噪声里看不见。
+$pageCommands = @(
+    [regex]::Matches($uiSource, 'CommandRoot\s*\+\s*"(?<suffix>\.ui\.[a-z][a-z0-9]*)"') |
+        ForEach-Object { $commandRoot + $_.Groups['suffix'].Value } |
+        Sort-Object -Unique
+)
+$sourceCommands = @($backendCommands + $uiCommands + $pageCommands | Sort-Object -Unique)
 $apiCommands = @(
     [regex]::Matches($apiText, '(?m)^\|\s*`(?<name>minerva(?:\.[a-z0-9]+){2})`\s*\|') |
         ForEach-Object { $_.Groups['name'].Value } |
@@ -200,10 +208,16 @@ if ($commandHandlerSource -notmatch 'CommandResult\.Fail\("Minerva .*已取消')
     Add-Violation 'Minerva command handlers must expose cancellation through CommandResult.Fail'
 }
 Assert-SameSet 'Module API command catalog' $sourceCommands $apiCommands
-if ($uiSource -notmatch 'Name\s*=\s*HistoryMinervaIdentity\.CommandRoot \+ "\.ui\.pane"' -or
-    $uiSource -notmatch '\["ui\.window"\]\s*=\s*HistoryMinervaIdentity\.WindowId' -or
-    $uiSource -notmatch '\["ui\.side"\]\s*=\s*"center"') {
-    Add-Violation 'HistoryMinerva UI must expose exactly one identity-backed center pane command'
+# REQ-003：页面由 Aurora 按 minerva.ui.describe 统一创建。模块**不得**注册
+# minerva.ui.pane，也不得返回 WPF UIElement。这里原本要求的正是被禁掉的那条命令，
+# 是 Aurora 描述式改造之前留下的检查，方向已经反了。
+if ($uiSource -match 'CommandRoot\s*\+\s*"\.ui\.pane"') {
+    Add-Violation 'HistoryMinerva must not register minerva.ui.pane; Aurora owns page creation (REQ-003)'
+}
+foreach ($required in @('.ui.describe', '.ui.data', '.ui.actions')) {
+    if ($uiSource -notmatch ('CommandRoot\s*\+\s*"' + [regex]::Escape($required) + '"')) {
+        Add-Violation "HistoryMinerva must register the Aurora page command minerva$required"
+    }
 }
 
 # The current candidate is z-Publish/HistoryMinerva-vX.Y.Z; history is a separate subtree.

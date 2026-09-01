@@ -1,0 +1,10 @@
+# 本仓库的源文件一律 LF，与 .gitattributes 的 `text eol=lf` 是同一条事实。
+#
+# 没有这份文件时，`dotnet format` 在 Windows 上按平台默认要求 CRLF，于是
+# VERIFY-FORMAT 对着一棵 LF 工作树报 WHITESPACE，而它「修复」的办法是往文件里
+# 插 CRLF——git 提交时又按 eol=lf 折回去，下一次校验照样红。两个工具各说各话，
+# 格式门禁就永远绿不了。这里只声明换行符，不引入任何其它格式规则。
+root = true
+
+[*.cs]
+end_of_line = lf

@@ -56,8 +56,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     private bool _lastOperationCanceled;
     private bool _disposed;
     private string _drawingPrefix = string.Empty;
+    /// <summary>本轮 Worker 报回的第一条失败原因，用于把根因带进命令的最终失败消息。</summary>
+    private string _firstWorkerFailure = string.Empty;
     public ObservableCollection<AssemblyTreeNode> AssemblyTree { get; } = [];
-    public ObservableCollection<ConversionFileRow> Parts { get; } = [];
 
     public IReadOnlyList<MappingContentOption> MappingContents => MappingContentOption.Available;
 
@@ -86,6 +87,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 OnPropertyChanged(nameof(CanProbe));
                 OnPropertyChanged(nameof(CanConvert));
                 OnPropertyChanged(nameof(CanStrip));
+                OnPropertyChanged(nameof(CanWrite));
                 NotifySourceChanged();
             }
             finally
@@ -147,6 +149,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             OnPropertyChanged(nameof(CanProbe));
             OnPropertyChanged(nameof(CanConvert));
             OnPropertyChanged(nameof(CanStrip));
+            OnPropertyChanged(nameof(CanWrite));
             OnPropertyChanged(nameof(CanRebuildMates));
             OnPropertyChanged(nameof(CanContinueWhenPartFails));
             OnPropertyChanged(nameof(CanCancel));
@@ -265,7 +268,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         && ConversionPathLayout.HasExtension(
             SourceAssemblyPath, ConversionPathLayout.GetSourceAssemblyExtension(SourceFormat));
     public bool CanConvert => CanEdit && (IsRenameMode
-        ? !_conversionCompleted && _renamePlan?.CanRename == true
+        ? CanWrite
         : IsAssemblyMode
             ? !_conversionCompleted && _plan?.CanConvert == true
             : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
@@ -278,7 +281,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             ? "SolidWorks 零件"
             : "Solid Edge 零件";
     public string PrimaryActionText => IsRenameMode
-        ? "按图号改名"
+        ? "写入"
         : IsPartDirectoryMode
             || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource
             ? "转换全部零件"
@@ -287,7 +290,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     public string OperationText => IsProbing
         ? "正在解析装配体"
         : IsRenameMode
-            ? (_isStripping ? "正在按空格洗图号" : "正在按图号改名")
+            ? (_isStripping ? "正在按空格洗图号" : "正在写入")
             : IsPartDirectoryMode ? "正在转换全部零件" : "正在转换装配体";
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -490,6 +493,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
 
     private Task StartOperationAsync(bool isProbe, Func<CancellationToken, Task> operation)
     {
+        _firstWorkerFailure = string.Empty;
         CancellationTokenSource cancellation;
         TaskCompletionSource completion;
         lock (_lifecycleGate)
@@ -576,6 +580,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             throw new InvalidOperationException($"请选择存在的 {sourceAssemblyExtension} 装配体文件。");
         // COM ProgID 查询和后续 Worker 启动都不要占着选文件那一拍的 UI 线程。
         await Task.Run(() => _validateEnvironment(sourceFormat), cancellationToken).ConfigureAwait(false);
+        // 三个属性下拉的候选也在这一拍认一次：之后整轮整备都用这一份，不再每点开一格
+        // 就重读一次注册表和整个模板目录（那是在 UI 线程上）。
+        await Task.Run(SolidWorksPropertyOptions.Refresh, cancellationToken).ConfigureAwait(false);
 
         var batchId = Guid.NewGuid().ToString("N");
         var resultDirectory = _runtimePaths.ProbesDirectory;
@@ -740,38 +747,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         QueueUiUpdate(() => StatusText = exitCode == 0 ? "零件转换完成" : "零件转换结束，存在失败项");
     }
 
-    /// <summary>状态栏尾巴：一句话说清 56 条关系去了哪里。</summary>
-    private string FormatMateSummary()
-    {
-        if (_mateOutcome is not { RelationTotal: > 0 } mate)
-            return string.Empty;
-        var failed = mate.FailedUnmatched + mate.FailedAmbiguous + mate.FailedRejected;
-        var text = $"；配合重建 {mate.MateRebuilt}/{mate.RelationTotal}";
-        if (mate.GroundApplied > 0)
-            text += $"（另有 {mate.GroundApplied} 条接地关系落为固定）";
-        if (failed > 0)
-            text += $"，{failed} 条未建立";
-        if (mate.ComponentsLeftFixed > 0)
-            text += $"，{mate.ComponentsLeftFixed} 个组件保持固定";
-        return text;
-    }
-
-    /// <summary>
-    /// 把逐条诊断并进警告栏。V3.5 的承诺是"建不起来的如实报告"——
-    /// 报告只写进日志、用户看不见的话，这个承诺就没兑现。
-    /// </summary>
-    private void AppendMateDiagnostics()
-    {
-        if (_mateOutcome is not { Diagnostics.Count: > 0 } mate)
-            return;
-        var summary = string.Join("；", mate.Diagnostics.Take(6));
-        if (mate.Diagnostics.Count > 6)
-            summary += $"；……另有 {mate.Diagnostics.Count - 6} 条，详见转换日志";
-        WarningSummary = string.IsNullOrWhiteSpace(WarningSummary)
-            ? summary
-            : WarningSummary + "；" + summary;
-    }
-
     private void ApplyWorkerEvent(WorkerEvent workerEvent)
     {
         // 配合结果既可能直接挂在事件上，也可能随装配结果一起回来。
@@ -783,7 +758,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 StatusText = ConversionProgressPresenter.FormatMessage(workerEvent);
             return;
         }
-        var row = Parts.FirstOrDefault(item => item.Id == workerEvent.JobId);
+        var row = FindRow(workerEvent.JobId);
         if (row is null)
             return;
         row.Status = ConversionProgressPresenter.GetRowStatus(workerEvent, row.Status);
@@ -793,6 +768,16 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
 
     private void ReportWorkerEvent(WorkerEvent workerEvent)
     {
+        // 留住第一条失败原因。命令最终只抛一句"失败，详见 Vulcan 控制台"，而真正的原因
+        // 混在几十条进度事件里——用户看到的就是一个没有原因的红叉。把第一条原因带进
+        // 最终消息，是唯一能让"为什么失败"和"失败了"出现在同一行的办法。
+        if (workerEvent.IsError && string.IsNullOrEmpty(_firstWorkerFailure))
+        {
+            var message = workerEvent.Message?.Trim();
+            if (!string.IsNullOrEmpty(message))
+                _firstWorkerFailure = message;
+        }
+
         _operationProgress?.Report(ConversionProgressPresenter.FormatMessage(workerEvent));
         QueueUiUpdate(() => ApplyWorkerEvent(workerEvent));
     }
@@ -841,6 +826,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     {
         ClearProbeResult();
         _mateOutcome = null;
+        // 换了来源装配，上一台设备的材料和表面处理就不再是这批零件的事实。
+        // 记账按源文件全路径，不清掉的话换回旧装配还会把旧值诈尸带出来。
+        _propertyEdits.Clear();
         XtDirectory = string.Empty;
         SolidWorksDirectory = string.Empty;
         AssemblyOutputPath = string.Empty;
@@ -848,7 +836,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
 
     private void ScanPartDirectory(bool updateStatus)
     {
-        Parts.Clear();
         var directories = ExternalOutputLayout.Resolve(
             _partDirectory,
             xtDirectory: null,
@@ -856,13 +843,13 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         XtDirectory = directories.XtDirectory;
         SolidWorksDirectory = directories.SolidWorksDirectory;
         AssemblyOutputPath = string.Empty;
-        foreach (var candidate in FileScanner.Scan(
-                     ConversionMode.External,
-                     _partDirectory,
-                     outputDirectories: directories,
-                     allowLegacyXt: true,
-                     allowLegacySolidWorks: true))
-            Parts.Add(new ConversionFileRow(candidate));
+        _rows.ReplaceAll(FileScanner.Scan(
+                ConversionMode.External,
+                _partDirectory,
+                outputDirectories: directories,
+                allowLegacyXt: true,
+                allowLegacySolidWorks: true)
+            .Select(candidate => new ConversionFileRow(candidate)));
 
         WarningSummary = string.Empty;
         if (updateStatus)

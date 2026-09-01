@@ -1,0 +1,508 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>HistoryMinerva</name>
+    </assembly>
+    <members>
+        <member name="T:HistoryMinerva.AssemblyGraph">
+            <summary>装配图的构建结果。<see cref="P:HistoryMinerva.AssemblyGraph.Cycles"/> 非空时不可转换。</summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyGraph.#ctor(System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyNode},System.Int32,System.Collections.Generic.IReadOnlyList{System.String},System.Collections.Generic.IReadOnlyList{System.String})">
+            <summary>装配图的构建结果。<see cref="P:HistoryMinerva.AssemblyGraph.Cycles"/> 非空时不可转换。</summary>
+        </member>
+        <member name="T:HistoryMinerva.AssemblyGraphBuilder">
+             <summary>
+             把"每个装配文档的一级读数"组装成拓扑序的装配节点列表。
+            
+             纯数据变换，不碰 CAD，全部逻辑由 <c>HistoryMinerva.Smoke</c> 离线覆盖。
+            
+             遵守 V3.3 的每层同构原则：本类只按"某文档有哪些直接子项"推导，
+             从不为某一层去查它的父级或祖先——需要祖先信息才能算出的结果，
+             一定是把世界矩阵当成局部矩阵在用。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyGraphBuilder.Build(System.String,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyDocumentReading},System.Func{System.String,System.String})">
+            <param name="rootAssemblyPath">顶层 <c>.asm</c> 绝对路径。</param>
+            <param name="readings">逐文档的一级读数，含顶层。按绝对路径去重，重复项以第一条为准。</param>
+            <param name="outputPathFor">源 <c>.asm</c> 绝对路径 → 目标 <c>.SLDASM</c> 绝对路径。</param>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyConversionPlan.IsNested">
+            <summary>本版是否按嵌套生成。为 false 时按 V3.0 展平。</summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyConversionPlan.RelationCount">
+            <summary>本次探查采集到的关系总数。为 0 时界面上的"重建装配关系"应当禁用。</summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyPlanner.KeepOfficialParts(HistoryMinerva.Contracts.AssemblyProbeResult,System.String)">
+            <summary>
+            正式零件与所选装配体同级。子文件夹外购件不进转换计划，以免缺文档读数把整轮挡住。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyPlanner.BuildGraph(HistoryMinerva.Contracts.AssemblyProbeResult,System.String,System.String,System.Collections.Generic.ICollection{HistoryMinerva.AssemblyPlanIssue})">
+            <summary>V3.3：把逐文档读数组装成拓扑序的装配节点；读数缺失时返回 null，由调用方退回展平。</summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyPlanner.VerifyTransforms(HistoryMinerva.Contracts.AssemblyProbeResult,System.Collections.Generic.ICollection{HistoryMinerva.AssemblyPlanIssue})">
+            <summary>
+            V3.3 §3.3.1：用世界矩阵与局部矩阵互相印证。参考系用错不会抛异常，只会静默错位，
+            所以必须在触碰 CAD 之前把它拦住。SolidWorks 源会先按总装在位姿态改写局部矩阵，
+            再做本校验；改写后仍超差的才阻断。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyPlanner.CheckAssemblyNameConflicts(HistoryMinerva.AssemblyGraph,System.Collections.Generic.ICollection{HistoryMinerva.AssemblyPlanIssue})">
+            <summary>§3.6：装配之间的同名冲突。两个同名不同路径的 .asm 会写到同一个 .SLDASM。</summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyPlanner.ReportExistingAssemblyOutputs(HistoryMinerva.AssemblyGraph,System.String,System.Collections.Generic.ICollection{System.String})">
+            <summary>
+            已有装配产物不再是硬阻断。与 V3.0.2 的零件口径一致：转换时校验时间，
+            安全的直接复用，过期或为空的报错让用户自己移走，从不覆盖用户文件。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.AssemblyTransformReconciler">
+            <summary>
+            SolidWorks 柔性子装配：单独打开子装配读到的局部矩阵，往往是默认行程；
+            总装 <c>GetComponents(false)</c> 给出的世界矩阵才是当前在位姿态。
+            本类用世界矩阵反算在位局部矩阵，供嵌套生成使用，而不是把柔性差异当成参考系错误。
+            同一子装配在总装里出现两种在位姿态时无法写入同一个输出文件，仍报冲突。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.AssemblyTransformVerifier">
+             <summary>
+             局部矩阵的自校验：把逐文档读数按层复合，与 Solid Edge 直接给出的世界矩阵逐元素比对。
+            
+             V3.3 的局部矩阵是本版唯一的静默错误源——取错参考系不抛异常，只表现为整层错位或姿态错乱。
+             探查结果里同时有"世界矩阵"和"局部矩阵"两套独立数据，本类用它们互相印证，
+             不需要 CAD、不需要人眼看图，任何一层的参考系用错都会当场超差。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.AssemblyTransformVerifier.Tolerance">
+            <summary>与 V3.0 的姿态精度判据同阈值。</summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyTransformVerifier.Multiply(System.Collections.Generic.IReadOnlyList{System.Double},System.Collections.Generic.IReadOnlyList{System.Double})">
+             <summary>
+             行主序 4×4 相乘，行向量约定（平移位于 12..14，与 Solid Edge 和 V3.0 的口径一致）：
+             点先经子级局部变换，再经父级世界变换，故 <c>世界 = 局部 × 父世界</c>。
+            
+             顺序写反或只把平移相加，在无旋转的样件上都能"通过"——所以验收样件必须带旋转。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyTransformVerifier.TryInverse(System.Collections.Generic.IReadOnlyList{System.Double},System.Double[]@)">
+            <summary>
+            行主序 4×4 求逆。父级世界矩阵可逆时，子级在位局部矩阵为
+            <c>局部 = 世界 × Inverse(父世界)</c>。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyTreeNode.Build(HistoryMinerva.Contracts.AssemblyProbeResult,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyNode})">
+            <param name="probe">装配探查返回的实例清单。</param>
+            <param name="nodes">
+            V3.3 的装配节点。给出时子装配会标注它将生成的 <c>.SLDASM</c>；
+            为空则沿用 V3.0 的展平文案。
+            </param>
+        </member>
+        <member name="T:HistoryMinerva.AssemblyView">
+            <summary>
+            AssemblyView
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyView.InitializeComponent">
+            <summary>
+            InitializeComponent
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.AssemblyViewModel._firstWorkerFailure">
+            <summary>本轮 Worker 报回的第一条失败原因，用于把根因带进命令的最终失败消息。</summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.RecognizeFeatures">
+             <summary>
+             界面上的"识别特征与草图"——一个开关同时驱动识别与草图完全定义。
+            
+             两者本就是主从关系（草图完全定义只对识别出的草图生效），拆成两个复选框只是
+             白占横向空间，把后面的"重建装配关系"挤到第二行、让用户拿不到那个开关。
+             协议层仍是两个独立字段，只有界面合并。
+             </summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.RegeneratesExistingOutputs">
+            <summary>
+            已有产物这一轮会不会被重做。装配转换把全部唯一零件都交给 Worker。SolidWorks
+            特征整备对已有 SLDPRT 一律重做（先 XT 再识别，不看原零件有没有特征）；Solid Edge
+            只在开启识别时重做。零件文件夹模式按 <c>HasExistingOutput</c> 过滤作业，
+            已有产物是真的会被跳过。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.RebuildMates">
+             <summary>
+             V3.5：把 SE 装配关系翻译成 SW 配合。发现关系时默认开启。
+            
+             与"识别特征"**不互斥**——实测证明识别后几何匹配率仍是 100%（25 号文档 §5.1）。
+             </summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.CanRebuildMates">
+            <summary>只有解析出关系才允许勾选——没有关系可翻译时，这个开关是个空承诺。</summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.SourceFormat">
+            <summary>本次转换的源 CAD 格式。界面只从当前选中的转换内容取，不另设开关。</summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.SourcePartColumnHeader">
+            <summary>零件列的列头。写死"Solid Edge 零件"在 SW 自整备模式下是假话。</summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.SetSourcePath(System.String)">
+            <summary>
+            来源格式只跟当前转换内容走：装配体转换收装配体文件，零件转换收文件夹。
+            不得按扩展名改转换内容，也不得在选完来源时解析装配体。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.FormatMateSummary">
+            <summary>状态栏尾巴：一句话说清 56 条关系去了哪里。</summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.AppendMateDiagnostics">
+            <summary>
+            把逐条诊断并进警告栏。V3.5 的承诺是"建不起来的如实报告"——
+            报告只写进日志、用户看不见的话，这个承诺就没兑现。
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.AssemblyViewModel._propertyEdits">
+             <summary>
+             用户填过的材料 / 表面处理 / 热处理，按源文件全路径记账。
+            
+             不能只存在 <see cref="P:HistoryMinerva.AssemblyViewModel.Parts"/> 行上：改一次图号前缀就会整份重建改名计划和零件行，
+             填了半张表的材料会跟着前缀一起没掉。行是派生的，这份账才是权威。
+             </summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.CanWrite">
+            <summary>
+            「写入」= 改名 + 写属性，所以门是 <see cref="P:HistoryMinerva.Contracts.AssemblyRenamePlan.CanWrite"/> 而不是 CanRename。
+            名字已经对了但属性还没写的装配，必须仍然能点写入。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.Designer">
+            <summary>
+            「设计」属性的值。一个文本框刷满全部零件——这一栏在同一批图纸里从来不是逐件不同的。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.DateText">
+            <summary>
+            「日期」属性的值，格式见 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.DateFormat"/>。
+            由「一键设置日期」写入；空串表示本轮不写日期槽。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.SetDateToday">
+            <summary>「一键设置日期」：把日期槽的待写值置为系统当日，返回写进去的文本。</summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.SetAllPartProperties(HistoryMinerva.PartPropertyField,System.String,System.String)">
+            <summary>
+            一键刷满某一列。返回被改动的行数，让命令能如实回报「刷了几行」而不是空口说成功。
+            只刷会写属性的零件行：装配体和未编号的内部件不进属性写入清单，刷了也不会落盘。
+            </summary>
+            <param name="field">要刷的属性槽。</param>
+            <param name="value">要写进去的值；空串表示这一槽本轮不写。</param>
+            <param name="materialDatabase">
+            只对 <see cref="F:HistoryMinerva.PartPropertyField.Material"/> 有意义：材质所在的材料库。
+            材质名脱离材料库无法应用到零件，两者必须一起传下来，见 <see cref="P:HistoryMinerva.Contracts.PartPropertyWrite.MaterialDatabase"/>。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.SetPartProperty(System.String,HistoryMinerva.PartPropertyField,System.String,System.String)">
+            <summary>逐格改：按行 Id 定位。行不存在或不写属性时返回 false，由命令给出可读原因。</summary>
+            <inheritdoc cref="M:HistoryMinerva.AssemblyViewModel.SetAllPartProperties(HistoryMinerva.PartPropertyField,System.String,System.String)" path="/param[@name='materialDatabase']"/>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.GetPartProperty(System.String,HistoryMinerva.PartPropertyField)">
+            <summary>读回某一格的当前值，供弹输入框时预填。</summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.WritesProperties(System.String)">
+            <summary>这一行的属性会不会真的落盘。页面据此决定三个可点列要不要给占位符。</summary>
+        </member>
+        <member name="P:HistoryMinerva.AssemblyViewModel.PropertyEditsReady">
+            <summary>
+            三个可点列现在能不能落到零件上。改名计划还没建起来（没解析、或没填图号前缀）时是 false，
+            命令据此给出「请先解析并填前缀」而不是空口报「刷了 0 个零件」。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.AssemblyViewModel.PartPropertyEdit">
+            <summary>
+            一行零件上待写的三个槽。材料记两项：材质名给界面显示，材料库给
+            <c>SetMaterialPropertyName2</c>——只有名字应用不上去。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.PartPropertyEdit.#ctor(System.String,System.String,System.String,System.String)">
+            <summary>
+            一行零件上待写的三个槽。材料记两项：材质名给界面显示，材料库给
+            <c>SetMaterialPropertyName2</c>——只有名字应用不上去。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.AttachProperties(HistoryMinerva.Contracts.RenameEntry)">
+            <summary>
+            给一个改名条目挂上要写的七个槽。装配体和未编号内部件原样返回，不带属性载荷——
+            判据与 Worker 侧一致，两边各判一次，界面漏判时 Worker 仍然不会去动装配体。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.AssemblyViewModel.FormatProbeStatus(HistoryMinerva.AssemblyConversionPlan,HistoryMinerva.Contracts.AssemblyProbeResult,System.String)">
+            <summary>探查结果进命令总线。前置错误必须出现在文本里，页面按 REQ-006 不绑 StatusText。</summary>
+        </member>
+        <member name="T:HistoryMinerva.PartPropertyField">
+            <summary>零件表里可以逐格改、也可以一键刷满的三个属性槽。</summary>
+        </member>
+        <member name="F:HistoryMinerva.ConversionFileRow.ExistingStatus">
+            <summary>已有产物、且本轮不会重做时的状态文字。</summary>
+        </member>
+        <member name="F:HistoryMinerva.ConversionFileRow.PendingReworkStatus">
+            <summary>已有产物、但本轮会连同特征一起重做时的状态文字。</summary>
+        </member>
+        <member name="P:HistoryMinerva.ConversionFileRow.RegeneratesExistingOutput">
+             <summary>
+             本轮会把已有产物连同特征一起重做。开启特征识别的装配转换就是这种情形：
+             已有 SLDPRT 里有没有特征，不打开文档就判断不了，而打开的代价与重新导入相当，
+             所以 <c>AssemblyPartReusePlanner</c> 一律重做。
+            
+             此时再显示"已存在"并锁住复选框，说的就是假话——文件确实在，缺的正是这一轮要补的
+             特征树。现场事故：SW 自整备的整目录零件全被标成"已存在"，用户以为没法整备。
+             </summary>
+        </member>
+        <member name="P:HistoryMinerva.ConversionFileRow.FeatureText">
+            <summary>V2.0：识别出的特征数。</summary>
+        </member>
+        <member name="P:HistoryMinerva.ConversionFileRow.SketchText">
+            <summary>V2.0：草图完全定义比例，形如 4/4。</summary>
+        </member>
+        <member name="P:HistoryMinerva.ConversionFileRow.Material">
+             <summary>
+             V4.7 属性整备：材料、表面处理、热处理三槽的待写值。
+            
+             值住在行上而不是计划里，因为 <c>AssemblyRenamePlan</c> 每次改图号前缀都会整份重建，
+             而用户填的材料不该跟着前缀一起被清掉。ViewModel 负责按源路径把它们搬回新行。
+             空串表示这一槽本轮不写，不会把模板里已有的值抹掉。
+             </summary>
+        </member>
+        <member name="P:HistoryMinerva.ConversionFileRow.SurfaceTreatment">
+            <inheritdoc cref="P:HistoryMinerva.ConversionFileRow.Material"/>
+        </member>
+        <member name="P:HistoryMinerva.ConversionFileRow.HeatTreatment">
+            <inheritdoc cref="P:HistoryMinerva.ConversionFileRow.Material"/>
+        </member>
+        <member name="P:HistoryMinerva.ConversionFileRow.WritesProperties">
+             <summary>
+             这一行的属性会不会真的落盘：只有拿到图号的 <c>.SLDPRT</c> 才会。
+            
+             判定在建行时一次算好，不是每次取数再回改名计划里查一遍——页面每刷新一次表，
+             就要为每行的三列各查一次，几百个零件就是十万次线性查找。
+             </summary>
+        </member>
+        <member name="P:HistoryMinerva.ConversionFileRow.HasFeatureWarning">
+            <summary>识别为空、或有草图未能完全定义时为 true，用于着色。</summary>
+        </member>
+        <member name="T:HistoryMinerva.ConversionProgressPresenter">
+            <summary>
+            将稳定的 Worker 进度合同映射为 UI 文本；不参与 ViewModel 生命周期或调度。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.ExternalOutputLayout.EnsureDirectories(System.String,System.String)">
+            <summary>
+            <paramref name="xtDirectory"/> 传 null 表示本次没有 Parasolid 中转件
+            （SW 自整备管线），此时不创建空的 XT 目录。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaUiModule.ApplyPageContent(HistoryVulcan.Core.Commands.CommandContext)">
+            <summary>
+            Aurora 转换内容下拉默认只改选择通道。选来源、解析、改名必须先套用页面当前内容，
+            否则属性整备仍按默认零件文件夹去选目录。
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.HistoryMinervaUiModule.PartsTableNode">
+            <summary>零件表里那张表的节点 id。改属性以后要按节点刷它，否则界面停在旧值上。</summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaUiModule.SetPropertyAsync(HistoryVulcan.Core.Commands.CommandContext)">
+             <summary>
+             一键刷满一个属性槽：设计、日期、材料、表面处理、热处理。
+            
+             返回改了几行而不是空口说成功。「刷了 0 行」与「刷完了」必须能分开——
+             没解析装配体时一行都没有，用户点下去要能看出是自己少了一步。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaUiModule.EditCellAsync(HistoryVulcan.Core.Commands.CommandContext)">
+             <summary>
+             点单元格改一行的材料 / 表面处理 / 热处理。
+            
+             弹窗走 <c>aurora.ui.dialog</c> 而不是自己 <c>new Window</c>：前端独立之后顶层窗口
+             拿不到 <c>Aurora.*</c> 令牌，自建窗口会静默退化成系统外观。
+             用户点取消时命令仍然成功——失败指令会让宿主抢控制台并重排停靠（REQ-002）。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaUiModule.SelectionOptions(HistoryMinerva.PartPropertyField)">
+             <summary>
+             三个属性槽在 SolidWorks 里都不是自由文本，界面上也就只让选不让填。
+            
+             首项恒为 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.NoWriteOption"/>：选项框只能在候选之间轮换，
+             没有「清空」这个动作，少了这一项用户点错一次就再也退不回不写了。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaUiModule.EmptyOptionsReason(HistoryMinerva.PartPropertyField)">
+            <summary>只剩「（不写）」一项时的说明。材料是唯一会空的一栏，另两栏有模板兜底。</summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaUiModule.TryResolveSelection(HistoryMinerva.PartPropertyField,System.String,System.String@,System.String@,System.String@)">
+             <summary>
+             把下拉里选中的那一项折成模型层的值。
+            
+             「（不写）」折成空串——空串是 <see cref="T:HistoryMinerva.Contracts.PartPropertyWrite"/> 里「本轮不动这一槽」的约定。
+             材料还要多一步：下拉显示的是材质名（重名时带库名），而应用材质需要材质名**加**材料库，
+             所以要按候选表反查回去。查不到就报错，不能当成空串放过——那会变成静默的「选了但没生效」。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaUiModule.RefreshPartsTableAsync(HistoryVulcan.Core.Commands.CommandContext)">
+            <summary>
+            单元格动作是 Aurora 直接打到总线的，表格不会自己重取。不显式刷这一格，
+            用户看到的还是改之前的值——而旧值与新值长得一模一样地都是「一个字符串」。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaUiModule.OptionRows(HistoryMinerva.PartPropertyField)">
+            <summary>候选取数的行格式：Aurora 的 <c>optionsSource</c> 固定读 <c>value</c> 列。</summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaUiModule.PropertyCell(HistoryMinerva.ConversionFileRow,HistoryMinerva.PartPropertyField)">
+             <summary>
+             三个可点列的显示值。
+            
+             **空格子不能真的留空**：Aurora 的 <c>cellAction</c> 明确不触发空单元格，
+             而第一次填材料要点的恰恰是空格子——留空就等于这三列永远点不开。
+             因此会写属性的零件行在空值时渲染成占位符 <c>—</c>；不写属性的装配体行留真空，
+             让它保持不可点，用户也就不会往一个不会落盘的地方填字。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.HistoryMinervaUiModule.EmptyPropertyCell">
+            <summary>会写属性但还没填时的占位符。见 <see cref="M:HistoryMinerva.HistoryMinervaUiModule.PropertyCell(HistoryMinerva.ConversionFileRow,HistoryMinerva.PartPropertyField)"/> 里为什么不能留空。</summary>
+        </member>
+        <member name="T:HistoryMinerva.HistoryMinervaWorkspaceView">
+            <summary>
+            HistoryMinervaWorkspaceView
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.HistoryMinervaWorkspaceView.InitializeComponent">
+            <summary>
+            InitializeComponent
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.MappingContentOption">
+            <param name="Kind">转换内容枚举值。</param>
+            <param name="DisplayName">下拉列表里显示的文字。</param>
+            <param name="SourceHint">选择来源时给用户的提示。</param>
+            <param name="SourceFormat">该项的源 CAD 格式，是界面到 Worker 之间唯一的格式真值来源。</param>
+            <param name="IsAssemblySource">源是单个装配体文件（而不是零件文件夹）。</param>
+        </member>
+        <member name="M:HistoryMinerva.MappingContentOption.#ctor(HistoryMinerva.MappingContent,System.String,System.String,HistoryMinerva.Contracts.ConversionSourceFormat,System.Boolean)">
+            <param name="Kind">转换内容枚举值。</param>
+            <param name="DisplayName">下拉列表里显示的文字。</param>
+            <param name="SourceHint">选择来源时给用户的提示。</param>
+            <param name="SourceFormat">该项的源 CAD 格式，是界面到 Worker 之间唯一的格式真值来源。</param>
+            <param name="IsAssemblySource">源是单个装配体文件（而不是零件文件夹）。</param>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.Kind">
+            <summary>转换内容枚举值。</summary>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.DisplayName">
+            <summary>下拉列表里显示的文字。</summary>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.SourceHint">
+            <summary>选择来源时给用户的提示。</summary>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.SourceFormat">
+            <summary>该项的源 CAD 格式，是界面到 Worker 之间唯一的格式真值来源。</summary>
+        </member>
+        <member name="P:HistoryMinerva.MappingContentOption.IsAssemblySource">
+            <summary>源是单个装配体文件（而不是零件文件夹）。</summary>
+        </member>
+        <member name="M:HistoryMinerva.MappingContentOption.ForAssemblyFile(System.String)">
+            <summary>按源装配文件的扩展名选出对应的转换内容。识别不出时返回 null。</summary>
+        </member>
+        <member name="M:HistoryMinerva.MappingRuntimePaths.LooksLikeLibraryRoot(System.String)">
+            <summary>
+            编号项目库根：至少两个 <c>YYYY-NNN-*</c> 子目录。HistoryClio 用这个识别，不再依赖裸仓哨兵。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.ModuleInfo">
+            <summary>
+            HistoryMinerva 模块入口。停靠页只承载四种 CAD 转换；Worker 状态命令由
+            <see cref="T:HistoryMinerva.WorkerCommands"/> 显式注册。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.PreflightValidator.ValidateEnvironment(System.String,HistoryMinerva.Contracts.ConversionSourceFormat)">
+            <param name="workerPath">Worker 可执行文件路径。</param>
+            <param name="sourceFormat">
+            本次转换的源格式。SW 自整备全程只用 SolidWorks，机器上没装 Solid Edge 也应当能跑。
+            </param>
+        </member>
+        <member name="T:HistoryMinerva.FavoriteMaterial">
+            <summary>用户在 SolidWorks 材料对话框里收藏的一种材质。</summary>
+            <param name="Label">下拉里显示的文字。重名时会带上材料库以示区分，所以它未必等于 <paramref name="Name"/>。</param>
+            <param name="Database">材料库，原样来自注册表：库名或 <c>.sldmat</c> 全路径。</param>
+            <param name="Name">材质名，写进模型时用的就是它。</param>
+        </member>
+        <member name="M:HistoryMinerva.FavoriteMaterial.#ctor(System.String,System.String,System.String)">
+            <summary>用户在 SolidWorks 材料对话框里收藏的一种材质。</summary>
+            <param name="Label">下拉里显示的文字。重名时会带上材料库以示区分，所以它未必等于 <paramref name="Name"/>。</param>
+            <param name="Database">材料库，原样来自注册表：库名或 <c>.sldmat</c> 全路径。</param>
+            <param name="Name">材质名，写进模型时用的就是它。</param>
+        </member>
+        <member name="P:HistoryMinerva.FavoriteMaterial.Label">
+            <summary>下拉里显示的文字。重名时会带上材料库以示区分，所以它未必等于 <paramref name="Name"/>。</summary>
+        </member>
+        <member name="P:HistoryMinerva.FavoriteMaterial.Database">
+            <summary>材料库，原样来自注册表：库名或 <c>.sldmat</c> 全路径。</summary>
+        </member>
+        <member name="P:HistoryMinerva.FavoriteMaterial.Name">
+            <summary>材质名，写进模型时用的就是它。</summary>
+        </member>
+        <member name="T:HistoryMinerva.SolidWorksPropertyOptions">
+             <summary>
+             三个属性下拉的候选从哪来。
+            
+             **为什么不写死在代码里**：这三栏在 SolidWorks 里都不是自由文本——
+             「表面处理」「热处理」是属性标签模板里的 <c>ComboBox</c>，候选写在模板的
+             <c>&lt;Data SourceType="List"&gt;</c> 里；「材料」接的是材质库，用户收藏了哪几种就该出哪几种。
+             把候选抄进代码，用户改一次模板、收藏一次新材料，这里就开始说假话，而且是**静默**说假话：
+             选出来的值照样写得进去，只是和图框、明细表对不上。
+            
+             两处来源都记在当前用户的 SolidWorks 系统选项里，运行时读注册表拿到，
+             因此仓库里没有任何一条本机路径。读不到就退回 <see cref="T:HistoryMinerva.Contracts.PartPropertyNames"/> 里的兜底副本，
+             页面照常能开——没装 SolidWorks 的机器也得能把这一页画出来。
+            
+             不做缓存：读两个注册表值加解一个 9KB 的 XML，只在面板取候选时发生，
+             省下的那几毫秒不值得换来「改了模板要重启 Vulcan 才生效」。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.SolidWorksPropertyOptions.Materials">
+            <summary>收藏材料。读不到时返回空表——材料没有兜底候选，凭空编一个材质名比不给更糟。</summary>
+        </member>
+        <member name="M:HistoryMinerva.SolidWorksPropertyOptions.SurfaceTreatments">
+            <summary>「表面处理」候选。</summary>
+        </member>
+        <member name="M:HistoryMinerva.SolidWorksPropertyOptions.HeatTreatments">
+            <summary>「热处理」候选。</summary>
+        </member>
+        <member name="M:HistoryMinerva.SolidWorksPropertyOptions.ResolveVersionKey">
+             <summary>
+             当前用户装的最新一版 SolidWorks 的注册表键名。
+            
+             不能直接按名字倒序取第一个：这一层下面还有 <c>SOLIDWORKS CAM</c> 这种同前缀的兄弟键，
+             字符串序里 <c>C</c> 排在 <c>2</c> 后面，取到的会是 CAM 而不是 2025。只认后缀是四位年份的。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.SolidWorksPropertyOptions.DatabaseLabel(System.String)">
+            <summary>材料库拿来当区分用的短名：全路径只留文件名，库名原样。</summary>
+        </member>
+        <member name="T:HistoryMinerva.SourcePickDialog">
+            <summary>
+            来源对话框。装配体转换打开文件，零件转换打开文件夹，两套不得混用。
+            每次从桌面起步，不沿用宿主上次 CAD 目录。
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.WorkerClient.AssemblyInactivityTimeout">
+             <summary>
+             装配构建的无进度预算。
+            
+             装配阶段每个节点才报一条事件，而单个节点要插入组件、逐个设变换、
+             重建配合、再存盘——25 个组件的节点安静超过 180 秒是常态，不是卡死。
+             现场事故：按零件的 180 秒预算去卡装配，装配管线被反复误杀。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.WorkerClient.InactivityBudgetFor(System.String)">
+            <summary>零件按 180 秒卡；装配用自己的预算。看门狗防的是真死，不是慢。</summary>
+        </member>
+        <member name="T:HistoryMinerva.WorkerCommands">
+            <summary>后台 Worker 状态命令。转换执行走前端 <c>minerva.conversion.*</c>。</summary>
+        </member>
+    </members>
+</doc>

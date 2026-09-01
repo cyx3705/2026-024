@@ -2,7 +2,7 @@
 
 > 对外模块：`HistoryMinerva` / `minerva`
 >
-> 当前源码版本：`4.6.12`
+> 当前源码版本：`4.8.1`
 
 中央停靠页只做四种 CAD 转换。历史 SWuse 建模 API、Roslyn 编译器与双参数构建协议已删除。
 
@@ -12,7 +12,7 @@
 src/HistoryMinerva            前端：Aurora 描述式页面、模块入口、命令
 src/HistoryMinerva.Contracts  转换协议
 src/HistoryMinerva.Worker     单一 x64 STA 工作进程：只跑转换动词
-build/                        唯一版本源（HistoryMinervaVersion）与 HistoryVulcan 3.11.1 最低兼容版本
+build/                        唯一版本源（HistoryMinervaVersion）与 HistoryVulcan 5.1.2 最低兼容版本
 eng/                          清单同步、正式包脚本
 ```
 

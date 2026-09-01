@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace HistoryMinerva.Contracts;
 
 /// <summary>
@@ -425,12 +428,13 @@ public static class PropertyPrepPlanner
                 ? Path.Combine(directory, originalName + extension)
                 : sourcePath;
             entry = new MutableEntry(
-                Guid.NewGuid().ToString("N"),
+                EntryId(sourcePath),
                 sourcePath,
                 targetPath,
                 assigns ? drawingToken : string.Empty,
                 assigns,
-                depth);
+                depth,
+                Path.GetFileNameWithoutExtension(targetPath));
             map[sourcePath] = entry;
         }
 
@@ -466,12 +470,13 @@ public static class PropertyPrepPlanner
                     DrawingNumber.FormatFileName(drawing, originalName, extension))
                 : sourcePath;
             entry = new MutableEntry(
-                Guid.NewGuid().ToString("N"),
+                EntryId(sourcePath),
                 sourcePath,
                 targetPath,
                 number?.Text ?? string.Empty,
                 assignsDrawingNumber,
-                depth);
+                depth,
+                originalName);
             map[sourcePath] = entry;
         }
 
@@ -510,13 +515,25 @@ public static class PropertyPrepPlanner
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
+    /// <summary>
+    /// 条目 id 按源文件全路径定死，不用 <see cref="Guid.NewGuid"/>。
+    ///
+    /// 改一次图号前缀，整份计划连同零件行都要重建。id 随机的话每一行都换一个身份：
+    /// 界面没法原地更新，只能整表重画——几百个零件就是几百次控件重建，正是"改一格卡一下"
+    /// 的来源；而且用户此刻点开的那一格，指向的已经是一个不存在的 id 了。
+    /// </summary>
+    private static string EntryId(string sourcePath)
+        => Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(sourcePath.ToLowerInvariant())))[..32];
+
     private sealed class MutableEntry(
         string id,
         string sourcePath,
         string targetPath,
         string drawingNumber,
         bool assignsDrawingNumber,
-        int depth)
+        int depth,
+        string partName)
     {
         private readonly List<string> _parents = [];
 
@@ -539,6 +556,7 @@ public static class PropertyPrepPlanner
                 drawingNumber,
                 assignsDrawingNumber,
                 _parents,
-                Depth);
+                Depth,
+                PartName: partName);
     }
 }

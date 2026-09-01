@@ -21,14 +21,28 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     private string _featureText = "";
     private string _sketchText = "";
     private bool _hasFeatureWarning;
+    private string _material = "";
+    private string _surfaceTreatment = "";
+    private string _heatTreatment = "";
 
-    public ConversionFileRow(ScanCandidate candidate, bool regeneratesExistingOutput = false, string? id = null)
+    /// <summary>
+    /// 建一行。<c>showsTargetName</c> 为 true 时「文件」列显示产物名而不是源文件名——
+    /// 属性整备就是这一档：那一列要给的是**改完之后**的文件名，而不是一个用户马上就要
+    /// 改掉的旧名字。V4.8 之前这靠另开一列「改名后预览」，于是同一个东西在表里占两列，
+    /// 而改名成功之后「文件」那一列还继续显示一个已经不存在的文件。
+    /// </summary>
+    public ConversionFileRow(
+        ScanCandidate candidate,
+        bool regeneratesExistingOutput = false,
+        string? id = null,
+        bool showsTargetName = false)
     {
         Id = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString("N") : id;
         SourcePath = candidate.SourcePath;
         XtPath = candidate.XtPath;
         SolidWorksPath = candidate.SolidWorksPath;
         HasExistingOutput = candidate.HasExistingOutput;
+        ShowsTargetName = showsTargetName;
         _regeneratesExistingOutput = regeneratesExistingOutput;
         _isSelected = !candidate.HasExistingOutput || regeneratesExistingOutput;
         _status = !candidate.HasExistingOutput
@@ -37,14 +51,49 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     }
 
     public string Id { get; }
-    public string SourcePath { get; }
-    public string XtPath { get; }
-    public string SolidWorksPath { get; }
+    public string SourcePath { get; private set; }
+    public string XtPath { get; private set; }
+    public string SolidWorksPath { get; private set; }
     public string FileName => Path.GetFileName(SourcePath);
     public string XtFileName => Path.GetFileName(XtPath);
     public string SolidWorksFileName => Path.GetFileName(SolidWorksPath);
-    public string RenamePreview => SolidWorksFileName;
+
+    /// <summary>「文件」列显示的名字。见构造函数的 <c>showsTargetName</c>。</summary>
+    public string DisplayName => ShowsTargetName ? SolidWorksFileName : FileName;
+
+    /// <inheritdoc cref="DisplayName"/>
+    public bool ShowsTargetName { get; }
     public bool HasExistingOutput { get; }
+
+    /// <summary>
+    /// 把这一行改挂到新的源/目标路径上，**保留行对象本身**。
+    ///
+    /// 图号前缀改一个字，改名计划整份重建，每一行的目标路径都跟着变。若为此把
+    /// <c>Parts</c> 清空重填，几百个零件就是几百次控件重建加几百条集合变更通知——
+    /// 那正是「改一格卡一下」的来源。行 Id 由源路径定死（见 <c>PropertyPrepPlanner</c>），
+    /// 所以同一个零件在前后两份计划里仍是同一行，可以原地更新。
+    /// </summary>
+    public void Rebind(ScanCandidate candidate)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        if (SourcePath == candidate.SourcePath
+            && XtPath == candidate.XtPath
+            && SolidWorksPath == candidate.SolidWorksPath)
+        {
+            return;
+        }
+
+        SourcePath = candidate.SourcePath;
+        XtPath = candidate.XtPath;
+        SolidWorksPath = candidate.SolidWorksPath;
+        Raise(nameof(SourcePath));
+        Raise(nameof(XtPath));
+        Raise(nameof(SolidWorksPath));
+        Raise(nameof(FileName));
+        Raise(nameof(XtFileName));
+        Raise(nameof(SolidWorksFileName));
+        Raise(nameof(DisplayName));
+    }
 
     /// <summary>
     /// 本轮会把已有产物连同特征一起重做。开启特征识别的装配转换就是这种情形：
@@ -108,6 +157,41 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
         set => SetField(ref _sketchText, value);
     }
 
+    /// <summary>
+    /// V4.7 属性整备：材料、表面处理、热处理三槽的待写值。
+    ///
+    /// 值住在行上而不是计划里，因为 <c>AssemblyRenamePlan</c> 每次改图号前缀都会整份重建，
+    /// 而用户填的材料不该跟着前缀一起被清掉。ViewModel 负责按源路径把它们搬回新行。
+    /// 空串表示这一槽本轮不写，不会把模板里已有的值抹掉。
+    /// </summary>
+    public string Material
+    {
+        get => _material;
+        set => SetField(ref _material, value ?? "");
+    }
+
+    /// <inheritdoc cref="Material"/>
+    public string SurfaceTreatment
+    {
+        get => _surfaceTreatment;
+        set => SetField(ref _surfaceTreatment, value ?? "");
+    }
+
+    /// <inheritdoc cref="Material"/>
+    public string HeatTreatment
+    {
+        get => _heatTreatment;
+        set => SetField(ref _heatTreatment, value ?? "");
+    }
+
+    /// <summary>
+    /// 这一行的属性会不会真的落盘：只有拿到图号的 <c>.SLDPRT</c> 才会。
+    ///
+    /// 判定在建行时一次算好，不是每次取数再回改名计划里查一遍——页面每刷新一次表，
+    /// 就要为每行的三列各查一次，几百个零件就是十万次线性查找。
+    /// </summary>
+    public bool WritesProperties { get; set; }
+
     /// <summary>识别为空、或有草图未能完全定义时为 true，用于着色。</summary>
     public bool HasFeatureWarning
     {
@@ -123,6 +207,9 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void Raise(string propertyName)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
