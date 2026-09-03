@@ -235,7 +235,14 @@ if ($legacyEntries.Count -gt 0) {
 }
 foreach ($candidate in @(Get-ChildItem -LiteralPath $publishRoot -Directory -Force -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '^HistoryMinerva-v\d+\.\d+\.\d+$' -and $_.FullName -ne $candidateRoot })) {
-    Move-Item -LiteralPath $candidate.FullName -Destination $historyRoot
+    # 同一版本可以先后构建多次（改了代码但没升版本号），归档名因此会与 history/ 里已有的那份撞名。
+    # 撞名时按仓内既有惯例补时间戳（`HistoryMinerva-v4.4.5-20260830-214859`），不覆盖旧档：
+    # 那份旧档是当时真正发出去过的候选，覆盖掉就再也说不清运行区装的是哪一次构建。
+    $archivePath = Join-Path $historyRoot $candidate.Name
+    if (Test-Path -LiteralPath $archivePath) {
+        $archivePath = "{0}-{1}" -f $archivePath, (Get-Date -Format 'yyyyMMdd-HHmmss')
+    }
+    Move-Item -LiteralPath $candidate.FullName -Destination $archivePath
 }
 try {
     foreach ($item in @(Get-ChildItem -LiteralPath $candidateRoot -Force |
