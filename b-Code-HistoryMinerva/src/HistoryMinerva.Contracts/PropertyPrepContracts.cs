@@ -2,7 +2,15 @@ namespace HistoryMinerva.Contracts;
 
 /// <summary>
 /// 一个零件要写进 SolidWorks 配置特定属性的那几个值。装配体不写属性，因此只挂在零件条目上。
-/// 空串表示这一槽本轮不动，Worker 会跳过它，不会把模板里已有的值抹成空。
+///
+/// 空串在这里有**两种**含义，按槽分：
+/// <list type="bullet">
+///   <item><b>用户填的槽</b>（日期、设计、材料、表面处理、热处理）空串＝本轮不动这一槽。
+///         用户没填不等于要把模板里已有的值抹成空；</item>
+///   <item><b>计划算出来的槽</b>（图号、名称、类型）恒写，空串就是**真的写成空**。
+///         图号那一槽尤其如此：V4.9 起删图号就是"把图号改成空"，
+///         它与改成 <c>ZS-01</c> 是同一条路径上的同一个动作，只是值不同（DEC-057）。</item>
+/// </list>
 /// </summary>
 /// <param name="Material">
 /// 材质名，例如 <c>304不锈钢</c>。它**不会**被当成文本写进「材料」槽——那一槽是链接，
@@ -14,9 +22,10 @@ namespace HistoryMinerva.Contracts;
 /// <c>SetMaterialPropertyName2</c>，无需归一化。V4.8 追加，缺省空串＝不动零件材质。
 /// </param>
 /// <param name="Name">
-/// 「名称」槽的值，即文件名里图号之后的那一段原零件名称，由
-/// <see cref="RenameEntry.PartName"/> 带下来。V4.8 追加，缺省空串＝不动这一槽。
-/// 它没有界面入口：名称就是改名用的那个名称，再让用户填一遍只会制造两份真话。
+/// 「名称」槽的值，即文件名里图号之后的那一段零件名称，由
+/// <see cref="RenameEntry.PartName"/> 带下来，与目标文件名取自同一次计算。
+/// V4.9 起用户可以在表里逐行改名称，改完的名字同时决定文件名和这一槽——
+/// 仍然只有一份真话，只是这份真话现在可以编辑了。
 /// </param>
 public sealed record PartPropertyWrite(
     string DrawingNumber,
@@ -40,19 +49,21 @@ public sealed record PartPropertyWrite(
     public bool MaterialIsIncomplete
         => !string.IsNullOrEmpty(Material) && string.IsNullOrEmpty(MaterialDatabase);
 
-    /// <summary>全部槽都没得写时，没有必要为它打开一次 SolidWorks 文档。</summary>
-    public bool IsEmpty
-        => string.IsNullOrEmpty(DrawingNumber)
-           && string.IsNullOrEmpty(Name)
-           && string.IsNullOrEmpty(Category)
-           && string.IsNullOrEmpty(Date)
-           && string.IsNullOrEmpty(Designer)
-           && string.IsNullOrEmpty(Material)
-           && string.IsNullOrEmpty(SurfaceTreatment)
-           && string.IsNullOrEmpty(HeatTreatment);
+    /// <summary>
+    /// 一个槽都写不了时，没有必要为它打开一次 SolidWorks 文档。
+    ///
+    /// V4.9 起零件条目实际上不会命中这一条：图号、名称、类型三槽恒写。留着它是因为
+    /// 判空的责任在这个记录自己身上，而不该由调用方按"哪几个槽是恒写的"另抄一遍。
+    /// </summary>
+    public bool IsEmpty => !Pairs().Any();
 
     /// <summary>
-    /// 按 <see cref="PartPropertyNames"/> 的顺序展开成「槽名 → 值」，只含非空槽。
+    /// 按 <see cref="PartPropertyNames"/> 的顺序展开成「槽名 → 值」。
+    ///
+    /// 「图号」「名称」「类型」**恒在**，哪怕值是空串：这三槽由改名计划算出来，
+    /// 计划说它是空，零件上就该是空。删图号走的正是这一条——图号槽写空串，
+    /// 而不是删掉整槽（删槽会让属性标签上少一行，用户看到的是"属性没了"而不是"属性空了"）。
+    /// 其余五槽是用户填的，空串＝本轮不动，不会把模板里已有的值抹掉。
     ///
     /// 「材料」一槽给出的是链接记号 <see cref="PartPropertyNames.MaterialLinkValue"/> 而不是材质名：
     /// 材质本身由 <see cref="Material"/> / <see cref="MaterialDatabase"/> 走
@@ -60,7 +71,7 @@ public sealed record PartPropertyWrite(
     /// </summary>
     public IEnumerable<KeyValuePair<string, string>> Pairs()
     {
-        if (!string.IsNullOrEmpty(DrawingNumber)) yield return new(PartPropertyNames.DrawingNumber, DrawingNumber);
+        yield return new(PartPropertyNames.DrawingNumber, DrawingNumber ?? string.Empty);
         if (!string.IsNullOrEmpty(Name)) yield return new(PartPropertyNames.Name, Name);
         if (!string.IsNullOrEmpty(Category)) yield return new(PartPropertyNames.Category, Category);
         if (!string.IsNullOrEmpty(Date)) yield return new(PartPropertyNames.Date, Date);
@@ -76,8 +87,13 @@ public sealed record PartPropertyWrite(
 /// 放在末尾且缺省 <c>null</c>：没有它的历史请求 JSON 仍是一次纯改名。
 /// </summary>
 /// <param name="PartName">
-/// 图号之后的那一段原零件名称，与 <see cref="TargetPath"/> 的文件名取自同一次计算。
-/// V4.8 追加并写进「名称」属性槽；缺省空串，没有它的历史请求 JSON 语义不变。
+/// 图号之后的那一段零件名称，与 <see cref="TargetPath"/> 的文件名取自同一次计算，
+/// 并写进「名称」属性槽。来源是文件名里第一个空格之后的部分，用户在表里改过的以用户的为准。
+/// </param>
+/// <param name="DrawingNumber">
+/// 这一条要用的图号文本。**空串是有效值**，表示这个文件本轮不带图号（删图号）。
+/// 它与 <see cref="AssignsDrawingNumber"/> 不是一回事：后者说的是"这个文件归本模块管"，
+/// 前者说的是"管出来的号是什么"。
 /// </param>
 public sealed record RenameEntry(
     string Id,
@@ -148,13 +164,18 @@ public sealed record AssemblyRenamePlan(
 }
 
 /// <summary>
-/// Worker <c>--rename-assembly</c> 请求。字段只追加，不插入；
-/// <see cref="SourceFormat"/> 与 <see cref="StripBySpace"/> 缺省 SolidWorks / 按图号改名，
-/// V4.7 追加的 <see cref="WriteProperties"/> 缺省 false，历史请求仍是一次纯改名。
+/// Worker <c>--rename-assembly</c> 请求。
+///
+/// V4.9 去掉了 <c>StripBySpace</c>。它曾经表示"反向操作：只清空图号槽、不写其余六槽"，
+/// 而删图号其实就是把图号改成空——同一条改名路径、同一份属性载荷，只是
+/// <see cref="DrawingPrefix"/> 为空。留着那个开关意味着同一件事有两份计划、两份校验、
+/// 两条 Worker 分支，而它们算出来的目标文件名本来就相同（DEC-057）。
 /// </summary>
+/// <param name="DrawingPrefix">
+/// 图号前缀。**空串合法**，表示这一轮把图号改成空，也就是删图号。
+/// </param>
 /// <param name="WriteProperties">
 /// 为 true 时，改名与引用更新全部成功后再逐个打开零件写 <see cref="RenameEntry.Properties"/>。
-/// 与 <see cref="StripBySpace"/> 互斥：洗图号是反向操作，只清空「图号」槽，不写其余六槽。
 /// </param>
 public sealed record AssemblyRenameRequest(
     string BatchId,
@@ -162,5 +183,4 @@ public sealed record AssemblyRenameRequest(
     string DrawingPrefix,
     IReadOnlyList<RenameEntry> Entries,
     ConversionSourceFormat SourceFormat = ConversionSourceFormat.SolidWorks,
-    bool StripBySpace = false,
     bool WriteProperties = false);

@@ -99,12 +99,6 @@ public partial class AssemblyView : UserControl, IDisposable
             await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.run", HistoryMinervaIdentity.Name + ":UI");
     }
 
-    private async void OnStripClick(object sender, RoutedEventArgs e)
-    {
-        if (_commandBus is not null)
-            await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.strip", HistoryMinervaIdentity.Name + ":UI");
-    }
-
     private async void OnCancelClick(object sender, RoutedEventArgs e)
     {
         if (_commandBus is not null)

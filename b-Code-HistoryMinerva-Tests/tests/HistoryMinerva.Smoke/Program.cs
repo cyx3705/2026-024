@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using HistoryMinerva;
@@ -557,7 +557,8 @@ static void TestVulcanModuleHostSurface(string root)
     var commandNames = registry.All().Select(command => command.Name).ToArray();
     Equal(5, commandNames.Count(name => name.StartsWith("minerva.worker.", StringComparison.OrdinalIgnoreCase)),
         "the real Vulcan ModuleHost must register all five Minerva worker commands");
-    Equal(4, commandNames.Count(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)),
+    // V4.9 起是 probe / run / cancel 三条：删图号并回写入，strip 退役（DEC-057）。
+    Equal(3, commandNames.Count(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)),
         "ModuleHost must register conversion commands during Attach, before ShellUi exists");
     True(!commandNames.Any(name => name.StartsWith("HistoryMinerva.", StringComparison.OrdinalIgnoreCase)),
         "the real Vulcan ModuleHost must not synthesize the legacy HistoryMinerva command surface");
@@ -1987,19 +1988,27 @@ static void TestPropertyPrepDrawingNumbers(string root)
     Equal("ZS-LHL-01-02-01 阀体.SLDPRT", Path.GetFileName(Target(minorPlan, valveBody)), "小组件零件从 -01 起编");
     Equal("ZS-LHL-01-02-02 阀芯.SLDPRT", Path.GetFileName(Target(minorPlan, valveCore)), "小组件零件按出现顺序递增");
 
+    // V4.9：空前缀是删图号，不是非法输入（DEC-057）。
     var empty = PropertyPrepPlanner.Create(minorProbe, " ");
-    True(empty.BlockingIssues.Count > 0 && empty.BlockingIssues[0].Contains("前缀", StringComparison.Ordinal),
-        "空前缀必须阻断，不能猜一个前缀出来");
+    True(empty.BlockingIssues.Count == 0, "空前缀是删图号，不得阻断：" + string.Join("；", empty.BlockingIssues));
+    True(empty.Entries.All(entry => entry.DrawingNumber.Length == 0), "空前缀下每一条的图号都必须是空");
 
-    True(DrawingNumber.TryStripBySpace("ZS-LHL-00 总装.SLDASM", out var stripToken, out var stripName),
-        "必须能按第一个空格洗掉图号");
-    Equal("ZS-LHL-00", stripToken, "空格前是图号");
-    Equal("总装", stripName, "空格后是原名称");
-    True(DrawingNumber.TryStripBySpace("ZS-LHL-01-02-01 进样器 模块.SLDPRT", out _, out var spacedName),
-        "原名里还有空格时，只切第一处");
-    Equal("进样器 模块", spacedName, "第一空格之后全部保留为原名");
-    True(!DrawingNumber.TryStripBySpace("阀体.SLDPRT", out _, out _),
-        "没有空格的文件不得假装有图号");
+    DrawingNumber.SplitFileName("ZS-LHL-00 总装.SLDASM", out var stripToken, out var stripName);
+    Equal("ZS-LHL-00", stripToken, "空格前是图号段");
+    Equal("总装", stripName, "空格后是名称");
+    DrawingNumber.SplitFileName("ZS-LHL-01-02-01 进样器 模块.SLDPRT", out _, out var spacedName);
+    Equal("进样器 模块", spacedName, "名称里还有空格时，只切第一处");
+    DrawingNumber.SplitFileName("阀体.SLDPRT", out var noToken, out var wholeName);
+    Equal("", noToken, "没有空格的文件不得假装有图号");
+    Equal("阀体", wholeName, "没有空格时整个主名都是名称");
+    // 现场那些不合命名规则的旧号照样按空格切——那一段马上就会被本轮的新号整体换掉，
+    // 拿规则去卡它只会把真名当成图号留在新名字里（DEC-058）。
+    DrawingNumber.SplitFileName("QT-88(旧) 阀盖.SLDPRT", out var legacyToken, out var legacyName);
+    Equal("QT-88(旧)", legacyToken, "不合规则的旧图号段也要按空格认出来");
+    Equal("阀盖", legacyName, "不合规则的旧图号后面仍然是名称");
+
+    Equal("ZS-LHL", DrawingNumber.InferPrefix("ZS-LHL-00 总装.SLDASM"), "根装配名去掉 -00 尾巴就是前缀");
+    Equal("", DrawingNumber.InferPrefix("总装.SLDASM"), "没编过号的装配推不出前缀，必须留空");
 
     var stripDir = Path.Combine(root, "property-prep-strip");
     var stripStandardDir = Path.Combine(stripDir, "标准件");
@@ -2039,18 +2048,19 @@ static void TestPropertyPrepDrawingNumbers(string root)
                 new AssemblyChild("螺钉-1", numberedScrew, false, false, identity),
             ], []),
         ]);
-    var stripPlan = PropertyPrepPlanner.CreateStrip(stripProbe);
-    True(stripPlan.BlockingIssues.Count == 0, "合法装配的洗图号规划不得有阻断：" + string.Join("；", stripPlan.BlockingIssues));
-    True(stripPlan.CanRename, "带空格图号的装配必须允许按空格洗名");
-    Equal("总装.SLDASM", Path.GetFileName(Target(stripPlan, numberedRoot)), "总装必须洗成原名");
-    Equal("进样器模块.SLDASM", Path.GetFileName(Target(stripPlan, numberedMajor)), "大组件必须洗成原名");
-    Equal("轴.SLDPRT", Path.GetFileName(Target(stripPlan, numberedShaft)), "零件必须洗成原名");
+    // 删图号就是前缀为空的那一份计划，没有第二条管线（DEC-057）。
+    var stripPlan = PropertyPrepPlanner.Create(stripProbe, string.Empty);
+    True(stripPlan.BlockingIssues.Count == 0, "合法装配的删图号规划不得有阻断：" + string.Join("；", stripPlan.BlockingIssues));
+    True(stripPlan.CanRename, "带图号的装配在空前缀下必须有文件要改名");
+    Equal("总装.SLDASM", Path.GetFileName(Target(stripPlan, numberedRoot)), "总装必须只剩名称");
+    Equal("进样器模块.SLDASM", Path.GetFileName(Target(stripPlan, numberedMajor)), "大组件必须只剩名称");
+    Equal("轴.SLDPRT", Path.GetFileName(Target(stripPlan, numberedShaft)), "零件必须只剩名称");
     True(stripPlan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, numberedStandard)),
-        "子文件夹外购件装配体不得按空格洗名");
+        "子文件夹外购件装配体不得被删图号");
     True(stripPlan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, numberedScrew)),
-        "子文件夹外购件内部不得按空格洗名");
-    True(stripPlan.Unnumbered.Any(entry => AssemblyRenamePlan.SamePath(entry.SourcePath, plainPlate)),
-        "没有空格的文件必须保持原名");
+        "子文件夹外购件内部不得被删图号");
+    // 本来就没有图号的文件在空前缀下目标名与原名相同，因此不在待改名之列。
+    Equal("底板.SLDPRT", Path.GetFileName(Target(stripPlan, plainPlate)), "没有图号的文件必须保持原名");
 }
 
 static string Target(AssemblyRenamePlan plan, string source)
@@ -2097,7 +2107,6 @@ static void TestPropertyPrepViewModel(string root)
     viewModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(viewModel.CanConvert, "解析成功且前缀有效后必须允许写入");
-    True(viewModel.CanStrip, "解析完成后洗图号按钮必须可点，不得因文件名没有空格而灰掉");
     True(viewModel.Parts.Any(row => row.DisplayName.Contains("ZS-LHL-00", StringComparison.Ordinal)
                                     || row.DisplayName.Contains("ZS-LHL-01", StringComparison.Ordinal)),
         "「文件」列必须直接展示规划后的文件名，不再另开一列改名后预览");
@@ -2171,25 +2180,23 @@ static void TestPropertyPrepViewModel(string root)
     UseAssemblySource(stripModel, numberedAssembly);
     stripModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(!stripModel.CanConvert, "未填前缀时不得写入");
-    True(stripModel.CanStrip, "解析完成后洗图号按钮必须可点");
-    True(stripModel.CanExecuteStrip, "文件名带空格时必须允许按空格洗图号");
-    Equal("请填写图号前缀后再写入。", stripModel.RenameBlockedReason,
-        "未填前缀时写入必须给出可读原因，不得沿用转换状态文案");
-    True(stripModel.Parts.Any(row => row.DisplayName.Contains("总装", StringComparison.Ordinal)
-                                    || row.DisplayName.Contains("阀体", StringComparison.Ordinal)),
-        "未填前缀时「文件」列必须展示洗掉图号后的文件名");
-    stripModel.StripDrawingNumbersAsync().GetAwaiter().GetResult();
+    // 解析时按根装配名把前缀认出来预填；这一份样件的根装配是「ZS-LHL-00 总装.SLDASM」。
+    Equal("ZS-LHL", stripModel.DrawingPrefix, "解析必须按根装配名把图号前缀认出来填进框里");
+    // 用户把前缀清空＝删图号。这一轮照样是一次写入，不是另一条管线（DEC-057）。
+    stripModel.DrawingPrefix = string.Empty;
+    True(stripModel.CanConvert, "前缀为空是删图号，必须允许写入");
+    True(stripModel.Parts.Any(row => row.DrawingText.Length == 0 && row.PartName.Length > 0),
+        "前缀为空时图号列必须是空的，名称列仍要有名字");
+    stripModel.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(stripRequest is { StripBySpace: true }, "洗图号按钮必须走 rename Worker 并带上 StripBySpace");
-    True(stripRequest is { WriteProperties: false },
-        "洗图号是反向操作，不得顺手把七个属性槽也写一遍");
-    var cleared = SolidWorksDocumentRenamer.DescribePropertyTargets(stripRequest!);
-    True(cleared.Count == 1
-         && cleared[0].Pairs.Count == 1
-         && cleared[0].Pairs[0].Key == PartPropertyNames.DrawingNumber
-         && cleared[0].Pairs[0].Value.Length == 0,
-        "洗图号必须把零件的「图号」属性清成空串，且只动这一槽");
+    True(stripRequest is { WriteProperties: true }, "删图号也走同一条写入路径");
+    Equal(string.Empty, stripRequest!.DrawingPrefix, "删图号那一轮的前缀必须是空串");
+    var cleared = SolidWorksDocumentRenamer.DescribePropertyTargets(stripRequest);
+    True(cleared.Count >= 1, "删图号那一轮仍然要写零件属性");
+    var clearedSlots = cleared[0].Pairs.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+    True(clearedSlots.TryGetValue(PartPropertyNames.DrawingNumber, out var clearedNumber)
+         && clearedNumber.Length == 0,
+        "删图号必须把「图号」槽写成空串——清空，而不是把整槽删掉");
 }
 
 /// <summary>
@@ -2271,7 +2278,7 @@ static void TestPropertyPrepPropertyWrite(string root)
 
     model.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(request is { WriteProperties: true, StripBySpace: false }, "写入必须带上 WriteProperties");
+    True(request is { WriteProperties: true }, "写入必须带上 WriteProperties");
     True(request!.Entries.Count == 2,
         "整份清单都要送到 Worker：只送待改名条目，第二次写入会一个属性都写不进去");
 
@@ -2949,8 +2956,8 @@ static void TestUiModuleRegistration(string root)
         "HistoryVulcan 前端必须注册 minerva.conversion.cancel");
     True(context.Registry.TryGet("minerva.conversion.probe", out var probe),
         "HistoryVulcan frontend must register minerva.conversion.probe");
-    True(context.Registry.TryGet("minerva.conversion.strip", out var strip),
-        "HistoryVulcan 前端必须注册 minerva.conversion.strip");
+    True(!context.Registry.TryGet("minerva.conversion.strip", out _),
+        "V4.9 删图号并入写入，不得再注册 minerva.conversion.strip");
     True(!context.Registry.TryGet("minerva.ui.pane", out _),
         "Minerva must not register a self-owned WPF pane command");
     True(context.Registry.TryGet("minerva.ui.describe", out var describe),
@@ -2973,7 +2980,7 @@ static void TestUiModuleRegistration(string root)
         "Aurora UI protocol commands must be hidden from remote consumers");
     True(probe.Readonly && probe.RequiresUiThread,
         "minerva.conversion.probe must be a UI-thread read command");
-    foreach (var registeredCommand in new[] { convert, cancel, strip })
+    foreach (var registeredCommand in new[] { convert, cancel })
     {
         True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
             $"{registeredCommand.Name} 必须是需要 UI 线程的写命令");
@@ -3043,12 +3050,12 @@ static void TestUiModuleRegistration(string root)
                 "属性整备必须在顶部提供写入按钮（改名并写零件属性）");
             True(pageJson.Contains("\"action\": \"minerva.property.today\", \"text\": \"一键设置日期\"", StringComparison.Ordinal),
                 "属性整备必须在顶部提供一键设置日期按钮");
-            True(pageJson.Contains("\"text\": \"按空格洗图号\"", StringComparison.Ordinal),
-                "属性整备必须在顶部提供按空格洗图号按钮");
-            True(pageJson.Contains("\"id\": \"sw-property-parts\", \"dataSource\": { \"command\": \"minerva.ui.data\", \"args\": { \"view\": \"parts\" } }, \"columns\": [{ \"key\": \"file\", \"title\": \"文件\", \"width\": \"*\" }, { \"key\": \"status\", \"title\": \"状态\", \"width\": \"80\" }, { \"key\": \"material\", \"title\": \"材料\", \"width\": \"110\", \"cellAction\": \"minerva.cell.material\" }, { \"key\": \"surface\", \"title\": \"表面处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.surface\" }, { \"key\": \"heat\", \"title\": \"热处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.heat\" }]", StringComparison.Ordinal),
-                "属性整备零件表必须是文件、状态加三个可点属性列，不得再显示特征/草图列");
+            True(!pageJson.Contains("按空格洗图号", StringComparison.Ordinal),
+                "V4.9 删图号＝清空前缀后写入，顶部不得再留一个同义按钮（DEC-057）");
+            True(pageJson.Contains("\"id\": \"sw-property-parts\", \"dataSource\": { \"command\": \"minerva.ui.data\", \"args\": { \"view\": \"parts\" } }, \"columns\": [{ \"key\": \"drawing\", \"title\": \"图号\", \"width\": \"150\" }, { \"key\": \"name\", \"title\": \"名称\", \"width\": \"*\", \"cellAction\": \"minerva.cell.name\" }, { \"key\": \"status\", \"title\": \"状态\", \"width\": \"80\" }, { \"key\": \"material\", \"title\": \"材料\", \"width\": \"110\", \"cellAction\": \"minerva.cell.material\" }, { \"key\": \"surface\", \"title\": \"表面处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.surface\" }, { \"key\": \"heat\", \"title\": \"热处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.heat\" }]", StringComparison.Ordinal),
+                "属性整备零件表必须是图号、名称、状态加三个可点属性列（V4.9 把「文件」拆成图号与名称）");
             True(!pageJson.Contains("改名后预览", StringComparison.Ordinal),
-                "改名后的名字直接进「文件」列，不得再有独立的改名后预览列");
+                "改名后的名字由图号列与名称列直接给出，不得再有独立的改名后预览列");
             True(pageJson.Contains("\"id\": \"prefix\", \"label\": \"图号前缀\", \"commitAction\": \"minerva.options.prefix\"", StringComparison.Ordinal),
                 "属性整备必须保留图号前缀输入框");
             True(pageJson.Contains("\"id\": \"designer\", \"label\": \"设计\", \"commitAction\": \"minerva.property.designer\"", StringComparison.Ordinal),
@@ -3150,13 +3157,6 @@ static void TestUiModuleRegistration(string root)
                 .ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult().Data;
             True(propertyRows is { Count: 0 },
                 $"属性整备选完装配体不得自动解析，实得 {propertyRows?.Count}");
-            var stripOnRenamePage = context.Bus.ExecuteAsync(
-                "minerva.conversion.strip content=" + CommandParser.QuoteArg(renameContent), "UI")
-                .GetAwaiter().GetResult();
-            True(!stripOnRenamePage.Success
-                 && stripOnRenamePage.Message.Contains("请先解析", StringComparison.Ordinal)
-                 && !stripOnRenamePage.Message.Contains("特征整备", StringComparison.Ordinal),
-                "改名页洗图号必须进入改名模式，不得报只能在特征整备用。实得：" + stripOnRenamePage.Message);
             var runOnRenamePage = context.Bus.ExecuteAsync(
                 "minerva.conversion.run content=" + CommandParser.QuoteArg(renameContent), "UI")
                 .GetAwaiter().GetResult();

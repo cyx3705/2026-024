@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 
 namespace HistoryMinerva.Contracts;
@@ -7,12 +7,24 @@ namespace HistoryMinerva.Contracts;
 /// 根据所选 SolidWorks 装配体的现有图号（或默认总装 <c>前缀-00</c>）
 /// 给同级零件和下层装配体分配图号。子文件夹中的外购件不编号；
 /// 小组件下的装配体视为零件，其内部文件不分配图号。
+///
+/// **V4.9 只剩这一条计划**。前缀为空时算出来的目标文件名就是「只有名称、没有图号」，
+/// 那正是删图号要的结果，因此原来那条独立的「按空格洗图号」计划连同它的遍历、
+/// 校验和 Worker 分支一起退役了（DEC-057）。
 /// </summary>
 public static class PropertyPrepPlanner
 {
+    /// <param name="drawingPrefix">
+    /// 图号前缀。空串合法：整份计划的图号都是空，文件名只剩名称，也就是删图号。
+    /// </param>
+    /// <param name="partNames">
+    /// 用户在表里改过的零件名称，按源文件全路径记账。没记的以文件名里第一个空格之后的
+    /// 那一段为准。名称同时决定目标文件名和「名称」属性槽——两者永远是同一个字符串。
+    /// </param>
     public static AssemblyRenamePlan Create(
         AssemblyProbeResult probe,
-        string drawingPrefix)
+        string drawingPrefix,
+        IReadOnlyDictionary<string, string>? partNames = null)
     {
         ArgumentNullException.ThrowIfNull(probe);
         var issues = new List<string>();
@@ -26,7 +38,7 @@ public static class PropertyPrepPlanner
         {
             return new AssemblyRenamePlan(
                 probe.SourceAssemblyPath,
-                drawingPrefix.Trim(),
+                (drawingPrefix ?? string.Empty).Trim(),
                 [],
                 [],
                 [ex.Message],
@@ -70,6 +82,7 @@ public static class PropertyPrepPlanner
         }
 
         var rootNumber = ResolveRootNumber(rootPath, prefix);
+        var names = partNames ?? EmptyNames;
         var planned = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var unnumbered = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         VisitAssembly(
@@ -83,6 +96,7 @@ public static class PropertyPrepPlanner
             probe,
             planned,
             unnumbered,
+            names,
             warnings);
 
         var entries = planned.Values
@@ -115,87 +129,6 @@ public static class PropertyPrepPlanner
         return new AssemblyRenamePlan(rootPath, prefix, entries, skipped, issues, Distinct(warnings));
     }
 
-    /// <summary>
-    /// 按文件名第一个空格洗掉图号，保留空格后的原名。只遍历所选装配体同级目录文档，
-    /// 不含子文件夹外购件。没有空格的文件保持原名。
-    /// </summary>
-    public static AssemblyRenamePlan CreateStrip(AssemblyProbeResult probe)
-    {
-        ArgumentNullException.ThrowIfNull(probe);
-        var issues = new List<string>();
-        var warnings = new List<string>();
-        if (!Path.IsPathFullyQualified(probe.SourceAssemblyPath)
-            || !ConversionPathLayout.HasExtension(
-                probe.SourceAssemblyPath, ConversionPathLayout.SolidWorksAssemblyExtension))
-        {
-            issues.Add("按空格洗图号只接受绝对路径的 SolidWorks .SLDASM。");
-            return Empty(probe.SourceAssemblyPath, string.Empty, issues);
-        }
-
-        var rootPath = Path.GetFullPath(probe.SourceAssemblyPath);
-        if (probe.Documents is not { Count: > 0 })
-        {
-            issues.Add("探查结果缺少文档层级，无法按空格洗图号。");
-            return Empty(rootPath, string.Empty, issues);
-        }
-
-        var documents = new Dictionary<string, AssemblyDocumentReading>(StringComparer.OrdinalIgnoreCase);
-        foreach (var document in probe.Documents)
-        {
-            if (!Path.IsPathFullyQualified(document.SourceAssemblyPath))
-                continue;
-            documents[Path.GetFullPath(document.SourceAssemblyPath)] = document;
-        }
-
-        if (!documents.ContainsKey(rootPath))
-        {
-            issues.Add("探查结果没有所选装配体的文档读数。");
-            return Empty(rootPath, string.Empty, issues);
-        }
-
-        var planned = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
-        var kept = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
-        VisitStrip(
-            rootPath,
-            parentPath: null,
-            depth: 0,
-            rootPath,
-            documents,
-            probe,
-            planned,
-            kept,
-            warnings);
-
-        var entries = planned.Values
-            .Select(entry => entry.ToEntry())
-            .OrderBy(entry => entry.Depth)
-            .ThenBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var skipped = kept.Values
-            .Select(entry => entry.ToEntry())
-            .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        CheckCollisions(entries, issues);
-        foreach (var entry in entries)
-        {
-            if (!File.Exists(entry.SourcePath))
-                issues.Add($"源文件不存在：{entry.SourcePath}");
-            var targetDirectory = Path.GetDirectoryName(entry.TargetPath);
-            var sourceDirectory = Path.GetDirectoryName(entry.SourcePath);
-            if (!string.Equals(targetDirectory, sourceDirectory, StringComparison.OrdinalIgnoreCase))
-                issues.Add($"改名不得换目录：{entry.SourcePath}");
-            if (!AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath)
-                && File.Exists(entry.TargetPath))
-            {
-                issues.Add($"目标文件已存在：{entry.TargetPath}");
-            }
-        }
-
-        warnings.AddRange(probe.Warnings);
-        return new AssemblyRenamePlan(rootPath, string.Empty, entries, skipped, issues, Distinct(warnings));
-    }
-
     private static AssemblyRenamePlan Empty(string source, string prefix, IReadOnlyList<string> issues)
         => new(source, prefix, [], [], issues, []);
 
@@ -218,9 +151,10 @@ public static class PropertyPrepPlanner
         AssemblyProbeResult probe,
         Dictionary<string, MutableEntry> planned,
         Dictionary<string, MutableEntry> unnumbered,
+        IReadOnlyDictionary<string, string> partNames,
         List<string> warnings)
     {
-        Remember(planned, assemblyPath, number, parentPath, depth, assignsDrawingNumber: true);
+        Remember(planned, assemblyPath, number, parentPath, depth, assignsDrawingNumber: true, partNames);
         if (skipChildren || !documents.TryGetValue(assemblyPath, out var document))
             return;
 
@@ -266,10 +200,10 @@ public static class PropertyPrepPlanner
             if (treatAsPart || !child.IsSubAssembly)
             {
                 var childNumber = number.Child(sequence++, asAssembly: false);
-                Remember(planned, childPath, childNumber, assemblyPath, depth + 1, assignsDrawingNumber: true);
+                Remember(planned, childPath, childNumber, assemblyPath, depth + 1, assignsDrawingNumber: true, partNames);
                 if (child.IsSubAssembly)
                     CollectUnnumberedDescendants(
-                        childPath, assemblyPath, depth + 1, rootPath, documents, planned, unnumbered);
+                        childPath, assemblyPath, depth + 1, rootPath, documents, planned, unnumbered, partNames);
                 continue;
             }
 
@@ -285,6 +219,7 @@ public static class PropertyPrepPlanner
                 probe,
                 planned,
                 unnumbered,
+                partNames,
                 warnings);
         }
 
@@ -309,7 +244,8 @@ public static class PropertyPrepPlanner
         string rootPath,
         IReadOnlyDictionary<string, AssemblyDocumentReading> documents,
         Dictionary<string, MutableEntry> planned,
-        Dictionary<string, MutableEntry> unnumbered)
+        Dictionary<string, MutableEntry> unnumbered,
+        IReadOnlyDictionary<string, string> partNames)
     {
         if (!documents.TryGetValue(assemblyPath, out var document))
             return;
@@ -325,122 +261,11 @@ public static class PropertyPrepPlanner
             if (ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, rootPath))
                 continue;
 
-            Remember(unnumbered, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false);
+            Remember(unnumbered, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false, partNames);
             if (child.IsSubAssembly)
-                CollectUnnumberedDescendants(childPath, assemblyPath, depth + 1, rootPath, documents, planned, unnumbered);
+                CollectUnnumberedDescendants(
+                    childPath, assemblyPath, depth + 1, rootPath, documents, planned, unnumbered, partNames);
         }
-    }
-
-    private static void VisitStrip(
-        string path,
-        string? parentPath,
-        int depth,
-        string rootPath,
-        IReadOnlyDictionary<string, AssemblyDocumentReading> documents,
-        AssemblyProbeResult probe,
-        Dictionary<string, MutableEntry> planned,
-        Dictionary<string, MutableEntry> kept,
-        List<string> warnings)
-    {
-        if (!Path.IsPathFullyQualified(path))
-        {
-            warnings.Add($"跳过非绝对路径引用：{path}");
-            return;
-        }
-
-        var fullPath = Path.GetFullPath(path);
-        if (ConversionPathLayout.IsOutsideAssemblyDirectory(fullPath, rootPath))
-            return;
-
-        var map = DrawingNumber.TryStripBySpace(Path.GetFileName(fullPath), out var token, out var original)
-            ? planned
-            : kept;
-        RememberStrip(map, fullPath, parentPath, depth, token, original);
-        if (!documents.TryGetValue(fullPath, out var document))
-            return;
-
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var skippedPurchased = 0;
-        foreach (var child in document.Children)
-        {
-            if (!Path.IsPathFullyQualified(child.SourcePath))
-            {
-                warnings.Add($"跳过非绝对路径引用：{child.SourcePath}");
-                continue;
-            }
-
-            var childPath = Path.GetFullPath(child.SourcePath);
-            if (!seen.Add(childPath))
-            {
-                if (planned.TryGetValue(childPath, out var plannedExisting))
-                    plannedExisting.AddParent(fullPath);
-                else if (kept.TryGetValue(childPath, out var keptExisting))
-                    keptExisting.AddParent(fullPath);
-                continue;
-            }
-
-            if (ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, rootPath))
-            {
-                skippedPurchased++;
-                continue;
-            }
-
-            if (child.Diagnostic?.Contains("引用不存在", StringComparison.Ordinal) == true
-                || IsFullySuppressed(probe, childPath))
-            {
-                warnings.Add($"跳过未解析或抑制的引用：{childPath}");
-                continue;
-            }
-
-            if (planned.TryGetValue(childPath, out var alreadyPlanned))
-            {
-                alreadyPlanned.AddParent(fullPath);
-                continue;
-            }
-
-            if (kept.TryGetValue(childPath, out var alreadyKept))
-            {
-                alreadyKept.AddParent(fullPath);
-                continue;
-            }
-
-            VisitStrip(childPath, fullPath, depth + 1, rootPath, documents, probe, planned, kept, warnings);
-        }
-
-        if (skippedPurchased > 0)
-            warnings.Add($"已跳过 {skippedPurchased} 个外购件（子文件夹，与装配体不同级）。");
-    }
-
-    private static void RememberStrip(
-        Dictionary<string, MutableEntry> map,
-        string sourcePath,
-        string? parentPath,
-        int depth,
-        string drawingToken,
-        string originalName)
-    {
-        if (!map.TryGetValue(sourcePath, out var entry))
-        {
-            var assigns = DrawingNumber.TryStripBySpace(Path.GetFileName(sourcePath), out _, out _);
-            var extension = Path.GetExtension(sourcePath);
-            var directory = Path.GetDirectoryName(sourcePath) ?? string.Empty;
-            var targetPath = assigns
-                ? Path.Combine(directory, originalName + extension)
-                : sourcePath;
-            entry = new MutableEntry(
-                EntryId(sourcePath),
-                sourcePath,
-                targetPath,
-                assigns ? drawingToken : string.Empty,
-                assigns,
-                depth,
-                Path.GetFileNameWithoutExtension(targetPath));
-            map[sourcePath] = entry;
-        }
-
-        entry.AddParent(parentPath);
-        if (depth < entry.Depth)
-            entry.Depth = depth;
     }
 
     private static bool IsFullySuppressed(AssemblyProbeResult probe, string path)
@@ -458,16 +283,17 @@ public static class PropertyPrepPlanner
         DrawingNumber? number,
         string? parentPath,
         int depth,
-        bool assignsDrawingNumber)
+        bool assignsDrawingNumber,
+        IReadOnlyDictionary<string, string> partNames)
     {
         if (!map.TryGetValue(sourcePath, out var entry))
         {
-            var originalName = ResolveOriginalName(sourcePath, number?.Prefix);
+            var partName = ResolvePartName(sourcePath, partNames);
             var extension = Path.GetExtension(sourcePath);
             var targetPath = number is { } drawing
                 ? Path.Combine(
                     Path.GetDirectoryName(sourcePath) ?? string.Empty,
-                    DrawingNumber.FormatFileName(drawing, originalName, extension))
+                    DrawingNumber.FormatFileName(drawing, partName, extension))
                 : sourcePath;
             entry = new MutableEntry(
                 EntryId(sourcePath),
@@ -476,7 +302,7 @@ public static class PropertyPrepPlanner
                 number?.Text ?? string.Empty,
                 assignsDrawingNumber,
                 depth,
-                originalName);
+                partName);
             map[sourcePath] = entry;
         }
 
@@ -485,17 +311,29 @@ public static class PropertyPrepPlanner
             entry.Depth = depth;
     }
 
-    private static string ResolveOriginalName(string sourcePath, string? prefix)
+    /// <summary>
+    /// 这个文件的名称。用户在表里改过的以用户的为准，否则取文件名里第一个空格之后的那一段。
+    ///
+    /// **不再按前缀去匹配旧图号**（V4.8 及以前的做法）。那条路要求旧名字正好以本轮的前缀打头，
+    /// 于是换一个前缀、或者旧号是别的项目带过来的，整个旧文件名就会被当成"名称"——
+    /// 结果是 <c>ZS-01 QT-88 阀体.SLDPRT</c> 这样两个号叠在一起的名字。
+    /// 按空格切只认一条规则，前缀长什么样都不影响它（DEC-058）。
+    /// </summary>
+    private static string ResolvePartName(string sourcePath, IReadOnlyDictionary<string, string> partNames)
     {
-        var fileName = Path.GetFileName(sourcePath);
-        if (!string.IsNullOrWhiteSpace(prefix)
-            && DrawingNumber.TryParseFileName(fileName, prefix, out _, out var original))
+        if (partNames.TryGetValue(Path.GetFullPath(sourcePath), out var edited)
+            && !string.IsNullOrWhiteSpace(edited))
         {
-            return original;
+            return edited.Trim();
         }
 
-        return Path.GetFileNameWithoutExtension(sourcePath);
+        DrawingNumber.SplitFileName(Path.GetFileName(sourcePath), out _, out var name);
+        return name;
     }
+
+    /// <summary>没有任何名称改动时用它，省掉每次建一个空字典。</summary>
+    private static readonly IReadOnlyDictionary<string, string> EmptyNames =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     private static void CheckCollisions(IReadOnlyList<RenameEntry> entries, List<string> issues)
     {

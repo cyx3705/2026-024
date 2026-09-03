@@ -23,18 +23,37 @@ public sealed partial class AssemblyViewModel
     /// 之后用户改哪一格就覆盖哪一格。
     /// </summary>
     private readonly Dictionary<string, PartPropertyEdit> _propertyEdits = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 用户在「名称」列里改过的名字，按源文件全路径记账。没记的以文件名里第一个空格
+    /// 之后的那一段为准（见 <c>PropertyPrepPlanner</c>）。
+    ///
+    /// 与三个属性槽同一个理由住在这里而不是行上：改一次前缀整份计划重建，
+    /// 用户改过的名字不该跟着前缀一起被冲掉。
+    /// </summary>
+    private readonly Dictionary<string, string> _nameEdits = new(StringComparer.OrdinalIgnoreCase);
+
     private string _designer = string.Empty;
     private string _dateText = string.Empty;
+
+    /// <summary>
+    /// 本轮操作的最终结论，由操作自己**同步**写下。
+    ///
+    /// 不能让命令去读 <see cref="StatusText"/>：那一句是排进 UI 队列的，而命令在操作的
+    /// Task 完成时就返回了，两者之间没有先后保证。V4.8 现场看到的
+    /// 「✓ 正在写入：16 个文件改名、15 个零件写属性。」正是这么来的——结果行里写着一句
+    /// 进行时，用户没法从控制台确认这一轮到底成没成。
+    /// </summary>
+    private string _lastResultText = string.Empty;
+
+    /// <summary>命令回报用的结论文本。操作没留下结论时退回 <see cref="StatusText"/>。</summary>
+    internal string ResultText
+        => string.IsNullOrEmpty(_lastResultText) ? StatusText : _lastResultText;
 
     public bool IsRenameMode
         => SelectedMappingContent.Kind == MappingContent.SolidWorksAssemblyPropertyPrep;
 
     public bool ShowConversionOptions => !IsRenameMode;
-
-    public bool CanStrip => CanEdit && IsRenameMode
-        && !_conversionCompleted && _probeResult is not null;
-
-    internal bool CanExecuteStrip => CanStrip && _stripPlan?.CanRename == true;
 
     /// <summary>
     /// 「写入」= 改名 + 写属性，所以门是 <see cref="AssemblyRenamePlan.CanWrite"/> 而不是 CanRename。
@@ -53,12 +72,12 @@ public sealed partial class AssemblyViewModel
                 return "正在执行操作。";
             if (_probeResult is null)
                 return "请先解析装配体。";
-            if (string.IsNullOrWhiteSpace(_drawingPrefix) || _renamePlan is null)
-                return "请填写图号前缀后再写入。";
+            if (_renamePlan is null)
+                return "改名计划还没建起来，请重新解析装配体。";
             if (_renamePlan.BlockingIssues.Count > 0)
                 return string.Join("；", _renamePlan.BlockingIssues);
             if (!_renamePlan.CanWrite)
-                return "图号已与规则一致，也没有可写属性的零件。";
+                return "图号与名称都已与规则一致，也没有可写属性的零件。";
             if (_conversionCompleted)
                 return "本轮写入已完成，请重新解析后再写入。";
             return StatusText;
@@ -106,6 +125,144 @@ public sealed partial class AssemblyViewModel
     }
 
     /// <summary>
+    /// 图号前缀。
+    ///
+    /// **空串是正常状态，不是「还没填」**：它表示这一轮把图号改成空，也就是删图号
+    /// （DEC-057）。因此它与材料那三栏同构——底下一个框，改它就是整表一起改，
+    /// 只不过它改的是图号而不是某个属性槽。
+    /// </summary>
+    public string DrawingPrefix
+    {
+        get => _drawingPrefix;
+        set
+        {
+            var trimmed = value?.Trim() ?? string.Empty;
+            if (_drawingPrefix == trimmed)
+                return;
+            _drawingPrefix = trimmed;
+            OnPropertyChanged();
+            ApplyRenamePreview();
+            OnPropertyChanged(nameof(CanConvert));
+            OnPropertyChanged(nameof(CanWrite));
+        }
+    }
+
+    // ---------------------------------------------------------------- 三个属性槽的统一态
+
+    /// <summary>
+    /// 这一列现在是不是一个统一的值。返回 <c>null</c> 表示**不统一**。
+    ///
+    /// 只看会写属性的行：装配体和未编号内部件那几行的三格永远是空的，
+    /// 把它们算进来的话任何一张表都是「不统一」。
+    /// </summary>
+    internal string? UniformProperty(PartPropertyField field)
+    {
+        string? first = null;
+        var seen = false;
+        foreach (var row in Parts)
+        {
+            if (!row.WritesProperties)
+                continue;
+            var value = ReadPartProperty(row, field);
+            if (!seen)
+            {
+                first = value;
+                seen = true;
+                continue;
+            }
+
+            if (!string.Equals(first, value, StringComparison.Ordinal))
+                return null;
+        }
+
+        return seen ? first : string.Empty;
+    }
+
+    /// <summary>
+    /// 底下那个选项框此刻该显示什么（V4.9 状态机）。
+    ///
+    /// 统一且非空 → 就显示那个值；不统一 → <see cref="PartPropertyNames.NoWriteOption"/>；
+    /// 统一为空（谁都没填）→ 同样是它。也就是说「（不写）」在**框**上读作
+    /// 「这一列没有一个共同的值」，而不是「这一列不写」——不写是**单元格**上的事。
+    ///
+    /// 材料还要多一步：行里存的是材质名，框里显示的是候选标签（重名材质带库名以示区分）。
+    /// </summary>
+    internal string PropertyBoxText(PartPropertyField field)
+    {
+        var uniform = UniformProperty(field);
+        if (string.IsNullOrEmpty(uniform))
+            return PartPropertyNames.NoWriteOption;
+        return field == PartPropertyField.Material
+            ? MaterialLabel(uniform, UniformMaterialDatabase())
+            : uniform;
+    }
+
+    /// <summary>统一材质对应的材料库；不统一或没有时是空串。</summary>
+    private string UniformMaterialDatabase()
+    {
+        string? first = null;
+        foreach (var row in Parts)
+        {
+            if (!row.WritesProperties)
+                continue;
+            var database = _propertyEdits.TryGetValue(Path.GetFullPath(row.SourcePath), out var edit)
+                ? edit.MaterialDatabase ?? string.Empty
+                : string.Empty;
+            if (first is null)
+            {
+                first = database;
+                continue;
+            }
+
+            if (!string.Equals(first, database, StringComparison.Ordinal))
+                return string.Empty;
+        }
+
+        return first ?? string.Empty;
+    }
+
+    /// <summary>
+    /// 材质名 → 下拉里显示的标签。收藏里找不到就原样返回材质名：
+    /// 零件身上本来就可能是一种用户没收藏过的材质，那时显示它的真名比显示「（不写）」诚实。
+    /// </summary>
+    private static string MaterialLabel(string materialName, string database)
+    {
+        var favorites = SolidWorksPropertyOptions.Materials();
+        var exact = favorites.FirstOrDefault(item =>
+            string.Equals(item.Name, materialName, StringComparison.Ordinal)
+            && string.Equals(item.Database, database, StringComparison.Ordinal));
+        if (exact.Label is { Length: > 0 })
+            return exact.Label;
+        var byName = favorites.FirstOrDefault(item =>
+            string.Equals(item.Name, materialName, StringComparison.Ordinal));
+        return byName.Label is { Length: > 0 } ? byName.Label : materialName;
+    }
+
+    /// <summary>
+    /// 表里出现过、但用户没收藏的材质名。
+    ///
+    /// 候选表必须把它们带上，否则会出现这样一格：零件身上是「6061 合金」，表里也这么显示，
+    /// 底下的框却选不中它——框里没有这一项，于是退回第一项，看起来像是材料被悄悄改成了不写。
+    /// </summary>
+    internal IReadOnlyList<string> ExtraMaterialNames()
+    {
+        var favorites = SolidWorksPropertyOptions.Materials();
+        var extra = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var row in Parts)
+        {
+            if (!row.WritesProperties || row.Material.Length == 0)
+                continue;
+            if (favorites.Any(item => string.Equals(item.Name, row.Material, StringComparison.Ordinal)))
+                continue;
+            if (seen.Add(row.Material))
+                extra.Add(row.Material);
+        }
+
+        return extra;
+    }
+
+    /// <summary>
     /// 一键刷满某一列。返回被改动的行数，让命令能如实回报「刷了几行」而不是空口说成功。
     /// 只刷会写属性的零件行：装配体和未编号的内部件不进属性写入清单，刷了也不会落盘。
     /// </summary>
@@ -141,7 +298,7 @@ public sealed partial class AssemblyViewModel
         return true;
     }
 
-    /// <summary>读回某一格的当前值，供弹输入框时预填。</summary>
+    /// <summary>读回某一格的当前值，供弹选择框时预填。</summary>
     public string GetPartProperty(string rowId, PartPropertyField field)
     {
         var row = FindRow(rowId);
@@ -155,9 +312,64 @@ public sealed partial class AssemblyViewModel
         return row is { WritesProperties: true };
     }
 
+    // ---------------------------------------------------------------- 名称列
+
+    /// <summary>这一行会不会被改名。未编号的内部件保持原名，「名称」列也就不该能点。</summary>
+    public bool RenamesFile(string rowId)
+    {
+        var row = FindRow(rowId);
+        return row is { RenamesFile: true };
+    }
+
+    /// <summary>读回「名称」列当前的值，供弹输入框时预填。</summary>
+    public string GetPartName(string rowId) => FindRow(rowId)?.PartName ?? string.Empty;
+
     /// <summary>
-    /// 三个可点列现在能不能落到零件上。改名计划还没建起来（没解析、或没填图号前缀）时是 false，
-    /// 命令据此给出「请先解析并填前缀」而不是空口报「刷了 0 个零件」。
+    /// 改一行的名称。
+    ///
+    /// 空名字和带文件名非法字符的名字都不收：前者会让文件名只剩一个图号，
+    /// 在明细表里认不出是哪个零件；后者会让改名当场失败，而那时用户已经离开这一格了。
+    /// </summary>
+    public bool SetPartName(string rowId, string name, out string error)
+    {
+        error = string.Empty;
+        var row = FindRow(rowId);
+        if (row is not { RenamesFile: true })
+        {
+            error = "这一行不改名（标准件/外购件内部），名称未修改。";
+            return false;
+        }
+
+        var trimmed = name?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0)
+        {
+            error = "名称不能为空——文件名不能只剩一个图号。";
+            return false;
+        }
+
+        if (trimmed.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            error = "名称里有文件名不允许的字符，改名会失败。";
+            return false;
+        }
+
+        if (string.Equals(row.PartName, trimmed, StringComparison.Ordinal))
+            return true;
+
+        _nameEdits[Path.GetFullPath(row.SourcePath)] = trimmed;
+        // 名称同时决定目标文件名，所以要整份重建计划：改完这一格，那一行的
+        // 「图号 名称.ext」当场就得变，重名检查也要按新名字再跑一遍。
+        ApplyRenamePreview();
+        OnPropertyChanged(nameof(CanConvert));
+        OnPropertyChanged(nameof(CanWrite));
+        return true;
+    }
+
+    /// <summary>
+    /// 三个可点列现在能不能落到零件上。改名计划还没建起来（还没解析装配体）时是 false，
+    /// 命令据此给出「请先解析装配体」而不是空口报「刷了 0 个零件」。
+    ///
+    /// V4.9 起不再要求前缀非空：前缀为空是删图号，那一轮照样写属性。
     /// </summary>
     public bool PropertyEditsReady => IsRenameMode && _renamePlan is not null;
 
@@ -218,63 +430,6 @@ public sealed partial class AssemblyViewModel
         string SurfaceTreatment,
         string HeatTreatment);
 
-    internal string StripBlockedReason
-    {
-        get
-        {
-            if (!IsRenameMode)
-                return "洗图号只在「属性整备（改名）」下可用，不能在特征整备或转换模式里用。";
-            if (!CanEdit)
-                return "正在执行操作。";
-            if (_probeResult is null)
-                return "请先解析装配体。";
-            if (_stripPlan is null)
-                return "请先解析装配体。";
-            if (_stripPlan.BlockingIssues.Count > 0)
-                return string.Join("；", _stripPlan.BlockingIssues);
-            if (!_stripPlan.CanRename)
-                return "没有可按空格洗掉的图号。";
-            if (_conversionCompleted)
-                return "本轮改名已完成，请重新解析后再洗图号。";
-            return StatusText;
-        }
-    }
-
-    public async Task StripDrawingNumbersAsync(IProgress<string>? progress = null)
-    {
-        _operationProgress = progress;
-        _isStripping = true;
-        OnPropertyChanged(nameof(OperationText));
-        try
-        {
-            await StartOperationAsync(isProbe: false, StripCoreAsync);
-        }
-        finally
-        {
-            _isStripping = false;
-            OnPropertyChanged(nameof(OperationText));
-            if (ReferenceEquals(_operationProgress, progress))
-                _operationProgress = null;
-        }
-    }
-
-    public string DrawingPrefix
-    {
-        get => _drawingPrefix;
-        set
-        {
-            var trimmed = value?.Trim() ?? string.Empty;
-            if (_drawingPrefix == trimmed)
-                return;
-            _drawingPrefix = trimmed;
-            OnPropertyChanged();
-            ApplyRenamePreview();
-            OnPropertyChanged(nameof(CanConvert));
-            OnPropertyChanged(nameof(CanStrip));
-            OnPropertyChanged(nameof(CanWrite));
-        }
-    }
-
     internal bool CanKeepSolidWorksAssembly(MappingContentOption next)
         => _sourceKind == ConversionSourceKind.Assembly
            && !string.IsNullOrWhiteSpace(_sourceAssemblyPath)
@@ -329,25 +484,24 @@ public sealed partial class AssemblyViewModel
         SyncFeatureRecognitionDefault(value.Kind);
     }
 
+    /// <summary>
+    /// 按当前前缀与名称记账重建改名计划，并把它画进零件表。
+    ///
+    /// V4.9 只有这一份计划：前缀为空时它算出来的目标文件名就是「只有名称」，
+    /// 那正是删图号要的结果（DEC-057）。
+    /// </summary>
     private void ApplyRenamePreview()
     {
         if (!IsRenameMode || _probeResult is null)
         {
             _renamePlan = null;
-            _stripPlan = null;
-            OnPropertyChanged(nameof(CanStrip));
+            OnPropertyChanged(nameof(CanWrite));
             return;
         }
 
-        _stripPlan = PropertyPrepPlanner.CreateStrip(_probeResult);
-        var plan = string.IsNullOrWhiteSpace(_drawingPrefix)
-            ? _stripPlan
-            : PropertyPrepPlanner.Create(_probeResult, _drawingPrefix);
-        _renamePlan = string.IsNullOrWhiteSpace(_drawingPrefix) ? null : plan;
-        RenderPropertyPrepRows(
-            plan,
-            stripPreview: string.IsNullOrWhiteSpace(_drawingPrefix));
-        OnPropertyChanged(nameof(CanStrip));
+        var plan = PropertyPrepPlanner.Create(_probeResult, _drawingPrefix, _nameEdits);
+        _renamePlan = plan;
+        RenderPropertyPrepRows(plan);
         OnPropertyChanged(nameof(CanWrite));
         OnPropertyChanged(nameof(SourcePartColumnHeader));
     }
@@ -360,7 +514,7 @@ public sealed partial class AssemblyViewModel
     /// 复用之后一次前缀改动只发出每行几条属性变更，而不是整表清空重填——后者在几百个
     /// 零件上就是几百次控件重建，也就是用户说的「改一格卡一下」。
     /// </summary>
-    private void RenderPropertyPrepRows(AssemblyRenamePlan plan, bool stripPreview)
+    private void RenderPropertyPrepRows(AssemblyRenamePlan plan)
     {
         var rows = new List<ConversionFileRow>(plan.Entries.Count + plan.Unnumbered.Count);
         var reusedAll = true;
@@ -377,37 +531,33 @@ public sealed partial class AssemblyViewModel
                 row.Rebind(candidate);
             }
 
-            // 顺序也要一致才算复用：改名计划把未编号件放 Unnumbered，洗图号计划把
-            // 无空格件放 kept，两者拼出来的行序可以不同，只比个数会把表留在旧顺序上。
+            // 顺序也要一致才算复用：只比个数会把表留在旧顺序上。
             if (reusedAll && (rows.Count >= Parts.Count || !ReferenceEquals(Parts[rows.Count], row)))
                 reusedAll = false;
 
+            // 图号与名称是两列，各自显示各自的那一段；文件名永远是这两段拼出来的。
+            row.DrawingText = entry.DrawingNumber;
+            row.PartName = entry.PartName;
+            row.RenamesFile = entry.AssignsDrawingNumber;
+            // 判据与 Worker 侧 AssemblyRenamePlan.IsWritablePart 一致，两边各判一次。
+            // 界面上让用户往装配体行里填材料，是在骗他——那一格永远不会落盘。
+            row.WritesProperties = AssemblyRenamePlan.IsWritablePart(entry);
+
             if (!entry.AssignsDrawingNumber)
             {
-                row.Status = stripPreview ? "无空格" : "无图号";
-                row.Detail = stripPreview ? "文件名没有空格，保持原名" : "标准件/外购件内部，保持原名";
-                row.FeatureText = "—";
-                row.SketchText = "—";
+                row.Status = "无图号";
+                row.Detail = "标准件/外购件内部，保持原名";
             }
             else if (AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath))
             {
                 row.Status = "已符合";
                 row.Detail = Path.GetFileName(entry.TargetPath);
-                row.FeatureText = entry.DrawingNumber;
-                row.SketchText = "—";
             }
             else
             {
                 row.Status = ConversionFileRow.ReadyStatus;
                 row.Detail = Path.GetFileName(entry.TargetPath);
-                row.FeatureText = entry.DrawingNumber;
-                row.SketchText = "—";
             }
-
-            // 判据与 Worker 侧 AssemblyRenamePlan.IsWritablePart 一致，两边各判一次。
-            // 界面上让用户往装配体行里填材料，是在骗他——那一格永远不会落盘。
-            // 洗图号预览（stripPreview）下不写属性，三列一律不可点。
-            row.WritesProperties = !stripPreview && AssemblyRenamePlan.IsWritablePart(entry);
 
             // 三个槽的权威是 _propertyEdits：解析时按零件现值预填，用户改过的覆盖它。
             // 前缀一改计划整份重建，不搬回来的话填了半张表的材料会跟着前缀一起消失。
@@ -428,51 +578,35 @@ public sealed partial class AssemblyViewModel
         WarningSummary = string.Join("；", plan.Warnings.Concat(
             string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
         var pending = plan.Entries.Count(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath));
+        var removing = plan.DrawingPrefix.Length == 0;
         StatusText = plan.BlockingIssues.Count > 0
-            ? (stripPreview ? $"洗图号规划有 {plan.BlockingIssues.Count} 个问题" : $"图号规划有 {plan.BlockingIssues.Count} 个问题")
-            : stripPreview
-                ? plan.CanRename
-                    ? $"可按空格洗掉 {pending} 个文件的图号"
-                    : "没有可按空格洗掉的图号"
-                : plan.CanRename
-                    ? $"图号规划完成：{pending} 个文件待改名"
-                    : "图号已与规则一致，无需改名";
+            ? $"图号规划有 {plan.BlockingIssues.Count} 个问题"
+            : pending > 0
+                ? removing
+                    ? $"删图号规划完成：{pending} 个文件待改名"
+                    : $"图号规划完成：{pending} 个文件待改名"
+                : removing
+                    ? "这些文件已经没有图号，无需改名"
+                    : "图号与名称都已与规则一致，无需改名";
     }
 
     private async Task RenameCoreAsync(CancellationToken cancellationToken)
         => await RunRenamePlanAsync(
-            _renamePlan ?? throw new InvalidOperationException("请先成功解析装配体并填写图号前缀。"),
-            stripBySpace: false,
-            "请填写图号前缀后再写入。",
-            "正在写入",
-            "属性整备写入",
+            _renamePlan ?? throw new InvalidOperationException("请先成功解析装配体。"),
             cancellationToken).ConfigureAwait(false);
 
-    private async Task StripCoreAsync(CancellationToken cancellationToken)
-        => await RunRenamePlanAsync(
-            _stripPlan ?? throw new InvalidOperationException("请先成功解析装配体。"),
-            stripBySpace: true,
-            "没有可按空格洗掉的图号。",
-            "正在按空格洗图号",
-            "属性整备洗图号",
-            cancellationToken).ConfigureAwait(false);
-
-    private async Task RunRenamePlanAsync(
-        AssemblyRenamePlan plan,
-        bool stripBySpace,
-        string emptyMessage,
-        string progressPrefix,
-        string resultPrefix,
-        CancellationToken cancellationToken)
+    private async Task RunRenamePlanAsync(AssemblyRenamePlan plan, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        // 写入模式看 CanWrite：文件名已经对了但属性还没写，也是一次要干的活。
-        // 洗图号仍看 CanRename——那条路只改名，没有名字可改就真的没事可做。
-        if (stripBySpace ? !plan.CanRename : !plan.CanWrite)
+        // 看 CanWrite 而不是 CanRename：文件名已经对了但属性还没写，也是一次要干的活。
+        if (!plan.CanWrite)
+        {
             throw new InvalidOperationException(
                 plan.BlockingIssues.Count > 0
                     ? string.Join("；", plan.BlockingIssues)
-                    : emptyMessage);
+                    : "图号与名称都已与规则一致，也没有可写属性的零件。");
+        }
+
         if (!string.Equals(_sourceHashAfterProbe, ComputeSha256(plan.SourceAssemblyPath), StringComparison.Ordinal))
             throw new InvalidDataException("源装配体在解析后发生变化，请重新解析后再写入。");
 
@@ -481,13 +615,9 @@ public sealed partial class AssemblyViewModel
             entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath));
         // 整份清单都要过去：Worker 自己挑出要改名的，属性则写在名字已经对的零件上。
         // 只送 pending 的话，第二次写入会因为「没有要改名的文件」而一个属性都写不进去。
-        var entries = stripBySpace
-            ? plan.Entries.ToArray()
-            : plan.Entries.Select(AttachProperties).ToArray();
-        var propertyCount = stripBySpace
-            ? 0
-            : entries.Count(entry => AssemblyRenamePlan.IsWritablePart(entry)
-                                     && entry.Properties is { IsEmpty: false });
+        var entries = plan.Entries.Select(AttachProperties).ToArray();
+        var propertyCount = entries.Count(entry => AssemblyRenamePlan.IsWritablePart(entry)
+                                                   && entry.Properties is { IsEmpty: false });
         // 按 Id 直接取行，不在几百行上逐条线性扫（那是 O(行 × 条目)，全在 UI 线程上）。
         foreach (var entry in entries)
         {
@@ -499,52 +629,59 @@ public sealed partial class AssemblyViewModel
             row.Detail = Path.GetFileName(entry.TargetPath);
         }
 
-        var workload = stripBySpace
-            ? $"{renameCount} 个文件"
-            : DescribeWriteWorkload(renameCount, propertyCount);
-        QueueUiUpdate(() => StatusText = $"{progressPrefix} {workload}");
+        var workload = DescribeWriteWorkload(renameCount, propertyCount, plan.DrawingPrefix.Length == 0);
+        QueueUiUpdate(() => StatusText = $"正在写入：{workload}");
         var request = new AssemblyRenameRequest(
             Guid.NewGuid().ToString("N"),
             plan.SourceAssemblyPath,
             plan.DrawingPrefix,
             entries,
             ConversionSourceFormat.SolidWorks,
-            stripBySpace,
-            WriteProperties: !stripBySpace);
+            WriteProperties: true);
         var exitCode = await _renameWorker(request, ReportWorkerEvent, cancellationToken).ConfigureAwait(false);
+        _lastOperationSucceeded = exitCode == 0;
+        if (exitCode != 0)
+        {
+            // 结论同步定下来，命令拿到的就是这一句，而不是队列里还没轮到的那一句。
+            _lastResultText = string.IsNullOrEmpty(_firstWorkerFailure)
+                ? "写入失败，详见 Vulcan 控制台。"
+                : $"写入失败：{_firstWorkerFailure}";
+            var failureText = _lastResultText;
+            QueueUiUpdate(() =>
+            {
+                StatusText = failureText;
+                OnPropertyChanged(nameof(CanConvert));
+                OnPropertyChanged(nameof(CanWrite));
+            });
+            throw new InvalidOperationException(failureText);
+        }
+
+        // 结论先按已知的工作量同步定下来；索引重建要在 UI 线程上做，做完再把
+        // 「索引已更新」那半句补进去。命令读到的至少已经是一句完成时。
+        _lastResultText = $"写入完成：{workload}";
         QueueUiUpdate(() =>
         {
             // 改完名之后立刻按落盘结果把索引挪到新文件名上，用户不必再手动导入一次。
             var reindexed = ReindexAfterRename(entries);
-            StatusText = exitCode == 0
-                ? $"{resultPrefix}完成：{workload}{reindexed}"
-                : $"{resultPrefix}失败";
+            _lastResultText = $"写入完成：{workload}{reindexed}";
+            StatusText = _lastResultText;
             OnPropertyChanged(nameof(CanConvert));
-            OnPropertyChanged(nameof(CanStrip));
             OnPropertyChanged(nameof(CanWrite));
         });
-        _lastOperationSucceeded = exitCode == 0;
-        if (exitCode != 0)
-        {
-            throw new InvalidOperationException(
-                string.IsNullOrEmpty(_firstWorkerFailure)
-                    ? $"{resultPrefix}失败，详见 Vulcan 控制台。"
-                    : $"{resultPrefix}失败：{_firstWorkerFailure}");
-        }
     }
 
-    private static string DescribeWriteWorkload(int renameCount, int propertyCount)
+    private static string DescribeWriteWorkload(int renameCount, int propertyCount, bool removingNumbers)
     {
         var parts = new List<string>(2);
         if (renameCount > 0)
-            parts.Add($"{renameCount} 个文件改名");
+            parts.Add(removingNumbers ? $"{renameCount} 个文件删图号" : $"{renameCount} 个文件改名");
         if (propertyCount > 0)
             parts.Add($"{propertyCount} 个零件写属性");
         return parts.Count == 0 ? "没有需要处理的文件" : string.Join("、", parts);
     }
 
     /// <summary>
-    /// 给一个改名条目挂上要写的七个槽。装配体和未编号内部件原样返回，不带属性载荷——
+    /// 给一个改名条目挂上要写的八个槽。装配体和未编号内部件原样返回，不带属性载荷——
     /// 判据与 Worker 侧一致，两边各判一次，界面漏判时 Worker 仍然不会去动装配体。
     /// </summary>
     private RenameEntry AttachProperties(RenameEntry entry)
@@ -566,7 +703,7 @@ public sealed partial class AssemblyViewModel
                 edit.SurfaceTreatment ?? string.Empty,
                 edit.HeatTreatment ?? string.Empty,
                 edit.MaterialDatabase ?? string.Empty,
-                // 「名称」没有界面入口，跟着改名一起走：值就是文件名里图号之后的那一段。
+                // 「名称」跟着改名一起走：值就是文件名里图号之后的那一段。
                 entry.PartName),
         };
     }
@@ -574,7 +711,7 @@ public sealed partial class AssemblyViewModel
     /// <summary>
     /// 解析装配体时读回来的三个槽进账，作为表格的预填值。
     ///
-    /// 覆盖既有记账是对的：解析就是一次显式的"重新去零件上认一遍"，此刻零件身上的值
+    /// 覆盖既有记账是对的：解析就是一次显式的「重新去零件上认一遍」，此刻零件身上的值
     /// 才是事实。用户之后改的那几格只影响记账，不会因为改图号前缀重画表格就被顶回去——
     /// 那条路只重建计划，不重新解析。
     /// </summary>
@@ -602,8 +739,8 @@ public sealed partial class AssemblyViewModel
     /// 也因为引用更新而变了，用户只能重选一次装配体再解析一遍——而那一遍要再开一次
     /// SolidWorks、再走一遍整棵装配树，只为了换掉一批已经算得出来的名字。
     ///
-    /// 挪完之后本轮并没有"结束"：文件名已经对了，用户可以接着改一格材料再写一次，
-    /// 所以不再置 <c>_conversionCompleted</c>，写入与洗图号按钮继续按计划本身的判据来。
+    /// 挪完之后本轮并没有「结束」：文件名已经对了，用户可以接着改一格材料再写一次，
+    /// 所以不再置 <c>_conversionCompleted</c>，写入按钮继续按计划本身的判据来。
     ///
     /// 返回值是给状态栏的尾巴；返回空串表示这一轮没有需要挪的东西。
     /// </summary>
@@ -617,10 +754,16 @@ public sealed partial class AssemblyViewModel
         var reindexed = RenameReindex.Remap(_probeResult, moved);
         if (moved.Count > 0)
         {
-            var remapped = RenameReindex.RemapKeys(SnapshotPropertyEdits(), moved);
+            var remappedProperties = RenameReindex.RemapKeys(SnapshotPropertyEdits(), moved);
             _propertyEdits.Clear();
-            foreach (var pair in remapped)
+            foreach (var pair in remappedProperties)
                 _propertyEdits[pair.Key] = pair.Value;
+            // 名称记账同样按源路径记，不搬的话改完名再改一次名称就会漏掉用户填过的那一份。
+            var remappedNames = RenameReindex.RemapKeys(
+                new Dictionary<string, string>(_nameEdits, StringComparer.OrdinalIgnoreCase), moved);
+            _nameEdits.Clear();
+            foreach (var pair in remappedNames)
+                _nameEdits[pair.Key] = pair.Value;
             _probeResult = reindexed;
             _sourceAssemblyPath = reindexed.SourceAssemblyPath;
             UpdateAssemblyOutputPaths();
@@ -693,6 +836,7 @@ public sealed partial class AssemblyViewModel
         // 零件上现有的材料 / 表面处理 / 热处理在这一步就进账，表格开出来显示的是零件的事实，
         // 而不是一片空白等着用户把已有的值再选一遍（选错一格就把正确的材质换掉了）。
         AdoptProbedProperties(result);
+        AdoptProbedPrefix(result);
         var regeneratesExisting = RegeneratesExistingOutputs;
         var issueText = plan.BlockingIssues.Count == 0
             ? string.Empty
@@ -707,15 +851,37 @@ public sealed partial class AssemblyViewModel
                 row.Detail = issueText;
             }
         }
+
         WarningSummary = string.Join("；", plan.Warnings.Concat(
             string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
         StatusText = FormatProbeStatus(plan, result, issueText);
         ApplyRenamePreview();
-        _lastOperationSucceeded = IsRenameMode
-            ? _stripPlan is not null && _stripPlan.BlockingIssues.Count == 0
-            : plan.CanConvert;
+        _lastOperationSucceeded = plan.CanConvert;
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanRebuildMates));
         OnPropertyChanged(nameof(RebuildMatesHint));
+    }
+
+    /// <summary>
+    /// 解析装配体时按根装配的文件名把图号前缀认出来，填进「图号前缀」框（V4.9）。
+    ///
+    /// 为什么在这里认而不是让用户自己填：用户拿到的装配十有八九已经编过号了，
+    /// 他要做的是**接着这一套号往下改**，而不是从头想一个前缀。认不出来（根装配名里
+    /// 没有空格）时留空——那确实是一个还没编号的装配。
+    ///
+    /// 名称记账在这一步清掉：解析是一次显式的「重新去磁盘上认一遍」，此刻文件名才是事实。
+    /// 留着上一轮改过的名字，用户会看到一个自己这一轮从没填过的名称。
+    /// </summary>
+    private void AdoptProbedPrefix(AssemblyProbeResult result)
+    {
+        _nameEdits.Clear();
+        var inferred = DrawingNumber.InferPrefix(Path.GetFileName(result.SourceAssemblyPath));
+        // 认不出来就**不动用户填的那个**。认不出只说明这个装配还没编过号，
+        // 而清空是一个有后果的动作（前缀为空＝删图号）——不能由"我没看懂"来触发。
+        if (inferred.Length == 0 || string.Equals(_drawingPrefix, inferred, StringComparison.Ordinal))
+            return;
+        // 直接落字段：这条路后面紧跟着 ApplyRenamePreview，走属性会让计划白建一遍。
+        _drawingPrefix = inferred;
+        OnPropertyChanged(nameof(DrawingPrefix));
     }
 }

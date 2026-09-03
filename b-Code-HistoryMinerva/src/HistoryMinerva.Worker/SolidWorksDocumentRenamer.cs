@@ -1,4 +1,4 @@
-using HistoryMinerva.Contracts;
+﻿using HistoryMinerva.Contracts;
 
 namespace HistoryMinerva.Worker;
 
@@ -14,18 +14,6 @@ internal static class SolidWorksDocumentRenamer
 {
     private const string ProgId = "SldWorks.Application";
     private const string ProcessName = "SLDWORKS";
-
-    /// <summary>
-    /// 洗图号写回的载荷：图号槽置空串而不是删除整槽。
-    /// 删掉槽以后模板里那一行就没了，用户在 SolidWorks 里看到的是「少了一个属性」，
-    /// 而不是「这个属性还在，只是空的」。
-    ///
-    /// 这里没有复用 <see cref="PartPropertyWrite"/>：那个记录按约定把空串解释成
-    /// 「本轮不写这一槽」，正是为了不让用户没填的材料把模板里已有的值抹掉。
-    /// 清空是相反的意图，必须绕开那条约定显式表达。
-    /// </summary>
-    private static readonly KeyValuePair<string, string>[] ClearDrawingNumberPairs =
-        [new(PartPropertyNames.DrawingNumber, string.Empty)];
 
     /// <summary>
     /// 一个零件的属性写入作业：写去哪个条目、写哪些槽，以及要不要顺手换材质。
@@ -51,22 +39,19 @@ internal static class SolidWorksDocumentRenamer
             .ThenBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         var propertyTargets = ResolvePropertyTargets(request);
-        var action = DescribeAction(request);
         if (pending.Length == 0 && propertyTargets.Count == 0)
         {
             reporter.Report(
                 null,
                 ConversionStage.Completed,
-                request.StripBySpace
-                    ? "没有可按空格洗掉的图号。"
-                    : "图号已与规则一致，也没有需要写入的零件属性。");
+                "图号已与规则一致，也没有需要写入的零件属性。");
             return 0;
         }
 
         reporter.Report(
             null,
             ConversionStage.PropertyPrep,
-            $"正在{action}：{DescribeWorkload(pending.Length, propertyTargets.Count)}。");
+            $"开始写入：{DescribeWorkload(pending.Length, propertyTargets.Count)}。");
 
         var ownership = CadProcessOwnership.Capture(ProcessName);
         object? applicationObject = null;
@@ -133,8 +118,8 @@ internal static class SolidWorksDocumentRenamer
                 null,
                 failed == 0 ? ConversionStage.Completed : ConversionStage.Failed,
                 failed == 0
-                    ? $"属性整备{action}完成：{DescribeWorkload(pending.Length, propertyTargets.Count)}。"
-                    : $"属性整备{action}结束，{failed} 个文件失败。",
+                    ? $"写入完成：{DescribeWorkload(pending.Length, propertyTargets.Count)}。"
+                    : $"写入结束，{failed} 个文件失败。",
                 isError: failed != 0,
                 errorClass: failed == 0 ? ConversionErrorClass.None : ConversionErrorClass.RenameFailed);
             return failed == 0 ? 0 : 1;
@@ -152,19 +137,13 @@ internal static class SolidWorksDocumentRenamer
 
     /// <summary>
     /// 哪些条目要写属性。只认识别出的零件：装配体、未编号的内部件和子文件夹外购件一律不碰。
-    /// 洗图号是反向操作，只清空「图号」一槽，不动其余六槽。
+    ///
+    /// 删图号不在这里分叉：它的载荷与一次普通写入完全一样，只是「图号」槽的值是空串
+    /// （见 <see cref="PartPropertyWrite.Pairs"/>）。空串写进去是把槽清空，不是删掉整槽——
+    /// 删槽会让属性标签上少一行，用户看到的是「属性没了」而不是「属性空了」。
     /// </summary>
     private static IReadOnlyList<PropertyWriteJob> ResolvePropertyTargets(AssemblyRenameRequest request)
     {
-        if (request.StripBySpace)
-        {
-            return request.Entries
-                .Where(AssemblyRenamePlan.IsWritablePart)
-                .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
-                .Select(entry => new PropertyWriteJob(entry, ClearDrawingNumberPairs, string.Empty, string.Empty))
-                .ToArray();
-        }
-
         if (!request.WriteProperties)
             return [];
 
@@ -198,11 +177,6 @@ internal static class SolidWorksDocumentRenamer
         => ResolvePropertyTargets(request)
             .Select(job => (job.Entry.SourcePath, job.Pairs))
             .ToArray();
-
-    private static string DescribeAction(AssemblyRenameRequest request)
-        => request.StripBySpace
-            ? "按空格洗图号"
-            : request.WriteProperties ? "写入" : "按图号改名";
 
     private static string DescribeWorkload(int renameCount, int propertyCount)
     {

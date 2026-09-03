@@ -1,4 +1,4 @@
-using HistoryMinerva.Contracts;
+﻿using HistoryMinerva.Contracts;
 
 namespace HistoryMinerva.Worker;
 
@@ -156,8 +156,8 @@ internal static class WorkerRequestValidator
             throw new InvalidDataException("改名批次编号无效。");
         if (request.SourceFormat != ConversionSourceFormat.SolidWorks)
             throw new InvalidDataException("属性整备改名目前只支持 SolidWorks 装配体。");
-        if (!request.StripBySpace)
-            _ = DrawingNumber.NormalizePrefix(request.DrawingPrefix);
+        // 前缀为空是合法的：那一轮把图号改成空，也就是删图号。这里只拦空格与非法字符。
+        _ = DrawingNumber.NormalizePrefix(request.DrawingPrefix);
         ValidateSolidWorksDocument(request.SourceAssemblyPath, mustExist: true);
         if (request.Entries.Count == 0)
             throw new InvalidDataException("改名清单为空。");

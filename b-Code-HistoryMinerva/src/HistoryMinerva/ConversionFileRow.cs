@@ -24,6 +24,8 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     private string _material = "";
     private string _surfaceTreatment = "";
     private string _heatTreatment = "";
+    private string _drawingText = "";
+    private string _partName = "";
 
     /// <summary>
     /// 建一行。<c>showsTargetName</c> 为 true 时「文件」列显示产物名而不是源文件名——
@@ -183,6 +185,38 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
         get => _heatTreatment;
         set => SetField(ref _heatTreatment, value ?? "");
     }
+
+    /// <summary>
+    /// V4.9 属性整备「图号」列。值是本轮计划算出来的图号文本，**只读**：
+    /// 它由前缀加装配层级序号定死，逐行改会让同一层出现两套编号规则，
+    /// 而那正是这个模块存在的理由。前缀为空时它是空串，也就是这一轮删图号。
+    /// </summary>
+    public string DrawingText
+    {
+        get => _drawingText;
+        set => SetField(ref _drawingText, value ?? "");
+    }
+
+    /// <summary>
+    /// V4.9 属性整备「名称」列。文件名里图号之后的那一段，**可逐行改**。
+    ///
+    /// 它同时决定目标文件名和「名称」属性槽——两者永远取自这一个字符串，
+    /// 所以不会出现「文件名叫阀体、属性里写着阀盖」的两份真话。
+    /// 与三个属性槽一样，权威记在 ViewModel 的记账里，行只是显示。
+    /// </summary>
+    public string PartName
+    {
+        get => _partName;
+        set => SetField(ref _partName, value ?? "");
+    }
+
+    /// <summary>
+    /// 这一行归本模块编号，因此文件会被改名、「名称」列可以改。
+    ///
+    /// 与 <see cref="WritesProperties"/> 是两件事：装配体也编号也改名，但不写属性。
+    /// 小组件内部那些未编号的件两者都是 false——它们保持原名，改了也不会落盘。
+    /// </summary>
+    public bool RenamesFile { get; set; }
 
     /// <summary>
     /// 这一行的属性会不会真的落盘：只有拿到图号的 <c>.SLDPRT</c> 才会。
