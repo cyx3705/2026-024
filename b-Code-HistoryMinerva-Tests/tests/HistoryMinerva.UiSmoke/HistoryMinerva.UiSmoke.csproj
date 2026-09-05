@@ -1,7 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\..\b-Code-HistoryMinerva\build\HistoryMinerva.Version.props" />
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <!--
+      Exe 而不是 WinExe：这是个门禁工具，成功要打印一行 PASS、失败要打印原因。
+      WinExe 没有控制台，「跑过了」与「根本没跑」在终端上长得一模一样（V4.10.2）。
+      WPF 在 Exe 下照常工作，入口仍是 [STAThread]。
+    -->
+    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
