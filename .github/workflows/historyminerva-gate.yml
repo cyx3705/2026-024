@@ -69,19 +69,14 @@ jobs:
         working-directory: 2026-024-HistoryMinerva
         run: dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.Smoke\HistoryMinerva.Smoke.csproj -c Release --no-build --no-restore -p:NuGetAudit=false
 
-      - name: Run narrow dark UI Smoke
+      # 宽度矩阵与主题现在由 UiSmoke 自己跑（Program.Matrix），不再靠 CI 记得列几步。
+      # 少列一档在旧写法里是看不出来的——而 760 那一档就这样从没被真正验证过。
+      - name: Run UI Smoke
         working-directory: 2026-024-HistoryMinerva
         run: >-
           dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.UiSmoke\HistoryMinerva.UiSmoke.csproj
           -c Release --no-build --no-restore -p:NuGetAudit=false --
-          --width 320 --height 680 --dark --dpi 150 --capture $env:RUNNER_TEMP\historyminerva-ui-320-dark.png
-
-      - name: Run wide light UI Smoke
-        working-directory: 2026-024-HistoryMinerva
-        run: >-
-          dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.UiSmoke\HistoryMinerva.UiSmoke.csproj
-          -c Release --no-build --no-restore -p:NuGetAudit=false --
-          --width 1200 --height 820 --dpi 100 --capture $env:RUNNER_TEMP\historyminerva-ui-1200-light.png
+          --capture $env:RUNNER_TEMP\historyminerva-ui
 
       - name: Verify formatting
         working-directory: 2026-024-HistoryMinerva
