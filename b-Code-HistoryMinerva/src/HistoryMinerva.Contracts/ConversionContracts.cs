@@ -41,6 +41,8 @@ public enum ConversionStage
     SolidWorksExport,
     // V4.3.9：SolidWorks 属性整备改名。枚举按数值序列化，新值只能追加在末尾。
     PropertyPrep,
+    // V4.10：整体打包的 STEP / DWG / PDF 导出。枚举按数值序列化，新值只能追加在末尾。
+    PackageExport,
 }
 
 public enum ConversionErrorClass
@@ -90,6 +92,8 @@ public enum ConversionErrorClass
     FeatureRecognitionSemanticMismatch,
     // V4.3.9：SolidWorks 属性整备改名。枚举按数值序列化，新值只能追加在末尾。
     RenameFailed,
+    // V4.10：整体打包导出失败。枚举按数值序列化，新值只能追加在末尾。
+    PackageExportFailed,
 }
 
 public static class FeatureRecognitionPolicy
@@ -317,7 +321,10 @@ public sealed record AssemblyProbeResult(
     IReadOnlyList<AssemblyDocumentReading>? Documents = null,
     // V4.8：逐个唯一零件的属性现值，供属性整备表格预填。为 null 表示本次没有读属性
     // （Solid Edge 源、或读属性整个失败）——那时表格照旧空白，不是「零件上没有值」。
-    IReadOnlyList<PartPropertyReading>? PartProperties = null);
+    IReadOnlyList<PartPropertyReading>? PartProperties = null,
+    // V4.10：子文件夹外购件的路径与实例数，供整体打包写外购件 BOM。为 null 表示本次
+    // 没有采集（Solid Edge 源）——不是「这台设备没有外购件」。
+    IReadOnlyList<PurchasedPartReading>? PurchasedParts = null);
 
 public sealed record AssemblyBatchRequest(
     string BatchId,

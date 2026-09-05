@@ -12,6 +12,9 @@ public static class WorkerProtocol
     public const string AssemblyProbeVerb = "--probe-assembly";
     public const string AssemblyBuildVerb = "--assembly";
     public const string AssemblyRenameVerb = "--rename-assembly";
+
+    /// <summary>V4.10：整体打包的 CAD 导出（STEP / DWG / PDF）。两张 BOM 不走 Worker。</summary>
+    public const string AssemblyPackageVerb = "--package-assembly";
     public const string CancellationArgument = "--cancel";
 
     public static JsonSerializerOptions CreateJsonOptions() => new()
@@ -22,5 +25,5 @@ public static class WorkerProtocol
 
     public static bool IsKnownVerb(string? value)
         => value is PartsRequestVerb or PartImportVerb or AssemblyProbeVerb or AssemblyBuildVerb
-            or AssemblyRenameVerb;
+            or AssemblyRenameVerb or AssemblyPackageVerb;
 }

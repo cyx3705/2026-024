@@ -61,7 +61,8 @@ public sealed class WorkerCommands : IModuleContextAware
     public string Path => WorkerPath;
 
     public string Capabilities()
-        => "worker.protocol=assembly-probe,batch-convert,part-convert,assembly-rename,cancel; runtime=single-process-worker";
+        => "worker.protocol=assembly-probe,batch-convert,part-convert,assembly-rename,assembly-package,cancel;"
+           + " runtime=single-process-worker";
 
     private string WorkerPath => WorkerLocator.Locate(_runtimePaths);
 }

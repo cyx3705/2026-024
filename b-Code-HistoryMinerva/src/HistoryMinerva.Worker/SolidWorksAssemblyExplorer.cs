@@ -65,7 +65,7 @@ internal static class SolidWorksAssemblyExplorer
 
             var occurrences = new List<AssemblyOccurrence>();
             var warnings = new List<string>();
-            var skippedPurchased = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var skippedPurchased = new PurchasedPartCollector();
             // V4.8：属性整备表格要预填的三个槽。只在顶层那一次展平里收，
             // 因为那一遍就已经走过全部后代组件了。
             var partProperties = new Dictionary<string, PartPropertyReading>(StringComparer.OrdinalIgnoreCase);
@@ -122,7 +122,8 @@ internal static class SolidWorksAssemblyExplorer
                 documents,
                 partProperties.Values
                     .OrderBy(item => item.SourcePath, StringComparer.OrdinalIgnoreCase)
-                    .ToArray());
+                    .ToArray(),
+                skippedPurchased.ToReadings());
         }
         catch (ClassifiedConversionException)
         {
@@ -166,7 +167,7 @@ internal static class SolidWorksAssemblyExplorer
         List<string> warnings,
         CancellationToken cancellationToken,
         string rootAssemblyPath,
-        HashSet<string> skippedPurchased,
+        PurchasedPartCollector skippedPurchased,
         Dictionary<string, PartPropertyReading>? partProperties)
     {
         var hash = ComputeSha256(assemblyPath);
@@ -206,19 +207,47 @@ internal static class SolidWorksAssemblyExplorer
             foreach (var component in directChildren)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (TrySkipPurchased(interop, component, rootAssemblyPath, skippedPurchased))
+                // 这一遍只跳不数，也不必判祖先：外购件装配体从不被打开，
+                // 它的内部件永远不会作为某个已打开文档的直接子项出现。
+                if (TrySkipPurchased(
+                        interop, component, rootAssemblyPath, skippedPurchased,
+                        countInstance: false, purchasedIds: null))
+                {
                     continue;
+                }
                 keptDirect.Add(component);
                 children.Add(ReadChild(interop, component));
             }
 
             if (output is not null)
             {
-                foreach (var component in interop.GetAssemblyComponents(model, topLevelOnly: false))
+                var descendants = interop.GetAssemblyComponents(model, topLevelOnly: false);
+                // 先把全部外购件实例的 id 认出来，再逐个判祖先。两遍是必须的：
+                // GetComponents 不保证父在子之前返回，一遍走完没法知道当前这一个
+                // 是不是落在某个外购件底下。
+                var purchasedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var component in descendants)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (TrySkipPurchased(interop, component, rootAssemblyPath, skippedPurchased))
+                    if (ConversionPathLayout.IsOutsideAssemblyDirectory(
+                            interop.GetComponentPath(component), rootAssemblyPath))
+                    {
+                        purchasedIds.Add(interop.GetComponentName(component));
+                    }
+                }
+
+                foreach (var component in descendants)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    // 顶层那一次展平走的是全部后代实例，所以外购件的数量只在这里数——
+                    // 逐层的直接子项循环再数一遍，嵌套件就会被重复计入（V4.10）。
+                    if (TrySkipPurchased(
+                            interop, component, rootAssemblyPath, skippedPurchased,
+                            countInstance: true, purchasedIds))
+                    {
                         continue;
+                    }
+
                     var occurrence = ReadOccurrence(interop, component, warnings);
                     output.Add(occurrence);
                     CollectPartProperties(interop, component, occurrence, partProperties);
@@ -725,27 +754,102 @@ internal static class SolidWorksAssemblyExplorer
 
     /// <summary>
     /// 子文件夹里的外购件只看路径、不 Exists、不打开模型。正式零件与装配体同级。
+    ///
+    /// V4.10：<paramref name="countInstance"/> 为 true 时顺手把这一个实例记进数量。
+    /// 外购件不进转换计划，但采购要的就是「哪一种、几个」，而这两件事按路径就能确定，
+    /// 不需要为此打开一个多半根本不在本机上的文件。
+    ///
+    /// V4.10.1：**只认边界那一层**。<paramref name="purchasedIds"/> 非空时，祖先里已经有
+    /// 外购件的实例一律跳过且不计数——采购买的是那个气缸，不是气缸里的缸体、活塞和端盖。
+    /// V4.10.0 逐个实例按路径独判，于是一个 30 件的外购装配体在外购件 BOM 上变成 31 行。
+    ///
+    /// 「祖先是外购件」也盖过路径判据本身：外购装配体底下的件哪怕碰巧存在主目录里，
+    /// 它也是那台设备内部的东西，既不该单独采购，也不该被转换或改名。
     /// </summary>
+    /// <param name="purchasedIds">
+    /// 本次展平里全部外购件实例的 <c>Name2</c>。传 null 表示这一遍只跳不数，
+    /// 无需判祖先（逐层的直接子项循环就是这种情形）。
+    /// </param>
     private static bool TrySkipPurchased(
         SolidWorksInteropBridge interop,
         object component,
         string rootAssemblyPath,
-        HashSet<string> skippedPurchased)
+        PurchasedPartCollector skippedPurchased,
+        bool countInstance,
+        IReadOnlySet<string>? purchasedIds)
     {
         var rawPath = interop.GetComponentPath(component);
-        if (!ConversionPathLayout.IsOutsideAssemblyDirectory(rawPath, rootAssemblyPath))
+        var isPurchased = ConversionPathLayout.IsOutsideAssemblyDirectory(rawPath, rootAssemblyPath);
+        var underPurchased = purchasedIds is not null
+            && HasPurchasedAncestor(interop.GetComponentName(component), purchasedIds);
+        if (!isPurchased && !underPurchased)
             return false;
 
+        // 外购件内部的件不是一种货：不登记、不计数，只是从清单里消失。
+        if (underPurchased)
+            return true;
+
+        string key;
         try
         {
-            skippedPurchased.Add(Path.GetFullPath(rawPath.Trim()));
+            key = Path.GetFullPath(rawPath.Trim());
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
-            skippedPurchased.Add(rawPath.Trim());
+            key = rawPath.Trim();
         }
 
+        // 抑制件不计数——BOM 上的数量必须与实际要采购的件数一致。读不到抑制状态时
+        // 按「在装」处理：漏采一个件比多采一个件贵得多。
+        var counted = countInstance && !TryGet(() => interop.IsComponentSuppressed(component), false);
+        skippedPurchased.Add(key, counted);
         return true;
+    }
+
+    /// <summary>
+    /// 这个实例是不是落在某个外购件底下。
+    ///
+    /// <c>Name2</c> 天然是 <c>"父-1/子-1/孙-1"</c>，所以祖先就是它的每一个 <c>/</c> 前缀，
+    /// 不需要另建一棵树。**只看真祖先**：自己等于自己不算落在自己底下。
+    /// </summary>
+    internal static bool HasPurchasedAncestor(string occurrenceId, IReadOnlySet<string> purchasedIds)
+    {
+        if (string.IsNullOrEmpty(occurrenceId))
+            return false;
+        for (var separator = occurrenceId.IndexOf('/', StringComparison.Ordinal);
+             separator >= 0;
+             separator = occurrenceId.IndexOf('/', separator + 1))
+        {
+            if (purchasedIds.Contains(occurrenceId[..separator]))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// V4.10：外购件的路径与实例数。
+    ///
+    /// 「有哪些」与「有几个」分开记：路径在每一层的直接子项循环里都会被看到，
+    /// 而数量只许在顶层那一次展平里累加，否则嵌套件会被数很多遍。
+    /// </summary>
+    private sealed class PurchasedPartCollector
+    {
+        private readonly Dictionary<string, int> _counts = new(StringComparer.OrdinalIgnoreCase);
+
+        public int Count => _counts.Count;
+
+        public void Add(string path, bool countInstance)
+        {
+            var current = _counts.GetValueOrDefault(path);
+            _counts[path] = countInstance ? current + 1 : current;
+        }
+
+        public IReadOnlyList<PurchasedPartReading> ToReadings()
+            => _counts
+                .Select(pair => new PurchasedPartReading(pair.Key, pair.Value))
+                .OrderBy(item => item.SourcePath, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
     }
 
     /// <summary>

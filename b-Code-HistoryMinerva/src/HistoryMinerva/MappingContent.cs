@@ -10,6 +10,8 @@ public enum MappingContent
     SolidWorksAssemblyToSolidWorksAssembly,
     // V4.3.9：SolidWorks 属性整备。本版只做按图号改名，不改其它属性。
     SolidWorksAssemblyPropertyPrep,
+    // V4.10：整体打包。选总装配体，一次生成 STP / DWG / PDF / BOM 四个交付目录。
+    SolidWorksAssemblyPackage,
 }
 
 /// <param name="Kind">转换内容枚举值。</param>
@@ -48,6 +50,12 @@ public sealed record MappingContentOption(
             MappingContent.SolidWorksAssemblyPropertyPrep,
             "SolidWorks .SLDASM → 属性整备（改名）",
             "选择单个 .SLDASM 装配体，并填写图号前缀",
+            ConversionSourceFormat.SolidWorks,
+            IsAssemblySource: true),
+        new(
+            MappingContent.SolidWorksAssemblyPackage,
+            "SolidWorks .SLDASM → 整体打包（STP/DWG/PDF/BOM）",
+            "选择总装配体 .SLDASM，一次生成四个交付目录",
             ConversionSourceFormat.SolidWorks,
             IsAssemblySource: true),
     ];

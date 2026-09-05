@@ -24,6 +24,11 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     private string _material = "";
     private string _surfaceTreatment = "";
     private string _heatTreatment = "";
+    private string _drawingText = "";
+    private string _partName = "";
+    private string _quantityText = "";
+    private string _drawingStateText = "";
+    private string _categoryText = "";
 
     /// <summary>
     /// 建一行。<c>showsTargetName</c> 为 true 时「文件」列显示产物名而不是源文件名——
@@ -183,6 +188,70 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
         get => _heatTreatment;
         set => SetField(ref _heatTreatment, value ?? "");
     }
+
+    /// <summary>
+    /// V4.9 属性整备「图号」列。值是本轮计划算出来的图号文本，**只读**：
+    /// 它由前缀加装配层级序号定死，逐行改会让同一层出现两套编号规则，
+    /// 而那正是这个模块存在的理由。前缀为空时它是空串，也就是这一轮删图号。
+    /// </summary>
+    public string DrawingText
+    {
+        get => _drawingText;
+        set => SetField(ref _drawingText, value ?? "");
+    }
+
+    /// <summary>
+    /// V4.9 属性整备「名称」列。文件名里图号之后的那一段，**可逐行改**。
+    ///
+    /// 它同时决定目标文件名和「名称」属性槽——两者永远取自这一个字符串，
+    /// 所以不会出现「文件名叫阀体、属性里写着阀盖」的两份真话。
+    /// 与三个属性槽一样，权威记在 ViewModel 的记账里，行只是显示。
+    /// </summary>
+    public string PartName
+    {
+        get => _partName;
+        set => SetField(ref _partName, value ?? "");
+    }
+
+    /// <summary>
+    /// V4.10 整体打包「数量」列：该零件在整个总装配体里的实例总数（含嵌套倍数，
+    /// 抑制件不计）。与 BOM 上那一格是同一个数——表里看到几件，供应商就收到几件。
+    /// </summary>
+    public string QuantityText
+    {
+        get => _quantityText;
+        set => SetField(ref _quantityText, value ?? "");
+    }
+
+    /// <summary>
+    /// V4.10 整体打包「工程图」列：找没找到同名 <c>.SLDDRW</c>。
+    ///
+    /// 这一列必须显示出来，因为「没有工程图」是一条**静默**的后果——DWG 与 PDF 目录里
+    /// 只是少了两个文件，用户打包完拖给审图的人才会发现缺图。
+    /// </summary>
+    public string DrawingStateText
+    {
+        get => _drawingStateText;
+        set => SetField(ref _drawingStateText, value ?? "");
+    }
+
+    /// <summary>
+    /// V4.10 整体打包「件别」列：机加件还是外购件。它同时决定这一行进哪一张 BOM，
+    /// 以及要不要导 STEP（只有机加件导）。
+    /// </summary>
+    public string CategoryText
+    {
+        get => _categoryText;
+        set => SetField(ref _categoryText, value ?? "");
+    }
+
+    /// <summary>
+    /// 这一行归本模块编号，因此文件会被改名、「名称」列可以改。
+    ///
+    /// 与 <see cref="WritesProperties"/> 是两件事：装配体也编号也改名，但不写属性。
+    /// 小组件内部那些未编号的件两者都是 false——它们保持原名，改了也不会落盘。
+    /// </summary>
+    public bool RenamesFile { get; set; }
 
     /// <summary>
     /// 这一行的属性会不会真的落盘：只有拿到图号的 <c>.SLDPRT</c> 才会。
