@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using HistoryMinerva;
+using HistoryMinerva.Bom;
 using HistoryMinerva.Contracts;
 using HistoryMinerva.Worker;
 using HistoryVulcan.Core.Commands;
@@ -84,6 +85,11 @@ try
     TestCadShortcutResolution(root);
     TestUnresolvedReferenceNamesPath(root);
     TestImportIdentityAndSessionFaultGuards();
+    TestPurchasedPartNaming();
+    TestPurchasedBoundary();
+    TestPackagePlanning(root);
+    TestPackageBomWorkbooks(root);
+    TestPackageViewModelFlow(root);
     Console.WriteLine("HistoryMinerva.Smoke: PASS");
 }
 finally
@@ -1892,7 +1898,7 @@ static void TestSolidWorksSelfPipelineContracts()
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
     Equal(ConversionSourceFormat.SolidWorks, renameContent.SourceFormat, "属性整备项的源格式必须是 SolidWorks");
     True(renameContent.IsAssemblySource, "属性整备的来源是单个装配体文件");
-    Equal(4, MappingContentOption.Available.Count, "转换内容必须包含属性整备改名这一项");
+    Equal(5, MappingContentOption.Available.Count, "转换内容必须包含属性整备改名与整体打包两项");
 }
 
 /// <summary>图号前缀手写，层级数字按所选装配体推断；子文件夹外购件不编号。</summary>
@@ -3242,8 +3248,8 @@ static void TestUnifiedSourceWorkspace()
                 "单页工作区默认必须等待用户选择来源");
             True(workspace.UnifiedPage.ViewModel.SourcePath.Length == 0,
                 "未选择来源时不能残留旧路径");
-            Equal(4, workspace.UnifiedPage.ViewModel.MappingContents.Count,
-                "通用 Mapping 页面必须提供当前支持的四种转换内容");
+            Equal(5, workspace.UnifiedPage.ViewModel.MappingContents.Count,
+                "通用 Mapping 页面必须提供当前支持的五种转换内容（V4.10 追加整体打包）");
             Equal(MappingContent.SolidEdgePartToSolidWorksPart,
                 workspace.UnifiedPage.ViewModel.SelectedMappingContent.Kind,
                 "默认转换内容必须是 .par → .SLDPRT");
@@ -4149,6 +4155,364 @@ static T Capture<T>(Action action) where T : Exception
         return exception;
     }
     throw new InvalidOperationException($"Expected exception {typeof(T).Name}");
+}
+
+// ---------------------------------------------------------------- V4.10 整体打包
+
+static void TestPurchasedPartNaming()
+{
+    // 用户逐条确认过的四个样例。中文归名称、其余归规格，不按位置切。
+    foreach (var (fileName, specification, name) in new[]
+             {
+                 ("GB70 M8x20 内六角螺钉.SLDPRT", "GB70 M8x20", "内六角螺钉"),
+                 ("深沟球轴承 6205.SLDPRT", "6205", "深沟球轴承"),
+                 ("SKF-6205-2RS.SLDPRT", "SKF-6205-2RS", ""),
+                 ("油封 TC-25-40-7.SLDPRT", "TC-25-40-7", "油封"),
+             })
+    {
+        PurchasedPartNaming.Split(fileName, out var actualSpecification, out var actualName);
+        Equal(specification, actualSpecification, $"{fileName} 的规格必须是非中文字段");
+        Equal(name, actualName, $"{fileName} 的名称必须是中文字段");
+    }
+
+    // 中英夹杂无空格：仍然分得开，只是型号被拼在一起。这是已知边界，钉住它。
+    PurchasedPartNaming.Split("M8x20内六角螺钉GB70.SLDPRT", out var mixedSpecification, out var mixedName);
+    Equal("M8x20GB70", mixedSpecification, "无空格的中英夹杂名，非中文段直接相接");
+    Equal("内六角螺钉", mixedName, "无空格时中文段仍必须完整切出来");
+}
+
+static void TestPurchasedBoundary()
+{
+    // Name2 天然是 "父-1/子-1/孙-1"。外购件 BOM 上应该只出现边界那一层——
+    // 采购买的是气缸，不是气缸里的缸体、活塞和端盖（V4.10.1）。
+    var purchased = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "气缸-1",
+        "进样模块-1/电磁阀-2",
+    };
+
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor("气缸-1", purchased),
+        "外购件自己不算落在自己底下，否则边界那一层也会被跳掉");
+    True(SolidWorksAssemblyExplorer.HasPurchasedAncestor("气缸-1/缸体-1", purchased),
+        "外购装配体的直接内部件必须判为落在外购件底下");
+    True(SolidWorksAssemblyExplorer.HasPurchasedAncestor("气缸-1/活塞组-1/活塞-1", purchased),
+        "深层内部件同样不得进外购件清单");
+    True(SolidWorksAssemblyExplorer.HasPurchasedAncestor("进样模块-1/电磁阀-2/阀芯-1", purchased),
+        "嵌在子装配里的外购件，其内部件也必须判出来");
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor("进样模块-1/底板-1", purchased),
+        "同一个子装配下的自制件不得被邻居外购件带走");
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor("底板-1", purchased),
+        "顶层自制零件不得判为外购件内部件");
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor("气缸-10/缸体-1", purchased),
+        "前缀匹配必须按整段实例名，气缸-10 不是气缸-1 的孩子");
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor(string.Empty, purchased),
+        "空实例名不得判为外购件内部件");
+}
+
+static void TestPackagePlanning(string root)
+{
+    var dir = Path.Combine(root, "package-plan");
+    var standardDir = Path.Combine(dir, "标准件");
+    Directory.CreateDirectory(standardDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "GHLSS-06-00 总装.SLDASM");
+    var module = Path.Combine(dir, "GHLSS-06-01-00 进样模块.SLDASM");
+    var plate = Path.Combine(dir, "GHLSS-06-02 底板.SLDPRT");
+    var shaft = Path.Combine(dir, "GHLSS-06-01-01 轴.SLDPRT");
+    var plateDrawing = Path.ChangeExtension(plate, ".SLDDRW");
+    var screw = Path.Combine(standardDir, "GB70 M8x20 内六角螺钉.SLDPRT");
+    foreach (var path in new[] { rootAsm, module, plate, shaft, plateDrawing, screw })
+        File.WriteAllText(path, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        [
+            new AssemblyOccurrence("进样模块-1", null, module, true, false, false, identity, null),
+            new AssemblyOccurrence("进样模块-1/轴-1", "进样模块-1", shaft, false, false, false, identity, null),
+            new AssemblyOccurrence("进样模块-2", null, module, true, false, false, identity, null),
+            new AssemblyOccurrence("进样模块-2/轴-1", "进样模块-2", shaft, false, false, false, identity, null),
+            new AssemblyOccurrence("底板-1", null, plate, false, false, false, identity, null),
+            // 抑制件不进数量：BOM 上的数字必须与真要采购的件数一致。
+            new AssemblyOccurrence("底板-2", null, plate, false, true, false, identity, null),
+        ],
+        [shaft, plate],
+        1, 0, 2, 0, [],
+        [
+            new AssemblyDocumentReading(rootAsm,
+            [
+                new AssemblyChild("进样模块-1", module, true, false, identity),
+                new AssemblyChild("底板-1", plate, false, false, identity),
+            ], []),
+            new AssemblyDocumentReading(module,
+            [
+                new AssemblyChild("轴-1", shaft, false, false, identity),
+            ], []),
+        ],
+        PartProperties: null,
+        PurchasedParts: [new PurchasedPartReading(screw, 12)]);
+
+    var plan = PackagePlanner.Create(probe);
+    True(plan.CanPack, "合法总装的打包计划必须可执行：" + string.Join("；", plan.BlockingIssues));
+    Equal("GHLSS", plan.BomNamePrefix, "BOM 前缀必须是总装图号去掉全部纯数字段之后的部分");
+    Equal("GHLSS 机加件清单.xlsx", plan.MachinedBomFileName, "机加件 BOM 必须带总装前缀");
+    Equal("GHLSS 外购件清单.xlsx", plan.PurchasedBomFileName, "外购件 BOM 必须带总装前缀");
+
+    Equal(2, plan.Machined.Count, "机加件只数与总装同级的零件，子装配体不进表");
+    True(plan.Entries.All(entry => !string.Equals(entry.SourcePath, module, StringComparison.OrdinalIgnoreCase)),
+        "子装配体不得出现在打包清单里");
+
+    var shaftEntry = plan.Machined.Single(entry => entry.SourcePath == shaft);
+    Equal(2, shaftEntry.Quantity, "子装配用两次，里面的零件数量必须按嵌套倍数算");
+    Equal("GHLSS-06-01-01", shaftEntry.DrawingNumber, "机加件图号取自文件名第一个空格之前");
+    Equal("轴", shaftEntry.PartName, "机加件名称取自文件名第一个空格之后");
+    True(!shaftEntry.HasDrawing, "没有同名 .SLDDRW 的零件不得报告有工程图");
+
+    var plateEntry = plan.Machined.Single(entry => entry.SourcePath == plate);
+    Equal(1, plateEntry.Quantity, "抑制实例不得计入数量");
+    True(plateEntry.HasDrawing, "同目录同名 .SLDDRW 必须被识别为该零件的工程图");
+
+    var screwEntry = plan.Purchased.Single();
+    Equal(PackagePartCategory.Purchased, screwEntry.Category, "子文件夹里的件必须判为外购件");
+    Equal(12, screwEntry.Quantity, "外购件数量必须来自探查侧的实例计数");
+    Equal("GB70 M8x20", screwEntry.Specification, "外购件规格是文件名里的非中文字段");
+    Equal("内六角螺钉", screwEntry.PartName, "外购件名称是文件名里的中文字段");
+    Equal(string.Empty, screwEntry.DrawingNumber, "外购件不编号，图号必须为空");
+
+    Equal(2, plan.StepTargets.Count, "只有机加件导 STEP，外购件不导");
+    Equal(1, plan.DrawingTargets.Count, "只有找到同名工程图的零件才导 DWG/PDF");
+    Equal(
+        Path.Combine(dir, ConversionPathLayout.StepDirectoryName),
+        plan.Directories.StepDirectory,
+        "四个打包目录必须与总装配体同级");
+
+    // 认不出图号的总装：前缀退回装配体主名，绝不生成「 机加件清单.xlsx」。
+    var plainDir = Path.Combine(root, "package-plan-plain");
+    Directory.CreateDirectory(plainDir);
+    var plainAsm = Path.Combine(plainDir, "总装.SLDASM");
+    File.WriteAllText(plainAsm, "cad");
+    Equal("总装", PackagePlanner.ResolveBomNamePrefix(plainAsm), "没有图号时 BOM 前缀退回装配体主名");
+}
+
+static void TestPackageBomWorkbooks(string root)
+{
+    var dir = Path.Combine(root, "package-bom");
+    var standardDir = Path.Combine(dir, "标准件");
+    Directory.CreateDirectory(standardDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "GHLSS-06-00 总装.SLDASM");
+    var parts = new[]
+    {
+        Path.Combine(dir, "GHLSS-06-01 阀体.SLDPRT"),
+        Path.Combine(dir, "GHLSS-06-02 阀盖.SLDPRT"),
+        Path.Combine(dir, "GHLSS-06-03 底板.SLDPRT"),
+    };
+    var screw = Path.Combine(standardDir, "GB70 M8x20 内六角螺钉.SLDPRT");
+    File.WriteAllText(rootAsm, "cad");
+    foreach (var path in parts)
+        File.WriteAllText(path, "cad");
+    File.WriteAllText(screw, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        parts.Select((path, index) =>
+            new AssemblyOccurrence($"件-{index + 1}", null, path, false, false, false, identity, null)).ToArray(),
+        parts,
+        0, 0, parts.Length, 0, [],
+        [new AssemblyDocumentReading(rootAsm, parts
+            .Select(path => new AssemblyChild(Path.GetFileNameWithoutExtension(path), path, false, false, identity))
+            .ToArray(), [])],
+        PartProperties: null,
+        PurchasedParts: [new PurchasedPartReading(screw, 8)]);
+
+    var plan = PackagePlanner.Create(probe);
+    var bomDirectory = Path.Combine(dir, ConversionPathLayout.BomDirectoryName);
+    Directory.CreateDirectory(bomDirectory);
+    var machinedPath = Path.Combine(bomDirectory, plan.MachinedBomFileName);
+    var purchasedPath = Path.Combine(bomDirectory, plan.PurchasedBomFileName);
+    Equal(3, BomWorkbookWriter.WriteMachined(plan, machinedPath), "机加件 BOM 必须写满三行");
+    Equal(1, BomWorkbookWriter.WritePurchased(plan, purchasedPath), "外购件 BOM 必须写满一行");
+
+    var machined = ReadSheetCells(machinedPath);
+    Equal("1", machined["A6"], "机加件序号从 1 开始");
+    Equal("GHLSS-06-01", machined["B6"], "机加件第一行必须写零件图号");
+    Equal("阀体", machined["C6"], "机加件第一行必须写零件名称");
+    Equal("1", machined["D6"], "机加件第一行必须写数量");
+    Equal("3", machined["A8"], "三行数据必须占满第 6..8 行");
+    Equal("GHLSS-06-03", machined["B8"], "第三行图号必须落在插入后的第 8 行");
+    True(!machined.ContainsKey("E6") || machined["E6"].Length == 0, "报价栏必须留空给供应商");
+    // 模板里的合计行原本在第 9 行，插两行之后必须整体下移到第 11 行。
+    Equal("单价总计", machined["A11"], "数据行插入后合计行必须跟着下移");
+    Equal("SUM(U6:U8)", ReadFormula(machinedPath, "D11"), "单价总计必须重新指向本次的数据区");
+    Equal(
+        "SUMPRODUCT(D6:D8,U6:U8)",
+        ReadFormula(machinedPath, "H11"),
+        "总价必须重新指向本次的数量与含税单价");
+    True(!HasZipEntry(machinedPath, "xl/calcChain.xml"), "行号变了以后必须删掉计算链，否则 Excel 判为文件损坏");
+    True(ReadMergeReferences(machinedPath).Contains("A11:C11"), "合并格必须跟着数据行一起下移");
+
+    var purchased = ReadSheetCells(purchasedPath);
+    Equal("1", purchased["A6"], "外购件序号从 1 开始");
+    Equal("GB70 M8x20", purchased["D6"], "外购件规格必须落在 D 列");
+    Equal("内六角螺钉", purchased["E6"], "外购件名称必须落在 E 列");
+    Equal("8", purchased["F6"], "外购件数量必须落在 F 列");
+    True(!purchased.ContainsKey("C6") || purchased["C6"].Length == 0, "物料编码留给采购，不得代填");
+}
+
+/// <summary>把 sheet1 读成「单元格引用 → 显示值」。内联字符串与数字都还原成文本。</summary>
+static Dictionary<string, string> ReadSheetCells(string workbookPath)
+{
+    var cells = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    using var archive = System.IO.Compression.ZipFile.OpenRead(workbookPath);
+    var sheet = LoadSheet(archive);
+    System.Xml.Linq.XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    var shared = LoadSharedStrings(archive);
+    foreach (var cell in sheet.Descendants(main + "c"))
+    {
+        var reference = (string?)cell.Attribute("r");
+        if (string.IsNullOrEmpty(reference))
+            continue;
+        var type = (string?)cell.Attribute("t");
+        var text = type switch
+        {
+            "inlineStr" => cell.Element(main + "is")?.Element(main + "t")?.Value ?? string.Empty,
+            "s" => shared.ElementAtOrDefault(int.Parse(cell.Element(main + "v")?.Value ?? "-1")) ?? string.Empty,
+            _ => cell.Element(main + "v")?.Value ?? string.Empty,
+        };
+        cells[reference] = text;
+    }
+
+    return cells;
+}
+
+static string ReadFormula(string workbookPath, string cellReference)
+{
+    using var archive = System.IO.Compression.ZipFile.OpenRead(workbookPath);
+    var sheet = LoadSheet(archive);
+    System.Xml.Linq.XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    return sheet.Descendants(main + "c")
+        .FirstOrDefault(cell => string.Equals((string?)cell.Attribute("r"), cellReference, StringComparison.OrdinalIgnoreCase))?
+        .Element(main + "f")?.Value ?? string.Empty;
+}
+
+static IReadOnlyList<string> ReadMergeReferences(string workbookPath)
+{
+    using var archive = System.IO.Compression.ZipFile.OpenRead(workbookPath);
+    var sheet = LoadSheet(archive);
+    System.Xml.Linq.XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    return sheet.Descendants(main + "mergeCell")
+        .Select(item => (string?)item.Attribute("ref") ?? string.Empty)
+        .ToArray();
+}
+
+static bool HasZipEntry(string workbookPath, string entryPath)
+{
+    using var archive = System.IO.Compression.ZipFile.OpenRead(workbookPath);
+    return archive.GetEntry(entryPath) is not null;
+}
+
+static System.Xml.Linq.XDocument LoadSheet(System.IO.Compression.ZipArchive archive)
+{
+    using var stream = archive.GetEntry("xl/worksheets/sheet1.xml")!.Open();
+    return System.Xml.Linq.XDocument.Load(stream);
+}
+
+static IReadOnlyList<string> LoadSharedStrings(System.IO.Compression.ZipArchive archive)
+{
+    var entry = archive.GetEntry("xl/sharedStrings.xml");
+    if (entry is null)
+        return [];
+    using var stream = entry.Open();
+    var document = System.Xml.Linq.XDocument.Load(stream);
+    System.Xml.Linq.XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    return document.Root!.Elements(main + "si")
+        .Select(item => string.Concat(item.Descendants(main + "t").Select(text => text.Value)))
+        .ToArray();
+}
+
+static void TestPackageViewModelFlow(string root)
+{
+    var dir = Path.Combine(root, "package-vm");
+    var standardDir = Path.Combine(dir, "标准件");
+    Directory.CreateDirectory(standardDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "GHLSS-06-00 总装.SLDASM");
+    var plate = Path.Combine(dir, "GHLSS-06-01 底板.SLDPRT");
+    var plateDrawing = Path.ChangeExtension(plate, ".SLDDRW");
+    var screw = Path.Combine(standardDir, "GB70 M8x20 内六角螺钉.SLDPRT");
+    foreach (var path in new[] { rootAsm, plate, plateDrawing, screw })
+        File.WriteAllText(path, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        [new AssemblyOccurrence("底板-1", null, plate, false, false, false, identity, null)],
+        [plate],
+        0, 0, 1, 0, [],
+        [new AssemblyDocumentReading(rootAsm,
+            [new AssemblyChild("底板-1", plate, false, false, identity)], [])],
+        PartProperties: null,
+        PurchasedParts: [new PurchasedPartReading(screw, 4)]);
+
+    PackageRequest? captured = null;
+    using var viewModel = new AssemblyViewModel(
+        (request, progress, token) => Task.FromResult(probe),
+        (request, progress, token) => Task.FromResult(0),
+        _ => { },
+        Dispatcher.CurrentDispatcher,
+        packWorker: (request, progress, token) =>
+        {
+            captured = request;
+            return Task.FromResult(0);
+        });
+
+    viewModel.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPackage);
+    True(viewModel.IsPackMode, "选中整体打包后 ViewModel 必须进入打包模式");
+    True(!viewModel.ShowConversionOptions, "打包不改任何模型，识别/失败继续/装配关系三个开关必须隐藏");
+    Equal("打包", viewModel.PrimaryActionText, "打包模式的主按钮必须叫「打包」");
+
+    viewModel.SetSourcePath(rootAsm);
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    Equal(2, viewModel.Parts.Count, "打包表必须列出机加件与外购件，且只列零件");
+    var plateRow = viewModel.Parts.Single(row => row.PartName == "底板");
+    Equal("1", plateRow.QuantityText, "打包表的数量列必须来自计划");
+    Equal("有", plateRow.DrawingStateText, "找到同名工程图的行必须显示「有」");
+    Equal("机加件", plateRow.CategoryText, "与总装同级的零件必须显示为机加件");
+    var screwRow = viewModel.Parts.Single(row => row.PartName == "内六角螺钉");
+    Equal("外购件", screwRow.CategoryText, "子文件夹里的件必须显示为外购件");
+    Equal("无", screwRow.DrawingStateText, "外购件没有工程图时必须显示「无」");
+    True(viewModel.CanConvert, "解析完成后打包按钮必须可用：" + viewModel.PackBlockedReason);
+
+    viewModel.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    True(captured is not null, "打包必须把导出作业交给 Worker");
+    var jobs = captured!.Jobs;
+    Equal(3, jobs.Count, "一个机加件一个 STEP，一张工程图一个 DWG 加一个 PDF");
+    True(jobs.Any(job => job.Artifact == PackageArtifact.Step && job.SourcePath == plate),
+        "机加件必须有 STEP 作业");
+    True(jobs.All(job => job.Artifact != PackageArtifact.Step || job.SourcePath != screw),
+        "外购件不得导 STEP");
+    True(jobs.Count(job => job.SourcePath == plateDrawing) == 2, "工程图必须同时导 DWG 与 PDF");
+    True(captured.Overwrite, "重复打包必须覆盖上一轮产物");
+
+    foreach (var directoryName in new[]
+             {
+                 ConversionPathLayout.StepDirectoryName,
+                 ConversionPathLayout.DwgDirectoryName,
+                 ConversionPathLayout.PdfDirectoryName,
+                 ConversionPathLayout.BomDirectoryName,
+             })
+    {
+        True(Directory.Exists(Path.Combine(dir, directoryName)),
+            $"打包必须在总装配体同级建出 {directoryName} 目录，哪怕本轮没有东西放进去");
+    }
+
+    var bomDirectory = Path.Combine(dir, ConversionPathLayout.BomDirectoryName);
+    True(File.Exists(Path.Combine(bomDirectory, "GHLSS 机加件清单.xlsx")), "必须生成机加件清单");
+    True(File.Exists(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx")), "必须生成外购件清单");
+    True(viewModel.LastOperationSucceeded, "全部作业成功时本轮打包必须判为成功");
 }
 
 sealed class RecordingModuleContext : IModuleContext

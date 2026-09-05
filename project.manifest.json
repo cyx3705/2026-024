@@ -11,7 +11,7 @@
     "title": "HistoryMinerva CAD 转换模块",
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active",
-    "version": "4.9.0",
+    "version": "4.10.1",
     "branch": "2026-024-HistoryMinerva"
   },
   "historyVulcanHost": {

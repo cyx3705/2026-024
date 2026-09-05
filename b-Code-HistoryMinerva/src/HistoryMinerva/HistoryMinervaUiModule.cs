@@ -201,7 +201,9 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         if (!viewModel.CanConvert)
         {
             return CommandResult.Fail(
-                viewModel.IsRenameMode ? viewModel.RenameBlockedReason : viewModel.StatusText);
+                viewModel.IsRenameMode ? viewModel.RenameBlockedReason
+                    : viewModel.IsPackMode ? viewModel.PackBlockedReason
+                    : viewModel.StatusText);
         }
 
         var result = await ConversionCommandHandlers.ConvertAsync(viewModel, command).ConfigureAwait(true);
@@ -357,8 +359,16 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             || value.Equals("true", StringComparison.OrdinalIgnoreCase)
             || value.Equals("1", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>零件表里那张表的节点 id。改属性以后要按节点刷它，否则界面停在旧值上。</summary>
-    private const string PartsTableNode = "sw-property-parts";
+    /// <summary>
+    /// 零件表那张表的节点 id。改属性以后要按节点刷它，否则界面停在旧值上。
+    ///
+    /// 每种转换内容各有自己的表节点（Aurora 的 <c>switch</c> 分支各建一份），
+    /// 刷别人的节点是越权，而且刷的还是一个当下并不存在的节点。
+    /// </summary>
+    private const string PropertyPartsTableNode = "sw-property-parts";
+
+    /// <inheritdoc cref="PropertyPartsTableNode"/>
+    private const string PackagePartsTableNode = "sw-package-parts";
 
     /// <summary>
     /// 一键刷满一个属性槽：设计、日期、材料、表面处理、热处理。
@@ -630,19 +640,20 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         var bus = _context?.Bus;
         if (bus is null)
             return;
+        var node = _viewModel is { IsPackMode: true } ? PackagePartsTableNode : PropertyPartsTableNode;
         _ = await bus.ExecuteAsync(
-            "aurora.ui.refreshdata node=" + PartsTableNode,
+            "aurora.ui.refreshdata node=" + node,
             command.Source,
             command.Cancellation).ConfigureAwait(true);
     }
 
     /// <summary>
-    /// 只在属性整备下刷零件表。别的三种转换内容各有自己的表节点，
-    /// 在这里连它们一起刷是越权，而且刷的还是一个当下并不存在的节点。
+    /// 刷属性整备与整体打包那两张表。另外三种转换内容的表由 Aurora 自己按
+    /// <c>dataSource</c> 取，不需要也不允许在这里代刷（见 <see cref="PropertyPartsTableNode"/>）。
     /// </summary>
     private async Task RefreshPropertyPrepTableAsync(CommandContext command)
     {
-        if (_viewModel is not { IsRenameMode: true })
+        if (_viewModel is not { IsRenameMode: true } and not { IsPackMode: true })
             return;
         await RefreshPartsTableAsync(command).ConfigureAwait(true);
         // 表一变，底下那排框的读数就可能变了：解析后前缀是刚认出来的，
@@ -730,6 +741,11 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             ["material"] = PropertyCell(row, PartPropertyField.Material),
             ["surface"] = PropertyCell(row, PartPropertyField.SurfaceTreatment),
             ["heat"] = PropertyCell(row, PartPropertyField.HeatTreatment),
+            // V4.10 整体打包三列。打包表里「drawing」那一列对机加件是图号、
+            // 对外购件是规格——两者在各自那张 BOM 上占的正是同一格。
+            ["quantity"] = row.QuantityText,
+            ["hasdrawing"] = row.DrawingStateText,
+            ["category"] = row.CategoryText,
         }).ToList();
     }
 
@@ -790,6 +806,10 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                   { "type": "panel", "id": "sw-property-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.property.today", "text": "一键设置日期" }, { "kind": "button", "action": "minerva.conversion.run", "text": "写入" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
                   { "type": "table", "id": "sw-property-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号", "width": "150" }, { "key": "name", "title": "名称", "width": "*", "cellAction": "minerva.cell.name" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "material", "title": "材料", "width": "110", "cellAction": "minerva.cell.material" }, { "key": "surface", "title": "表面处理", "width": "110", "cellAction": "minerva.cell.surface" }, { "key": "heat", "title": "热处理", "width": "110", "cellAction": "minerva.cell.heat" }] },
                   { "type": "panel", "id": "sw-property-options", "text": "图号前缀", "rows": [{ "mode": "flex", "widgets": [{ "kind": "textbox", "id": "prefix", "label": "图号前缀", "commitAction": "minerva.options.prefix", "flex": true, "minWidth": 160 }, { "kind": "textbox", "id": "designer", "label": "设计", "commitAction": "minerva.property.designer", "flex": true, "minWidth": 120 }] }, { "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-material", "label": "材料", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "materials" } }, "commitAction": "minerva.property.material" }, { "kind": "textbox", "id": "batch-surface", "label": "表面处理", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "surfaces" } }, "commitAction": "minerva.property.surface" }, { "kind": "textbox", "id": "batch-heat", "label": "热处理", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "heats" } }, "commitAction": "minerva.property.heat" }] }] }
+                ] },
+                { "case": "SolidWorks .SLDASM → 整体打包（STP/DWG/PDF/BOM）", "type": "stack", "gap": "tight", "children": [
+                  { "type": "panel", "id": "sw-package-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "打包" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
+                  { "type": "table", "id": "sw-package-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号 / 规格", "width": "170" }, { "key": "name", "title": "名称", "width": "*" }, { "key": "quantity", "title": "数量", "width": "60" }, { "key": "category", "title": "件别", "width": "70" }, { "key": "hasdrawing", "title": "工程图", "width": "70" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "detail", "title": "结果", "width": "2*" }] }
                 ] }
               ] }
             ] }

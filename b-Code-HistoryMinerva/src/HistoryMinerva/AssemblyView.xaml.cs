@@ -35,6 +35,7 @@ public partial class AssemblyView : UserControl, IDisposable
         if (e.PropertyName is nameof(AssemblyViewModel.SourcePartColumnHeader) or null)
             SourcePartColumn.Header = _viewModel.SourcePartColumnHeader;
         if (e.PropertyName is nameof(AssemblyViewModel.IsRenameMode)
+            or nameof(AssemblyViewModel.IsPackMode)
             or nameof(AssemblyViewModel.SelectedMappingContent)
             or null)
             ApplyRenameTableColumns();
@@ -50,11 +51,17 @@ public partial class AssemblyView : UserControl, IDisposable
     internal double SourceColumnWidth => SourceColumn.ActualWidth;
     internal double ContentColumnWidth => ContentColumn.ActualWidth;
 
+    /// <summary>
+    /// 特征 / 草图两列只对真正跑识别的转换有意义。属性整备只改名字与属性，
+    /// 整体打包一个模型都不改——两者都不该在表里留下两列永远是空的格子。
+    /// 「结果」列打包时要留着：它显示的是这一行对应的工程图文件名或「没有同名工程图」。
+    /// </summary>
     private void ApplyRenameTableColumns()
     {
         var rename = _viewModel.IsRenameMode;
-        FeatureColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
-        SketchColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
+        var pack = _viewModel.IsPackMode;
+        FeatureColumn.Visibility = rename || pack ? Visibility.Collapsed : Visibility.Visible;
+        SketchColumn.Visibility = rename || pack ? Visibility.Collapsed : Visibility.Visible;
         ResultColumn.Visibility = rename ? Visibility.Collapsed : Visibility.Visible;
     }
 

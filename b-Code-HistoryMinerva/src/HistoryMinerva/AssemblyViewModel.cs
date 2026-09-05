@@ -15,6 +15,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     private readonly Func<AssemblyBatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _runWorker;
     private readonly Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _runPartWorker;
     private readonly Func<AssemblyRenameRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _renameWorker;
+    private readonly Func<PackageRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _packWorker;
     private readonly Action<ConversionSourceFormat> _validateEnvironment;
     private readonly Dispatcher _uiDispatcher;
     private readonly MappingRuntimePaths _runtimePaths;
@@ -79,6 +80,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 OnPropertyChanged(nameof(OperationText));
                 OnPropertyChanged(nameof(IsAssemblyMode));
                 OnPropertyChanged(nameof(IsRenameMode));
+                OnPropertyChanged(nameof(IsPackMode));
                 OnPropertyChanged(nameof(ShowConversionOptions));
                 OnPropertyChanged(nameof(SourcePartColumnHeader));
                 OnPropertyChanged(nameof(IsPartDirectoryMode));
@@ -265,20 +267,24 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             SourceAssemblyPath, ConversionPathLayout.GetSourceAssemblyExtension(SourceFormat));
     public bool CanConvert => CanEdit && (IsRenameMode
         ? CanWrite
-        : IsAssemblyMode
-            ? !_conversionCompleted && _plan?.CanConvert == true
-            : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
+        : IsPackMode
+            ? CanPack
+            : IsAssemblyMode
+                ? !_conversionCompleted && _plan?.CanConvert == true
+                : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
     public bool CanContinueWhenPartFails => CanEdit && IsAssemblyMode;
 
     /// <summary>零件列的列头。写死"Solid Edge 零件"在 SW 自整备模式下是假话。</summary>
-    public string SourcePartColumnHeader => IsRenameMode
+    public string SourcePartColumnHeader => IsRenameMode || IsPackMode
         ? "当前文件"
         : SourceFormat == ConversionSourceFormat.SolidWorks
             ? "SolidWorks 零件"
             : "Solid Edge 零件";
     public string PrimaryActionText => IsRenameMode
         ? "写入"
-        : IsPartDirectoryMode
+        : IsPackMode
+            ? "打包"
+            : IsPartDirectoryMode
             || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource
             ? "转换全部零件"
             : "转换装配体";
@@ -287,7 +293,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         ? "正在解析装配体"
         : IsRenameMode
             ? "正在写入"
-            : IsPartDirectoryMode ? "正在转换全部零件" : "正在转换装配体";
+            : IsPackMode
+                ? "正在打包"
+                : IsPartDirectoryMode ? "正在转换全部零件" : "正在转换装配体";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -312,7 +320,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             uiDispatcher,
             workerClient.RunAsync,
             runtimePaths,
-            workerClient.RunRenameAsync)
+            workerClient.RunRenameAsync,
+            workerClient.RunPackageAsync)
     {
     }
 
@@ -323,7 +332,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         Dispatcher uiDispatcher,
         Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? runPartWorker = null,
         MappingRuntimePaths? runtimePaths = null,
-        Func<AssemblyRenameRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? renameWorker = null)
+        Func<AssemblyRenameRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? renameWorker = null,
+        Func<PackageRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? packWorker = null)
     {
         _probeWorker = probeWorker ?? throw new ArgumentNullException(nameof(probeWorker));
         _runWorker = runWorker ?? throw new ArgumentNullException(nameof(runWorker));
@@ -333,6 +343,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         _renameWorker = renameWorker
             ?? ((request, progress, cancellationToken) =>
                 new WorkerClient(runtimePaths).RunRenameAsync(request, progress, cancellationToken));
+        _packWorker = packWorker
+            ?? ((request, progress, cancellationToken) =>
+                new WorkerClient(runtimePaths).RunPackageAsync(request, progress, cancellationToken));
         _validateEnvironment = validateEnvironment ?? throw new ArgumentNullException(nameof(validateEnvironment));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _runtimePaths = runtimePaths ?? MappingRuntimePaths.CreateAppShellFallback();
@@ -426,7 +439,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 isProbe: false,
                 IsRenameMode
                     ? RenameCoreAsync
-                    : IsPartDirectoryMode ? ConvertPartsCoreAsync : ConvertAssemblyCoreAsync);
+                    : IsPackMode
+                        ? PackCoreAsync
+                        : IsPartDirectoryMode ? ConvertPartsCoreAsync : ConvertAssemblyCoreAsync);
         }
         finally
         {
@@ -809,6 +824,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     {
         _plan = null;
         _renamePlan = null;
+        _packagePlan = null;
         _probeResult = null;
         _sourceHashAfterProbe = null;
         _conversionCompleted = false;
@@ -884,6 +900,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         OnPropertyChanged(nameof(CanRebuildMates));
         OnPropertyChanged(nameof(RebuildMatesHint));
         OnPropertyChanged(nameof(IsRenameMode));
+        OnPropertyChanged(nameof(IsPackMode));
         OnPropertyChanged(nameof(ShowConversionOptions));
         OnPropertyChanged(nameof(CanProbe));
         OnPropertyChanged(nameof(CanConvert));

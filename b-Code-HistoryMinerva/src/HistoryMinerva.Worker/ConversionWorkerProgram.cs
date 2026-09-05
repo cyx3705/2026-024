@@ -14,7 +14,7 @@ internal static class ConversionWorkerProgram
         if (paths is null)
         {
             Console.Error.WriteLine(
-                $"Usage: {HistoryMinervaIdentity.WorkerFileName} {WorkerProtocol.PartsRequestVerb}|{WorkerProtocol.PartImportVerb}|{WorkerProtocol.AssemblyProbeVerb}|{WorkerProtocol.AssemblyBuildVerb}|{WorkerProtocol.AssemblyRenameVerb} "
+                $"Usage: {HistoryMinervaIdentity.WorkerFileName} {WorkerProtocol.PartsRequestVerb}|{WorkerProtocol.PartImportVerb}|{WorkerProtocol.AssemblyProbeVerb}|{WorkerProtocol.AssemblyBuildVerb}|{WorkerProtocol.AssemblyRenameVerb}|{WorkerProtocol.AssemblyPackageVerb} "
                 + $"<absolute-json-path> {WorkerProtocol.CancellationArgument} <absolute-signal-path>");
             return 2;
         }
@@ -37,6 +37,7 @@ internal static class ConversionWorkerProgram
                 WorkerProtocol.AssemblyProbeVerb => RunProbe(Read<AssemblyProbeRequest>(paths.Value.RequestPath), cancellation.Token),
                 WorkerProtocol.AssemblyBuildVerb => RunAssembly(Read<AssemblyBatchRequest>(paths.Value.RequestPath), cancellation.Token),
                 WorkerProtocol.AssemblyRenameVerb => RunRename(Read<AssemblyRenameRequest>(paths.Value.RequestPath), cancellation.Token),
+                WorkerProtocol.AssemblyPackageVerb => RunPackage(Read<PackageRequest>(paths.Value.RequestPath), cancellation.Token),
                 _ => 2,
             };
         }
@@ -179,6 +180,31 @@ internal static class ConversionWorkerProgram
                 errorClass: ex is ClassifiedConversionException classified
                     ? classified.ErrorClass
                     : ConversionErrorClass.Unknown);
+            return 4;
+        }
+    }
+
+    private static int RunPackage(PackageRequest request, CancellationToken cancellationToken)
+    {
+        WorkerRequestValidator.Validate(request);
+        var reporter = new WorkerReporter(request.BatchId, JsonOptions);
+        try
+        {
+            // 部分失败仍返回 1 而不是 4：几十个零件里有一个导不出来，不该让另外几十个
+            // 已经落盘的产物被判成「这一轮什么都没有」。前端按事件逐行显示成败。
+            return SolidWorksPackageExporter.Export(request, reporter, cancellationToken) == 0 ? 0 : 1;
+        }
+        catch (OperationCanceledException)
+        {
+            reporter.Report(null, ConversionStage.Cancelled, "整体打包已取消。", errorClass: ConversionErrorClass.Cancelled);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            reporter.Report(null, ConversionStage.Failed, "整体打包失败：" + ex.Message, true, ex.HResult,
+                errorClass: ex is ClassifiedConversionException classified
+                    ? classified.ErrorClass
+                    : ComErrorClassifier.Classify(ex, ConversionErrorClass.PackageExportFailed));
             return 4;
         }
     }

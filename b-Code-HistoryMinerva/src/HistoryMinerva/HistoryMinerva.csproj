@@ -13,6 +13,13 @@
     <InternalsVisibleTo Include="HistoryMinerva.Smoke" />
     <InternalsVisibleTo Include="HistoryMinerva.UiSmoke" />
     <None Include="..\..\module.manifest.json" Link="module.manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      V4.10：两张 BOM 的现场模板，原样嵌进 dll。模块包只有 dll 与 Worker，
+      没有第二个可以放素材的位置；而 BOM 的表头、边框和合并格都由这两个文件定义，
+      代码只往里插数据行（见 Bom/BomWorkbookWriter.cs）。换模板＝换这两个文件。
+    -->
+    <EmbeddedResource Include="Assets\机加件清单.xlsx" />
+    <EmbeddedResource Include="Assets\外购件清单.xlsx" />
     <ProjectReference Include="..\HistoryMinerva.Contracts\HistoryMinerva.Contracts.csproj" />
     <ProjectReference Include="..\HistoryMinerva.Worker\HistoryMinerva.Worker.csproj" ReferenceOutputAssembly="false" />
     <Reference Include="HistoryVulcan.Core">

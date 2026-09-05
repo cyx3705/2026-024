@@ -22,6 +22,7 @@ public sealed class WorkerClient
     /// <summary>零件按 180 秒卡；装配用自己的预算。看门狗防的是真死，不是慢。</summary>
     private static TimeSpan InactivityBudgetFor(string verb)
         => verb is WorkerProtocol.AssemblyBuildVerb or WorkerProtocol.AssemblyRenameVerb
+            or WorkerProtocol.AssemblyPackageVerb
             ? AssemblyInactivityTimeout
             : StageInactivityTimeout;
     private static readonly JsonSerializerOptions JsonOptions = WorkerProtocol.CreateJsonOptions();
@@ -86,6 +87,21 @@ public sealed class WorkerClient
         CancellationToken cancellationToken)
         => await RunWorkerAsync(
             WorkerProtocol.AssemblyRenameVerb,
+            request.BatchId,
+            request,
+            progress,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// V4.10 整体打包的 CAD 导出。批次里一个零件一次 SaveAs，几百个零件全在一个
+    /// Worker 进程里跑完，因此看门狗用装配那一档预算而不是零件的 180 秒。
+    /// </summary>
+    public async Task<int> RunPackageAsync(
+        PackageRequest request,
+        Action<WorkerEvent> progress,
+        CancellationToken cancellationToken)
+        => await RunWorkerAsync(
+            WorkerProtocol.AssemblyPackageVerb,
             request.BatchId,
             request,
             progress,

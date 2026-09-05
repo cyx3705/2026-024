@@ -189,6 +189,58 @@ internal static class WorkerRequestValidator
         }
     }
 
+    /// <summary>
+    /// V4.10 整体打包导出请求。四条判据缺一不可：批次有名字、总装配体是存在的
+    /// <c>.SLDASM</c>、每个作业的源与产物类型对得上、同一个产物路径只出现一次。
+    ///
+    /// 最后一条是这条链路特有的：STP / DWG / PDF 三个目录按**文件主名**放产物，
+    /// 两个不同目录下的同名零件会算出同一个 <c>STP\阀体.STEP</c>，后一个悄悄盖掉前一个。
+    /// 与其交付一个少了零件的包，不如在这里挡住。
+    /// </summary>
+    public static void Validate(PackageRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.BatchId))
+            throw new InvalidDataException("打包批次编号无效。");
+        ValidateSolidWorksDocument(request.SourceAssemblyPath, mustExist: true);
+        if (!ConversionPathLayout.HasExtension(
+                request.SourceAssemblyPath, ConversionPathLayout.SolidWorksAssemblyExtension))
+        {
+            throw new InvalidDataException("整体打包只接受 SolidWorks .SLDASM 总装配体。");
+        }
+        if (request.Jobs.Count == 0)
+            throw new InvalidDataException("打包作业清单为空。");
+
+        var outputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var job in request.Jobs)
+        {
+            if (string.IsNullOrWhiteSpace(job.Id))
+                throw new InvalidDataException("打包作业缺少编号。");
+            if (!Path.IsPathFullyQualified(job.SourcePath) || !Path.IsPathFullyQualified(job.OutputPath))
+                throw new InvalidDataException($"打包作业路径必须是绝对路径：{job.SourcePath}");
+            if (!File.Exists(job.SourcePath))
+                throw new FileNotFoundException("打包源文件不存在。", job.SourcePath);
+
+            var expectedSource = job.Artifact == PackageArtifact.Step
+                ? ConversionPathLayout.SolidWorksPartExtension
+                : ConversionPathLayout.SolidWorksDrawingExtension;
+            if (!ConversionPathLayout.HasExtension(job.SourcePath, expectedSource))
+                throw new InvalidDataException($"{job.Artifact} 作业的源必须是 {expectedSource}：{job.SourcePath}");
+
+            var expectedOutput = job.Artifact switch
+            {
+                PackageArtifact.Step => ConversionPathLayout.StepExtension,
+                PackageArtifact.Dwg => ConversionPathLayout.DwgExtension,
+                PackageArtifact.Pdf => ConversionPathLayout.PdfExtension,
+                _ => throw new InvalidDataException($"未知打包产物类型：{job.Artifact}"),
+            };
+            if (!ConversionPathLayout.HasExtension(job.OutputPath, expectedOutput))
+                throw new InvalidDataException($"{job.Artifact} 作业的产物必须是 {expectedOutput}：{job.OutputPath}");
+            if (!outputs.Add(Path.GetFullPath(job.OutputPath)))
+                throw new InvalidDataException($"打包清单存在重复产物路径：{job.OutputPath}");
+        }
+    }
+
     private static void ValidateSolidWorksDocument(string path, bool mustExist)
     {
         if (!Path.IsPathFullyQualified(path))

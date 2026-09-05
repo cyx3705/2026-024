@@ -34,6 +34,7 @@ internal sealed partial class SolidWorksInteropBridge : IDisposable
     private readonly Type _customPropertyInterface;
     private readonly Type _configurationManagerInterface;
     private readonly Type _configurationInterface;
+    private readonly Type _exportPdfDataInterface;
     private readonly string _installDirectory;
     private Type? _featureWorksInterface;
 
@@ -65,6 +66,7 @@ internal sealed partial class SolidWorksInteropBridge : IDisposable
         _customPropertyInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.ICustomPropertyManager");
         _configurationManagerInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IConfigurationManager");
         _configurationInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IConfiguration");
+        _exportPdfDataInterface = GetType(interopAssembly, "SolidWorks.Interop.sldworks.IExportPdfData");
 
         var unknown = Marshal.GetIUnknownForObject(application);
         try
@@ -134,12 +136,61 @@ internal sealed partial class SolidWorksInteropBridge : IDisposable
         int options,
         out int errors,
         out int warnings)
+        => SaveAs3(extension, path, version, options, exportData: null, out errors, out warnings);
+
+    /// <summary>
+    /// <paramref name="exportData"/> 是 <c>SaveAs3</c> 的第四个参数。传 null 时 SolidWorks
+    /// 沿用会话里的导出设置；PDF 必须显式传 <see cref="CreatePdfExportData"/> 建出来的对象，
+    /// 否则多页工程图只导出当前那一页，而现场看到的是「图纸导出成功但少了两页」。
+    /// </summary>
+    public bool SaveAs3(
+        object extension,
+        string path,
+        int version,
+        int options,
+        object? exportData,
+        out int errors,
+        out int warnings)
     {
-        object?[] parameters = [path, version, options, null, null, 0, 0];
+        object?[] parameters = [path, version, options, exportData, null, 0, 0];
         var saved = Convert.ToBoolean(Invoke(_extensionInterface, extension, "SaveAs3", parameters));
         errors = Convert.ToInt32(parameters[5]);
         warnings = Convert.ToInt32(parameters[6]);
         return saved;
+    }
+
+    /// <summary>swExportDataFileType_e.swExportPdfData。</summary>
+    private const int ExportPdfDataFileType = 1;
+
+    /// <summary>swExportDataSheetsToExport_e.swExportData_ExportAllSheets。</summary>
+    private const int ExportAllSheets = 1;
+
+    /// <summary>
+    /// V4.10：建一份「整份工程图、全部图纸页」的 PDF 导出设置。
+    ///
+    /// <c>ViewPdfAfterSaving</c> 必须关掉：默认为真时每导一张图就弹一次 PDF 阅读器，
+    /// 一批几十张图会在用户桌面上叠出几十个窗口，而这一轮本来是后台批处理。
+    /// 建不出来时返回 null，调用方按「用会话默认设置」继续，不为此让整批失败。
+    /// </summary>
+    public object? CreatePdfExportData()
+    {
+        var data = Invoke(_applicationInterface, _application, "GetExportFileData", ExportPdfDataFileType);
+        if (data is null)
+            return null;
+        try
+        {
+            _ = Invoke(_exportPdfDataInterface, data, "SetSheets", ExportAllSheets, 0, null);
+            var property = _exportPdfDataInterface.GetProperty("ViewPdfAfterSaving");
+            property?.SetValue(data, false);
+        }
+        catch (Exception)
+        {
+            // 导出设置只是加分项：设不上就退回会话默认，绝不因此丢掉整批 PDF。
+            ComRelease.Final(data);
+            return null;
+        }
+
+        return data;
     }
 
     /// <summary>
@@ -348,6 +399,20 @@ internal sealed partial class SolidWorksInteropBridge : IDisposable
     /// </summary>
     public object? OpenAssemblyReadOnly(string path, out int errors, out int warnings)
         => OpenDocument(path, DocumentTypeAssembly, OpenSilent | OpenReadOnly, out errors, out warnings);
+
+    /// <summary>swDocumentTypes_e.swDocDRAWING。</summary>
+    private const int DocumentTypeDrawing = 3;
+
+    /// <summary>
+    /// V4.10：只读打开一个零件。整体打包只把它另存为 STEP，绝不改源零件——
+    /// 只读不是礼貌，是硬性要求，调用方仍会在关闭后比对 SHA256 把它变成可核验的事实。
+    /// </summary>
+    public object? OpenPartReadOnly(string path, out int errors, out int warnings)
+        => OpenDocument(path, DocumentTypePart, OpenSilent | OpenReadOnly, out errors, out warnings);
+
+    /// <inheritdoc cref="OpenPartReadOnly"/>
+    public object? OpenDrawingReadOnly(string path, out int errors, out int warnings)
+        => OpenDocument(path, DocumentTypeDrawing, OpenSilent | OpenReadOnly, out errors, out warnings);
 
     /// <summary>轻化组件不解析就读不到面几何，配合采集会整批落空。返回值只作诊断。</summary>
     public int ResolveLightweightComponents(object assembly)

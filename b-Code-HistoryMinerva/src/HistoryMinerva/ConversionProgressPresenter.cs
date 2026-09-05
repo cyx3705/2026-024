@@ -22,6 +22,7 @@ internal static class ConversionProgressPresenter
             ConversionStage.Failed => "失败",
             ConversionStage.Cancelled => "已取消",
             ConversionStage.PropertyPrep => "改名",
+            ConversionStage.PackageExport => "打包",
             _ => currentStatus,
         };
 

@@ -53,7 +53,11 @@ public sealed partial class AssemblyViewModel
     public bool IsRenameMode
         => SelectedMappingContent.Kind == MappingContent.SolidWorksAssemblyPropertyPrep;
 
-    public bool ShowConversionOptions => !IsRenameMode;
+    /// <summary>
+    /// 识别特征 / 失败继续 / 重建装配关系那一排开关。属性整备与整体打包都不显示它们：
+    /// 前者只改名字与属性，后者一个模型都不改，摆着三个不会生效的开关是在骗用户。
+    /// </summary>
+    public bool ShowConversionOptions => !IsRenameMode && !IsPackMode;
 
     /// <summary>
     /// 「写入」= 改名 + 写属性，所以门是 <see cref="AssemblyRenamePlan.CanWrite"/> 而不是 CanRename。
@@ -856,6 +860,7 @@ public sealed partial class AssemblyViewModel
             string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
         StatusText = FormatProbeStatus(plan, result, issueText);
         ApplyRenamePreview();
+        ApplyPackagePreview();
         _lastOperationSucceeded = plan.CanConvert;
         OnPropertyChanged(nameof(CanConvert));
         OnPropertyChanged(nameof(CanRebuildMates));

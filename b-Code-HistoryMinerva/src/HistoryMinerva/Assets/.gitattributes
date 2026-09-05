@@ -1,0 +1,8 @@
+# 两个 BOM 模板是**构建输入**（嵌入 HistoryMinerva.dll），不是随仓携带的素材。
+# 仓库根 .gitattributes 把 *.xlsx 交给 LFS；这里显式退出 LFS，按普通二进制入库。
+#
+# 理由只有一条：没装 LFS（或 LFS 拉取失败）的克隆会得到一个 130 字节的指针文本，
+# 而构建照样成功——只有跑到用户点「打包」那一刻才会炸，报的还是「不是有效的 zip」。
+# 两个模板各十几 KB，直接进 git 没有代价，却把这条静默失败路径整个去掉。
+# BomWorkbookWriter 另有一道指针识别兜底，防的是有人把这条规则改回去。
+*.xlsx -filter -diff -merge -text

@@ -1,16 +1,18 @@
 # HistoryMinerva
 
-HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 转换模块。当前源码为 `4.9.0`。
+HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 转换模块。当前源码为 `4.10.1`。
 
 - **前端**：`HistoryMinerva.dll`——通过 Aurora 描述式协议提供中央页面 `Minerva`（`.par → .SLDPRT`、`.asm → .SLDASM`、
-  SolidWorks 特征整备与属性整备改名），模块名为 `HistoryMinerva`、命令域为 `minerva`（全部取自
+  SolidWorks 特征整备、属性整备改名与整体打包），模块名为 `HistoryMinerva`、命令域为 `minerva`（全部取自
   `HistoryMinervaIdentity` 唯一权威源）。Worker 查询通过 `minerva.worker.*` 进入 Vulcan 命令总线与 MCP。
 - **后端**：单一 `HistoryMinerva.Worker.exe`（x64 STA）只接受
   `<verb> <json> --cancel <signal>` 转换协议。历史 SWuse 建模链已删除。
+- **整体打包**（4.10.0）：选总装配体，一次生成与它同级的 `STP/`、`DWG/`、`PDF/`、`BOM/` 四个交付目录。
+  两张 BOM 按嵌在模块里的现场模板生成，不经过 Worker——SolidWorks 起不来时采购的清单照样拿得到。
 - **测试**：`b-Code-HistoryMinerva-Tests` 下 Smoke、UiSmoke 与三个 CAD 真机门禁。
 
 内部程序集、命名空间与 JSON 协议为 `HistoryMinerva.*`，不保留 `mapping.*` / `swuse.*` 兼容别名。
-源 CAD 文件保持只读，产物写入来源目录下的 `XT/` 与 `SW/`。
+源 CAD 文件保持只读，转换产物写入来源目录下的 `XT/` 与 `SW/`，打包产物写入 `STP/`、`DWG/`、`PDF/`、`BOM/`。
 
 ## 入口
 
@@ -22,7 +24,7 @@ HistoryMinerva 是注册到 HistoryVulcan 宿主的单一 CAD 转换模块。当
 | 验证方式 | [`b-Office/current/验证合同.md`](./b-Office/current/验证合同.md) |
 | 生产模块源码 | [`b-Code-HistoryMinerva/README.md`](./b-Code-HistoryMinerva/README.md) |
 | 独立测试与 CAD 门禁 | [`b-Code-HistoryMinerva-Tests/README.md`](./b-Code-HistoryMinerva-Tests/README.md) |
-| 模块清单权威源（当前 4.9.0） | [`b-Code-HistoryMinerva/module.manifest.json`](./b-Code-HistoryMinerva/module.manifest.json) |
+| 模块清单权威源（当前 4.10.1） | [`b-Code-HistoryMinerva/module.manifest.json`](./b-Code-HistoryMinerva/module.manifest.json) |
 | 模块对外 API | [`b-Office/package/模块API.md`](./b-Office/package/模块API.md) |
 | SWuse V0.1 历史档案 | [`b-Office/history/swuse-v0.1/docs`](./b-Office/history/swuse-v0.1/docs) |
 

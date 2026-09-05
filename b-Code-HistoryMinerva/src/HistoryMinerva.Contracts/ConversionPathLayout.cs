@@ -5,6 +5,10 @@ public enum ConversionArtifactKind
     Xt,
     SolidWorksPart,
     SolidWorksAssembly,
+    // V4.10 整体打包的三种交付产物。枚举按数值序列化，新值只能追加在末尾。
+    Step,
+    Dwg,
+    Pdf,
 }
 
 public enum ReuseKind
@@ -26,6 +30,20 @@ public sealed record ConversionPartPaths(
     string LegacySolidWorksPath);
 
 /// <summary>
+/// V4.10 整体打包的四个交付目录，与源装配体同级。
+///
+/// 四个目录**平级**放在装配体旁边，与既有的 <c>XT/</c>、<c>SW/</c> 同一层，
+/// 而不是再收进一个「打包」根目录：交付时用户是逐个目录拖给不同的人
+/// （STP 给加工厂、DWG/PDF 给图纸审核、BOM 给采购），多一层壳只是多一次点击。
+/// </summary>
+public sealed record PackageOutputDirectories(
+    string RootDirectory,
+    string StepDirectory,
+    string DwgDirectory,
+    string PdfDirectory,
+    string BomDirectory);
+
+/// <summary>
 /// 外界模式的输出布局与文件扩展名。它只解析路径，不创建或检查文件。
 /// </summary>
 public static class ConversionPathLayout
@@ -37,6 +55,20 @@ public static class ConversionPathLayout
     public const string XtExtension = ".x_t";
     public const string SolidWorksPartExtension = ".SLDPRT";
     public const string SolidWorksAssemblyExtension = ".SLDASM";
+
+    /// <summary>
+    /// V4.10：工程图。整体打包按「与零件同名、同目录」这一条唯一规则找它，
+    /// 不递归、不跨目录——递归找同名图会把别的项目的重名图纸打进这一次交付。
+    /// </summary>
+    public const string SolidWorksDrawingExtension = ".SLDDRW";
+
+    public const string StepExtension = ".STEP";
+    public const string DwgExtension = ".DWG";
+    public const string PdfExtension = ".PDF";
+    public const string StepDirectoryName = "STP";
+    public const string DwgDirectoryName = "DWG";
+    public const string PdfDirectoryName = "PDF";
+    public const string BomDirectoryName = "BOM";
 
     /// <summary>源零件扩展名。SW 特征整备的源就是 <c>.SLDPRT</c> 本身。</summary>
     public static string GetSourcePartExtension(ConversionSourceFormat format)
@@ -73,6 +105,26 @@ public static class ConversionPathLayout
             Path.Combine(root, SolidWorksDirectoryName));
     }
 
+    /// <summary>
+    /// V4.10：按源装配体所在目录解析四个打包目录。只算路径，不建目录、不看存在性。
+    /// </summary>
+    public static PackageOutputDirectories ResolvePackageDirectories(string assemblyDirectory)
+    {
+        var root = Path.GetFullPath(assemblyDirectory);
+        return new PackageOutputDirectories(
+            root,
+            Path.Combine(root, StepDirectoryName),
+            Path.Combine(root, DwgDirectoryName),
+            Path.Combine(root, PdfDirectoryName),
+            Path.Combine(root, BomDirectoryName));
+    }
+
+    /// <summary>
+    /// V4.10：与零件同目录、同主名的工程图路径。**只算路径**，存在性由调用方判断。
+    /// </summary>
+    public static string ResolveDrawingPath(string partPath)
+        => Path.ChangeExtension(Path.GetFullPath(partPath), SolidWorksDrawingExtension);
+
     public static ConversionPartPaths ResolvePartPaths(
         string sourcePath,
         string xtDirectory,
@@ -98,6 +150,9 @@ public static class ConversionPathLayout
             ConversionArtifactKind.Xt => XtExtension,
             ConversionArtifactKind.SolidWorksPart => SolidWorksPartExtension,
             ConversionArtifactKind.SolidWorksAssembly => SolidWorksAssemblyExtension,
+            ConversionArtifactKind.Step => StepExtension,
+            ConversionArtifactKind.Dwg => DwgExtension,
+            ConversionArtifactKind.Pdf => PdfExtension,
             _ => throw new ArgumentOutOfRangeException(nameof(artifact), artifact, null),
         };
 
@@ -114,7 +169,8 @@ public static class ConversionPathLayout
         => HasExtension(path, SolidEdgePartExtension)
             || HasExtension(path, SolidEdgeAssemblyExtension)
             || HasExtension(path, SolidWorksPartExtension)
-            || HasExtension(path, SolidWorksAssemblyExtension);
+            || HasExtension(path, SolidWorksAssemblyExtension)
+            || HasExtension(path, SolidWorksDrawingExtension);
 
     /// <summary>
     /// 正式零件与所选装配体同级。路径落在子文件夹或其它目录即为外购件。
