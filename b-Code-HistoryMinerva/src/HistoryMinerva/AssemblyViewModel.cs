@@ -15,6 +15,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     private readonly Func<AssemblyBatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _runWorker;
     private readonly Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _runPartWorker;
     private readonly Func<AssemblyRenameRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _renameWorker;
+    private readonly Func<PackageRequest, Action<WorkerEvent>, CancellationToken, Task<int>> _packWorker;
     private readonly Action<ConversionSourceFormat> _validateEnvironment;
     private readonly Dispatcher _uiDispatcher;
     private readonly MappingRuntimePaths _runtimePaths;
@@ -46,8 +47,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     private DispatcherOperation? _dispatchOperation;
     private AssemblyConversionPlan? _plan;
     private AssemblyRenamePlan? _renamePlan;
-    private AssemblyRenamePlan? _stripPlan;
-    private bool _isStripping;
     private AssemblyProbeResult? _probeResult;
     private MateOutcome? _mateOutcome;
     private string? _sourceHashAfterProbe;
@@ -81,12 +80,12 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 OnPropertyChanged(nameof(OperationText));
                 OnPropertyChanged(nameof(IsAssemblyMode));
                 OnPropertyChanged(nameof(IsRenameMode));
+                OnPropertyChanged(nameof(IsPackMode));
                 OnPropertyChanged(nameof(ShowConversionOptions));
                 OnPropertyChanged(nameof(SourcePartColumnHeader));
                 OnPropertyChanged(nameof(IsPartDirectoryMode));
                 OnPropertyChanged(nameof(CanProbe));
                 OnPropertyChanged(nameof(CanConvert));
-                OnPropertyChanged(nameof(CanStrip));
                 OnPropertyChanged(nameof(CanWrite));
                 NotifySourceChanged();
             }
@@ -138,6 +137,27 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     internal bool LastOperationSucceeded => _lastOperationSucceeded;
     internal bool LastOperationCanceled => _lastOperationCanceled;
 
+    /// <summary>
+    /// V4.10.2：最近一次解析出来的探查结果，供 <c>minerva.conversion.probe</c> 放进
+    /// <c>CommandResult.Data</c>。
+    ///
+    /// 只读暴露，不给写入口：页面状态仍然只由 <c>ApplyProbeResult</c> 那一条路径改。
+    /// 命令返回的是同一个实例，调用方拿到的是 <c>HistoryMinerva.Contracts</c> 里公开的
+    /// 不可变 record——在这之前它只能从一句中文结论文本里猜。
+    /// </summary>
+    internal AssemblyProbeResult? LastProbeResult => _probeResult;
+
+    /// <summary>
+    /// V4.10.2：本次写入实际执行的那份计划，供 <c>minerva.conversion.run</c> 放进
+    /// <c>CommandResult.Data</c>。属性整备给 <see cref="AssemblyRenamePlan"/>、
+    /// 整体打包给 <see cref="PackagePlan"/>；其余三种转换没有对应的公开计划类型，给 null。
+    /// </summary>
+    internal object? LastExecutedPlan => IsRenameMode
+        ? _renamePlan
+        : IsPackMode
+            ? _packagePlan
+            : null;
+
     public bool IsBusy
     {
         get => _isBusy;
@@ -148,7 +168,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             OnPropertyChanged(nameof(CanEdit));
             OnPropertyChanged(nameof(CanProbe));
             OnPropertyChanged(nameof(CanConvert));
-            OnPropertyChanged(nameof(CanStrip));
             OnPropertyChanged(nameof(CanWrite));
             OnPropertyChanged(nameof(CanRebuildMates));
             OnPropertyChanged(nameof(CanContinueWhenPartFails));
@@ -269,20 +288,24 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             SourceAssemblyPath, ConversionPathLayout.GetSourceAssemblyExtension(SourceFormat));
     public bool CanConvert => CanEdit && (IsRenameMode
         ? CanWrite
-        : IsAssemblyMode
-            ? !_conversionCompleted && _plan?.CanConvert == true
-            : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
+        : IsPackMode
+            ? CanPack
+            : IsAssemblyMode
+                ? !_conversionCompleted && _plan?.CanConvert == true
+                : IsPartDirectoryMode && Parts.Any(row => !row.HasExistingOutput));
     public bool CanContinueWhenPartFails => CanEdit && IsAssemblyMode;
 
     /// <summary>零件列的列头。写死"Solid Edge 零件"在 SW 自整备模式下是假话。</summary>
-    public string SourcePartColumnHeader => IsRenameMode
+    public string SourcePartColumnHeader => IsRenameMode || IsPackMode
         ? "当前文件"
         : SourceFormat == ConversionSourceFormat.SolidWorks
             ? "SolidWorks 零件"
             : "Solid Edge 零件";
     public string PrimaryActionText => IsRenameMode
         ? "写入"
-        : IsPartDirectoryMode
+        : IsPackMode
+            ? "打包"
+            : IsPartDirectoryMode
             || SourceKind == ConversionSourceKind.None && !SelectedMappingContent.IsAssemblySource
             ? "转换全部零件"
             : "转换装配体";
@@ -290,8 +313,10 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     public string OperationText => IsProbing
         ? "正在解析装配体"
         : IsRenameMode
-            ? (_isStripping ? "正在按空格洗图号" : "正在写入")
-            : IsPartDirectoryMode ? "正在转换全部零件" : "正在转换装配体";
+            ? "正在写入"
+            : IsPackMode
+                ? "正在打包"
+                : IsPartDirectoryMode ? "正在转换全部零件" : "正在转换装配体";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -316,7 +341,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             uiDispatcher,
             workerClient.RunAsync,
             runtimePaths,
-            workerClient.RunRenameAsync)
+            workerClient.RunRenameAsync,
+            workerClient.RunPackageAsync)
     {
     }
 
@@ -327,7 +353,8 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         Dispatcher uiDispatcher,
         Func<BatchRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? runPartWorker = null,
         MappingRuntimePaths? runtimePaths = null,
-        Func<AssemblyRenameRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? renameWorker = null)
+        Func<AssemblyRenameRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? renameWorker = null,
+        Func<PackageRequest, Action<WorkerEvent>, CancellationToken, Task<int>>? packWorker = null)
     {
         _probeWorker = probeWorker ?? throw new ArgumentNullException(nameof(probeWorker));
         _runWorker = runWorker ?? throw new ArgumentNullException(nameof(runWorker));
@@ -337,6 +364,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         _renameWorker = renameWorker
             ?? ((request, progress, cancellationToken) =>
                 new WorkerClient(runtimePaths).RunRenameAsync(request, progress, cancellationToken));
+        _packWorker = packWorker
+            ?? ((request, progress, cancellationToken) =>
+                new WorkerClient(runtimePaths).RunPackageAsync(request, progress, cancellationToken));
         _validateEnvironment = validateEnvironment ?? throw new ArgumentNullException(nameof(validateEnvironment));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
         _runtimePaths = runtimePaths ?? MappingRuntimePaths.CreateAppShellFallback();
@@ -430,7 +460,9 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 isProbe: false,
                 IsRenameMode
                     ? RenameCoreAsync
-                    : IsPartDirectoryMode ? ConvertPartsCoreAsync : ConvertAssemblyCoreAsync);
+                    : IsPackMode
+                        ? PackCoreAsync
+                        : IsPartDirectoryMode ? ConvertPartsCoreAsync : ConvertAssemblyCoreAsync);
         }
         finally
         {
@@ -494,6 +526,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     private Task StartOperationAsync(bool isProbe, Func<CancellationToken, Task> operation)
     {
         _firstWorkerFailure = string.Empty;
+        _lastResultText = string.Empty;
         CancellationTokenSource cancellation;
         TaskCompletionSource completion;
         lock (_lifecycleGate)
@@ -603,9 +636,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             var issueText = plan.BlockingIssues.Count == 0
                 ? string.Empty
                 : string.Join("；", plan.BlockingIssues.Select(issue => $"[{issue.ErrorClass}] {issue.Message}"));
-            _lastOperationSucceeded = IsRenameMode
-                ? PropertyPrepPlanner.CreateStrip(result).BlockingIssues.Count == 0
-                : plan.CanConvert;
+            _lastOperationSucceeded = plan.CanConvert;
             StatusText = FormatProbeStatus(plan, result, issueText);
             QueueUiUpdate(() => ApplyProbeResult(result, plan, sourceHash));
         }
@@ -691,7 +722,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                     : "装配转换失败，未生成 SLDASM";
             AppendMateDiagnostics();
             OnPropertyChanged(nameof(CanConvert));
-            OnPropertyChanged(nameof(CanStrip));
         });
         _lastOperationSucceeded = exitCode == 0 && File.Exists(plan.AssemblyOutputPath);
     }
@@ -778,7 +808,12 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 _firstWorkerFailure = message;
         }
 
-        _operationProgress?.Report(ConversionProgressPresenter.FormatMessage(workerEvent));
+        // 逐个文件的成功事件只更新表格那一行，不再往控制台灌一条。
+        // 一次十几个零件的写入会发出三十多条「已改名为 X」「已写入 8 项属性：X」，
+        // 而它们说的事表里每一行都写着；控制台该留给这一轮的开头、结尾和失败
+        // （DEC-060）。批次级事件 JobId 为空，失败无论如何都要出来。
+        if (workerEvent.JobId is null || workerEvent.IsError)
+            _operationProgress?.Report(ConversionProgressPresenter.FormatMessage(workerEvent));
         QueueUiUpdate(() => ApplyWorkerEvent(workerEvent));
     }
 
@@ -810,8 +845,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     {
         _plan = null;
         _renamePlan = null;
-        _stripPlan = null;
-        _isStripping = false;
+        _packagePlan = null;
         _probeResult = null;
         _sourceHashAfterProbe = null;
         _conversionCompleted = false;
@@ -819,7 +853,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         Parts.Clear();
         WarningSummary = "输出按源装配的层级生成嵌套装配体，全部组件固定，不含配合。";
         OnPropertyChanged(nameof(CanConvert));
-        OnPropertyChanged(nameof(CanStrip));
+        OnPropertyChanged(nameof(CanWrite));
     }
 
     private void ClearSourceResults()
@@ -829,6 +863,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         // 换了来源装配，上一台设备的材料和表面处理就不再是这批零件的事实。
         // 记账按源文件全路径，不清掉的话换回旧装配还会把旧值诈尸带出来。
         _propertyEdits.Clear();
+        _nameEdits.Clear();
         XtDirectory = string.Empty;
         SolidWorksDirectory = string.Empty;
         AssemblyOutputPath = string.Empty;
@@ -886,6 +921,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         OnPropertyChanged(nameof(CanRebuildMates));
         OnPropertyChanged(nameof(RebuildMatesHint));
         OnPropertyChanged(nameof(IsRenameMode));
+        OnPropertyChanged(nameof(IsPackMode));
         OnPropertyChanged(nameof(ShowConversionOptions));
         OnPropertyChanged(nameof(CanProbe));
         OnPropertyChanged(nameof(CanConvert));
