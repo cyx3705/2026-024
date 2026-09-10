@@ -20,10 +20,12 @@ internal static class ConversionCommandHandlers
         try
         {
             await viewModel.ProbeAsync(command.Progress).ConfigureAwait(true);
+            // V4.10.2：结论文本之外再带上探查结果本身（G-2）。消费方引用
+            // HistoryMinerva.Contracts 就能强转成 AssemblyProbeResult，不必解析中文。
             return viewModel.LastOperationCanceled
                 ? CommandResult.Fail("Minerva 解析已取消。")
                 : viewModel.LastOperationSucceeded
-                    ? CommandResult.Ok(viewModel.StatusText)
+                    ? CommandResult.Ok(viewModel.StatusText, viewModel.LastProbeResult)
                     : CommandResult.Fail(viewModel.StatusText);
         }
         catch (OperationCanceledException)
@@ -45,10 +47,12 @@ internal static class ConversionCommandHandlers
             await viewModel.ConvertAsync(command.Progress).ConfigureAwait(true);
             // 读 ResultText 而不是 StatusText：后者排在 UI 队列里，这一刻很可能还是
             // 那句「正在写入……」，而这是给用户看的结论行（DEC-060）。
+            // V4.10.2：带上本次实际执行的那份计划（G-2）。属性整备是 AssemblyRenamePlan、
+            // 整体打包是 PackagePlan，其余三种转换没有对应的公开计划类型，仍然只有文本。
             return viewModel.LastOperationCanceled
                 ? CommandResult.Fail("Minerva 转换已取消。")
                 : viewModel.LastOperationSucceeded
-                    ? CommandResult.Ok(viewModel.ResultText)
+                    ? CommandResult.Ok(viewModel.ResultText, viewModel.LastExecutedPlan)
                     : CommandResult.Fail(viewModel.ResultText);
         }
         catch (OperationCanceledException)

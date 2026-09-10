@@ -137,6 +137,27 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     internal bool LastOperationSucceeded => _lastOperationSucceeded;
     internal bool LastOperationCanceled => _lastOperationCanceled;
 
+    /// <summary>
+    /// V4.10.2：最近一次解析出来的探查结果，供 <c>minerva.conversion.probe</c> 放进
+    /// <c>CommandResult.Data</c>。
+    ///
+    /// 只读暴露，不给写入口：页面状态仍然只由 <c>ApplyProbeResult</c> 那一条路径改。
+    /// 命令返回的是同一个实例，调用方拿到的是 <c>HistoryMinerva.Contracts</c> 里公开的
+    /// 不可变 record——在这之前它只能从一句中文结论文本里猜。
+    /// </summary>
+    internal AssemblyProbeResult? LastProbeResult => _probeResult;
+
+    /// <summary>
+    /// V4.10.2：本次写入实际执行的那份计划，供 <c>minerva.conversion.run</c> 放进
+    /// <c>CommandResult.Data</c>。属性整备给 <see cref="AssemblyRenamePlan"/>、
+    /// 整体打包给 <see cref="PackagePlan"/>；其余三种转换没有对应的公开计划类型，给 null。
+    /// </summary>
+    internal object? LastExecutedPlan => IsRenameMode
+        ? _renamePlan
+        : IsPackMode
+            ? _packagePlan
+            : null;
+
     public bool IsBusy
     {
         get => _isBusy;

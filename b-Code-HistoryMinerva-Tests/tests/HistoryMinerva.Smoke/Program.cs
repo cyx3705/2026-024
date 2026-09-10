@@ -19,6 +19,7 @@ try
 {
     TestSharedContractsAndVersion();
     TestCommandSurface(root);
+    TestPlanCommandSurface(root);
     // ModuleHost LoadFrom 第二份 HistoryMinerva.dll 之后，WPF 带版本的 pack URI 会找不到 BAML。
     TestUnifiedSourceWorkspace();
     TestUiModuleRegistration(root);
@@ -541,6 +542,115 @@ static void TestCommandSurface(string root)
         "status 必须以 HistoryMinerva 身份报告 Worker 状态");
 }
 
+/// <summary>
+/// V4.10.2 的无状态计划命令（G-2 / G-3）。
+///
+/// 这一组存在的理由就是「别的模块能不能真的消费 Minerva」：入参是路径本身而不是页面选择，
+/// 结果放进 <c>CommandResult.Data</c> 而不是一句中文文本，只读且不隐藏所以 AI 也看得见。
+/// 三条都锁在这里——任何一条退回去，跨模块消费就又只剩「自己抄一份计划逻辑」。
+/// </summary>
+static void TestPlanCommandSurface(string root)
+{
+    var workspace = Path.Combine(root, "plan-commands");
+    Directory.CreateDirectory(workspace);
+    var assemblyPath = Path.Combine(workspace, "GHLSS-06-00 总装.SLDASM");
+    var partPath = Path.Combine(workspace, "GHLSS-06-01 阀体.SLDPRT");
+    var drawingPath = Path.Combine(workspace, "GHLSS-06-01 阀体.SLDDRW");
+    foreach (var file in new[] { assemblyPath, partPath, drawingPath })
+        File.WriteAllText(file, "fixture");
+    var purchasedPath = Path.Combine(workspace, "标准件", "GB70 M8x20 内六角螺钉.SLDPRT");
+    Directory.CreateDirectory(Path.GetDirectoryName(purchasedPath)!);
+    File.WriteAllText(purchasedPath, "fixture");
+
+    var probeResult = new AssemblyProbeResult(
+        assemblyPath,
+        [new AssemblyOccurrence("1", null, partPath, false, false, false, Identity(), null)],
+        [partPath],
+        0,
+        0,
+        1,
+        0,
+        [],
+        PurchasedParts: [new PurchasedPartReading(purchasedPath, 4)]);
+
+    // 路径没过关时一次探查都不该发生：写错路径不该先开一遍 SolidWorks 再说不行。
+    var refusing = BuildPlanBus(_ => new StubAssemblyProbe(
+        () => throw new InvalidOperationException("路径校验之前不得启动探查")));
+    foreach (var bad in new[]
+             {
+                 "minerva.plan.package",
+                 "minerva.plan.package path=relative\\Top.SLDASM",
+                 @"minerva.plan.package path=C:\missing\Top.SLDPRT",
+                 @"minerva.plan.package path=C:\missing\Top.SLDASM",
+             })
+    {
+        var refused = refusing.Bus.ExecuteAsync(bad, "Smoke").GetAwaiter().GetResult();
+        True(!refused.Success, $"计划命令必须在启动探查之前拒绝：{bad}");
+    }
+
+    var planned = BuildPlanBus(_ => new StubAssemblyProbe(() => probeResult));
+    var package = planned.Bus.ExecuteAsync(
+        "minerva.plan.package path=" + CommandParser.QuoteArg(assemblyPath), "Smoke").GetAwaiter().GetResult();
+    True(package.Success, "整体打包计划必须能只按路径算出来，不依赖页面选择");
+    var packagePlan = package.Data as PackagePlan;
+    True(packagePlan is not null,
+        "minerva.plan.package 必须把 PackagePlan 放进 Data——消费方要的是强类型，不是中文文本");
+    Equal(1, packagePlan!.Machined.Count, "与总装同级的 .SLDPRT 必须进机加件表");
+    Equal(1, packagePlan.Purchased.Count, "子文件夹外购件必须进外购件表");
+    Equal(4, packagePlan.Purchased[0].Quantity, "外购件数量必须照抄探查读数");
+    Equal("GHLSS", packagePlan.BomNamePrefix, "BOM 前缀必须去掉图号里的纯数字段");
+    True(packagePlan.DrawingTargets.Count == 1,
+        "同名同目录的 .SLDDRW 必须被认作工程图来源");
+
+    var rename = planned.Bus.ExecuteAsync(
+        "minerva.plan.rename path=" + CommandParser.QuoteArg(assemblyPath), "Smoke").GetAwaiter().GetResult();
+    True(rename.Success, "改名计划必须能只按路径算出来");
+    var renamePlan = rename.Data as AssemblyRenamePlan;
+    True(renamePlan is not null, "minerva.plan.rename 必须把 AssemblyRenamePlan 放进 Data");
+    Equal("GHLSS-06", renamePlan!.DrawingPrefix,
+        "省略 prefix 时必须按根装配文件名推断，而不是当成空前缀去删图号");
+
+    var explicitPrefix = planned.Bus.ExecuteAsync(
+        "minerva.plan.rename prefix=ZS-LHL path=" + CommandParser.QuoteArg(assemblyPath), "Smoke")
+        .GetAwaiter().GetResult();
+    Equal("ZS-LHL", (explicitPrefix.Data as AssemblyRenamePlan)?.DrawingPrefix,
+        "显式 prefix 必须原样进计划");
+
+    var cleared = planned.Bus.ExecuteAsync(
+        "minerva.plan.rename clearnumber=true prefix=ZS-LHL path=" + CommandParser.QuoteArg(assemblyPath), "Smoke")
+        .GetAwaiter().GetResult();
+    Equal(string.Empty, (cleared.Data as AssemblyRenamePlan)?.DrawingPrefix,
+        "clearnumber=true 就是空前缀那一份计划（DEC-057），并且盖过 prefix");
+
+    foreach (var name in new[] { "minerva.plan.package", "minerva.plan.rename" })
+    {
+        True(planned.Registry.TryGet(name, out var descriptor), $"missing plan command {name}");
+        True(descriptor.Readonly, $"{name} 只解析不写盘，必须是只读命令");
+        True(!descriptor.RequiresUiThread,
+            $"{name} 不得占 UI 线程——绑页面线程就等于又绑回页面状态");
+        True(string.IsNullOrWhiteSpace(descriptor.HiddenReason),
+            $"{name} 不得隐藏，否则 MCP 投影不到，AI 仍然问不出设备事实");
+    }
+
+    static double[] Identity() =>
+    [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+    ];
+
+    static (CommandBus Bus, CommandRegistry Registry) BuildPlanBus(
+        Func<MappingRuntimePaths, IAssemblyProbe> probeFactory)
+    {
+        var context = new RecordingModuleContext(
+            Path.Combine(Path.GetTempPath(), "plan-data"),
+            Path.Combine(Path.GetTempPath(), "plan-modules"));
+        new PlanCommands(probeFactory).Attach(context);
+        return (context.Bus, context.Registry);
+    }
+}
+
 static void TestVulcanModuleHostSurface(string root)
 {
     var moduleAssembly = LocateRepoFile(Path.Combine(
@@ -660,6 +770,8 @@ static void TestConversionCommandBusOutcomes(string root)
         var (bus, log) = CreateProbeBus(invalidViewModel);
         var result = bus.ExecuteAsync("minerva.conversion.probe", "Smoke").GetAwaiter().GetResult();
         True(!result.Success, "未选择来源的探查必须通过命令总线返回失败");
+        True(result.Data is null,
+            "失败的解析不得带回 Data——消费方按 Data 有没有来判断这一轮拿没拿到事实");
         True(log.Entries.Any(entry =>
                 entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)
                 && entry.Level == ShellLogLevel.Error),
@@ -2119,6 +2231,12 @@ static void TestPropertyPrepViewModel(string root)
     True(viewModel.Parts.Any(row => row.Detail.Contains("ZS-LHL-00", StringComparison.Ordinal)
                                     || row.Detail.Contains("ZS-LHL-01", StringComparison.Ordinal)),
         "改名预览必须展示规划后的文件名");
+    // V4.10.2（G-2）：解析成功之后，探查结果与本轮计划必须是可以取出来的强类型对象，
+    // 而不是只剩一句中文结论——命令处理器正是从这两处取值填进 CommandResult.Data。
+    True(ReferenceEquals(viewModel.LastProbeResult, probe),
+        "解析成功后必须能取回本次的 AssemblyProbeResult，供 minerva.conversion.probe 放进 Data");
+    True(viewModel.LastExecutedPlan is AssemblyRenamePlan,
+        "属性整备下 minerva.conversion.run 的 Data 必须是 AssemblyRenamePlan");
     viewModel.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(renamed, "主按钮在属性整备下必须走 rename Worker，而不是装配转换");
@@ -4513,6 +4631,26 @@ static void TestPackageViewModelFlow(string root)
     True(File.Exists(Path.Combine(bomDirectory, "GHLSS 机加件清单.xlsx")), "必须生成机加件清单");
     True(File.Exists(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx")), "必须生成外购件清单");
     True(viewModel.LastOperationSucceeded, "全部作业成功时本轮打包必须判为成功");
+}
+
+/// <summary>
+/// 计划命令的替身探查。让 <c>minerva.plan.*</c> 的合同能在没有 SolidWorks、
+/// 不启动 Worker 的情况下被锁住——那两样都不是这一组命令要验的事。
+/// </summary>
+sealed class StubAssemblyProbe(Func<AssemblyProbeResult> result) : IAssemblyProbe
+{
+    public void ValidateEnvironment()
+    {
+    }
+
+    public Task<AssemblyProbeResult> ProbeAsync(
+        AssemblyProbeRequest request,
+        Action<WorkerEvent> progress,
+        CancellationToken cancellationToken)
+    {
+        progress(new WorkerEvent(request.BatchId, null, ConversionStage.AssemblyProbe, "替身探查"));
+        return Task.FromResult(result());
+    }
 }
 
 sealed class RecordingModuleContext : IModuleContext
