@@ -4,11 +4,6 @@
 `HistoryMinerva.Contracts.dll` 的公开类型是最终真值；源码内部类型、历史文档、
 `bin/obj` 与 `AppData` 下的运行态文件都不构成公开 API。
 
-**4.10.2 做了两件事**：重写本文档，并按文档写出来的缺口补上跨模块消费面——
-新增一组无状态只读计划命令 `minerva.plan.*`，并让 `minerva.conversion.probe` / `.run`
-把结构化结果放进 `CommandResult.Data`（原 G-2 / G-3 / G-5）。**没有改动任何转换行为**：
-Worker 协议、请求 JSON、退出码、页面动作与写盘路径逐字未动。第 8 节剩下的三条仍是缺口。
-
 本文档描述 `4.10.2` 源码合同。截至撰写时正式快照仍是
 `z-Publish/HistoryMinerva-v4.10.1/`；只有经宿主 `vulcan.dev.submit` / `finish` 发布后，
 `4.10.2` 的 manifest 与二进制才会提升到 `z-Publish/HistoryMinerva-v4.10.2/`。
@@ -727,31 +722,7 @@ Worker 事件通过命令上下文的 `Progress` 进入 Vulcan `cmd:progress:min
 
 ---
 
-## 8. 缺口台账
-
-### 8.1 4.10.2 已补上的
-
-| 编号 | 原缺口 | 现在怎么做的 |
-| --- | --- | --- |
-| G-2 | 业务命令的 `CommandResult.Data` 全空 | `conversion.probe` 回 `AssemblyProbeResult`；`conversion.run` 按模式回 `AssemblyRenamePlan` / `PackagePlan`；失败不带 `Data`。见 4.2 |
-| G-3 | 没有无状态入口 | 新增 `minerva.plan.package path=` 与 `minerva.plan.rename path= [prefix=] [clearnumber=]`，不碰页面状态、可并发、返回强类型。见 4.3 |
-| G-5 | 面 C 实际可用面接近于零 | 两条 `plan.*` 只读且不隐藏，已投影为 `minerva_plan_package` / `minerva_plan_rename`。见第 5 节 |
-
-### 8.2 还没做的
-
-| 编号 | 缺口 | 后果 | 建议做法 |
-| --- | --- | --- | --- |
-| **G-1** | 包里没有 `HistoryMinerva.Contracts.xml` | 引用方在 IDE 里看不到任何注释，而 Minerva 的语义几乎全在注释里 | Contracts 工程开 `GenerateDocumentationFile`，打包脚本把 XML 一起收进 `z-Publish` 与 `SHA256SUMS` |
-| **G-4** | `RenameReindex.Remap` 丢 `PurchasedParts` | 同一份探查结果先改名再算打包，外购件整批消失 | 重映射时把 `PurchasedParts` 按 `moved` 一并搬过去 |
-| **G-6** | 没有事件订阅 | 消费方拿不到逐条 `WorkerEvent`，只能读日志文本 | 走总线的进度回调，或把最终 `WorkerEvent` 列表放进 `Data` |
-
-G-2 与 G-3 本来是同一件事的两半，也是「不同模块处于同一个宿主才有意义」这句话在
-Minerva 身上的具体落点：没有它们，别的模块要用 Minerva 的能力，最省事的做法反而是
-自己抄一份逻辑——那时候单体应用确实比这个耦合更低。4.10.2 补的正是这一处。
-
----
-
-## 9. 兼容与变更规则
+## 8. 兼容与变更规则
 
 1. **枚举按数值序列化，新值只能追加在末尾。** `WorkerProtocol` 没有装
    `JsonStringEnumConverter`，插在中间会让父子 Worker 对不上号。
@@ -763,13 +734,7 @@ Minerva 身上的具体落点：没有它们，别的模块要用 Minerva 的能
 4. **同一件事只允许一个判据。** 自制/外购只有 A-7，图号切分只有 A-1，外购件切分只有 A-5。
    要加第二套规则，先删掉第一套。
 5. **删公开面走主版本规则**，与宿主 5.3.0 的做法一致：不能据「接入面冻结」推断历史接口仍存在。
-6. **版本三处对齐**：`b-Code-HistoryMinerva/build/HistoryMinerva.Version.props`、
-   源 `module.manifest.json`、根 `project.manifest.json`。三处已同为 `4.10.2`；
-   `module.manifest.json` 不手改，跑 `eng/Update-HistoryMinervaManifest.ps1` 从 props 同步。
-7. **新增命令只加不改。** `minerva.plan.*` 是 4.10.2 追加的新命令类，
+6. **新增命令只加不改。** `minerva.plan.*` 是 4.10.2 追加的新命令类，
    既有 `conversion.*` / `ui.*` / `worker.*` 的名称、参数与行为逐字未动；
    `CommandResult.Data` 从 `null` 变成有值是**只增不减**的兼容变化——
    原来就只读 `Message` 的消费方不受影响。
-8. 发布走宿主 `vulcan.dev.submit` / `vulcan.dev.finish`；构建与部署验收命令见
-   `../current/验证合同.md`。发布前，`z-Publish` 快照自身的 manifest 与 `SHA256SUMS`
-   仍是正式运行版本的真值。
