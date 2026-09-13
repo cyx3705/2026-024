@@ -27,7 +27,8 @@ namespace HistoryMinerva.UiSmoke;
 /// </list>
 ///
 /// 现在：不带参数跑完整矩阵，窗口开在屏幕外、逐个即开即关，收尾打印一行 PASS。
-/// <c>--capture &lt;目录&gt;</c> 只决定要不要顺手留 PNG，不决定跑不跑检查。
+/// <c>--capture &lt;目录&gt;</c> 只决定要不要顺手留 PNG，不决定跑不跑检查；兼容宿主
+/// 传入 PNG 文件名的旧调用，此时使用该文件的父目录。
 /// 另有一道看门狗：整轮超时就带原因退出，绝不挂住终端。
 /// </summary>
 internal static class Program
@@ -394,7 +395,12 @@ internal static class Program
         for (var index = 0; index < args.Count - 1; index++)
         {
             if (string.Equals(args[index], "--capture", StringComparison.OrdinalIgnoreCase))
-                return Path.GetFullPath(args[index + 1]);
+            {
+                var capturePath = Path.GetFullPath(args[index + 1]);
+                return Path.HasExtension(capturePath)
+                    ? Path.GetDirectoryName(capturePath)
+                    : capturePath;
+            }
         }
 
         return null;

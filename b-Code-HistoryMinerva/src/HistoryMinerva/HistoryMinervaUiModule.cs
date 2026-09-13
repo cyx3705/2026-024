@@ -780,6 +780,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
           "owner": "HistoryMinerva",
           "pages": [{
             "id": "mapping", "title": "Minerva",
+            "scene": "HistoryMinerva",
             "placement": { "side": "center", "ratio": 0.75, "visible": true, "singleton": true },
             "content": { "type": "stack", "gap": "tight", "children": [
               { "type": "panel", "id": "mapping-controls", "rows": [{ "mode": "flex", "widgets": [

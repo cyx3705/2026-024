@@ -660,7 +660,19 @@ static void TestVulcanModuleHostSurface(string root)
     var log = new RecordingShellLog();
     var bus = new CommandBus(registry, log);
     var settings = new RecordingSettingsService(Path.GetDirectoryName(moduleAssembly)!);
-    using var host = new ModuleHost(Path.GetDirectoryName(moduleAssembly)!, log)
+    var runtimeRoot = Path.Combine(root, "runtime-modules");
+    var package = Path.Combine(runtimeRoot, "HistoryMinerva");
+    Directory.CreateDirectory(package);
+    File.Copy(moduleAssembly, Path.Combine(package, "HistoryMinerva.dll"), overwrite: true);
+    foreach (var fileName in new[] { "HistoryMinerva.xml", "HistoryMinerva.Contracts.dll" })
+        File.Copy(Path.Combine(Path.GetDirectoryName(moduleAssembly)!, fileName), Path.Combine(package, fileName), overwrite: true);
+    File.Copy(LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "module.manifest.json")),
+        Path.Combine(package, "module.manifest.json"), overwrite: true);
+    File.WriteAllLines(Path.Combine(package, "SHA256SUMS"), Directory.GetFiles(package)
+        .Where(file => Path.GetFileName(file) != "SHA256SUMS")
+        .Select(file => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file)))
+            + "  " + Path.GetFileName(file)));
+    using var host = new ModuleHost(new RuntimeModuleDiscoverySource(runtimeRoot), log)
     {
         // Minerva's single assembly carries both WorkerCommands and the Aurora pane;
         // the host must load the UI-marked package for either context to attach.

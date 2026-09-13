@@ -187,12 +187,32 @@ $pageCommands = @(
         ForEach-Object { $commandRoot + $_.Groups['suffix'].Value } |
         Sort-Object -Unique
 )
-$sourceCommands = @($backendCommands + $uiCommands + $pageCommands | Sort-Object -Unique)
-$apiCommands = @(
-    [regex]::Matches($apiText, '(?m)^\|\s*`(?<name>minerva(?:\.[a-z0-9]+){2})`\s*\|') |
-        ForEach-Object { $_.Groups['name'].Value } |
+$planSource = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva\PlanCommands.cs'))
+$planCommands = @(
+    [regex]::Matches($planSource, 'CommandRoot\s*\+\s*"(?<suffix>\.plan\.[a-z][a-z0-9]*)"') |
+        ForEach-Object { $commandRoot + $_.Groups['suffix'].Value } |
         Sort-Object -Unique
 )
+$sourceCommands = @($backendCommands + $uiCommands + $pageCommands + $planCommands | Sort-Object -Unique)
+$apiCommands = @(
+    foreach ($line in ($apiText -split "`r?`n")) {
+        if ($line -notmatch '^\|\s*(?:\*\*)?B-\d+') { continue }
+
+        $parent = $null
+        foreach ($match in [regex]::Matches($line, '`(?<token>minerva(?:\.[a-z0-9]+)+|\.[a-z][a-z0-9]*)`')) {
+            $token = $match.Groups['token'].Value
+            if ($token.StartsWith('minerva.', [StringComparison]::Ordinal)) {
+                $parent = $token.Substring(0, $token.LastIndexOf('.'))
+                $token
+                continue
+            }
+
+            if ($null -ne $parent) {
+                $parent + $token
+            }
+        }
+    }
+) | Sort-Object -Unique
 if ($backendCommands.Count -ne 5 -or $uiCommands.Count -ne 3) {
     Add-Violation "Expected 5 backend and 3 frontend commands; found $($backendCommands.Count) and $($uiCommands.Count)"
 }

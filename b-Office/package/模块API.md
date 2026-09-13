@@ -1,12 +1,12 @@
-# HistoryMinerva 4.10.2 模块 API
+# HistoryMinerva 4.10.3 模块 API
 
 本文件是 HistoryMinerva 对外消费面的唯一人工合同。运行时命令目录与
 `HistoryMinerva.Contracts.dll` 的公开类型是最终真值；源码内部类型、历史文档、
 `bin/obj` 与 `AppData` 下的运行态文件都不构成公开 API。
 
-本文档描述 `4.10.2` 源码合同。截至撰写时正式快照仍是
+本文档描述 HistoryMinerva `4.10.3` 源码合同。截至撰写时正式快照仍是
 `z-Publish/HistoryMinerva-v4.10.1/`；只有经宿主 `vulcan.dev.submit` / `finish` 发布后，
-`4.10.2` 的 manifest 与二进制才会提升到 `z-Publish/HistoryMinerva-v4.10.2/`。
+`4.10.3` 的 manifest 与二进制才会提升到 `z-Publish/HistoryMinerva-v4.10.3/`。
 发布前，z 快照自身的 manifest 与 `SHA256SUMS` 仍是正式运行版本的真值。
 
 ---
@@ -47,8 +47,8 @@
 | 命令来源 | `module:HistoryMinerva` | — |
 | UI / MCP | 启用 / `readonly` 只读投影 | manifest `ui` / `mcpExposure` |
 | 宿主基线 | HistoryVulcan `5.1.2` 正式快照 | `project.manifest.json` |
-| 源码版本 | `4.10.2` | `build/HistoryMinerva.Version.props` |
-| 当前正式快照 | `z-Publish/HistoryMinerva-v4.10.1/`（`4.10.2` 尚未发布） | — |
+| 源码版本 | `4.10.3` | `build/HistoryMinerva.Version.props` |
+| 当前正式快照 | `z-Publish/HistoryMinerva-v4.10.1/`（`4.10.3` 尚未发布） | — |
 
 消费方从版本化快照读 `module.manifest.json`、二进制与 `SHA256SUMS`，
 从 `z-Publish/HistoryMinerva-vX.Y.Z/docs/` 或 `diana.docs.read domain=minerva file=docs/模块API.md`
@@ -738,3 +738,8 @@ Worker 事件通过命令上下文的 `Progress` 进入 Vulcan `cmd:progress:min
    既有 `conversion.*` / `ui.*` / `worker.*` 的名称、参数与行为逐字未动；
    `CommandResult.Data` 从 `null` 变成有值是**只增不减**的兼容变化——
    原来就只读 `Message` 的消费方不受影响。
+
+
+## 场景页面注册（4.10.3）
+
+REQ-SCENE-REG：页面显式声明 `scene=HistoryMinerva`，注册初值只用于本模块场景。用户保存的各场景完整布局（包括分栏、位置、比例和隐藏状态）优先；模块刷新不得主动打开其他场景的页面。需要 Aurora 1.21.1 的场景注册隔离。
