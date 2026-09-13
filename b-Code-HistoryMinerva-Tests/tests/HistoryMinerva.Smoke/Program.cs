@@ -659,7 +659,6 @@ static void TestVulcanModuleHostSurface(string root)
     var registry = new CommandRegistry();
     var log = new RecordingShellLog();
     var bus = new CommandBus(registry, log);
-    var settings = new RecordingSettingsService(Path.GetDirectoryName(moduleAssembly)!);
     var runtimeRoot = Path.Combine(root, "runtime-modules");
     var package = Path.Combine(runtimeRoot, "HistoryMinerva");
     Directory.CreateDirectory(package);
@@ -679,7 +678,8 @@ static void TestVulcanModuleHostSurface(string root)
         EnableUiModules = true,
         EnableFileWatching = false,
     };
-    host.Attach(registry, bus, settings, Path.Combine(root, "module-host-data"));
+    // HistoryVulcan 5.4: Attach takes only the registry and bus; settings and data roots stay module-owned.
+    host.Attach(registry, bus);
     host.Start();
 
     var commandNames = registry.All().Select(command => command.Name).ToArray();
