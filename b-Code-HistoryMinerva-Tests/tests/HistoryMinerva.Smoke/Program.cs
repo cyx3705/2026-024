@@ -1,7 +1,8 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using HistoryMinerva;
+using HistoryMinerva.Bom;
 using HistoryMinerva.Contracts;
 using HistoryMinerva.Worker;
 using HistoryVulcan.Core.Commands;
@@ -18,6 +19,7 @@ try
 {
     TestSharedContractsAndVersion();
     TestCommandSurface(root);
+    TestPlanCommandSurface(root);
     // ModuleHost LoadFrom 第二份 HistoryMinerva.dll 之后，WPF 带版本的 pack URI 会找不到 BAML。
     TestUnifiedSourceWorkspace();
     TestUiModuleRegistration(root);
@@ -84,6 +86,11 @@ try
     TestCadShortcutResolution(root);
     TestUnresolvedReferenceNamesPath(root);
     TestImportIdentityAndSessionFaultGuards();
+    TestPurchasedPartNaming();
+    TestPurchasedBoundary();
+    TestPackagePlanning(root);
+    TestPackageBomWorkbooks(root);
+    TestPackageViewModelFlow(root);
     Console.WriteLine("HistoryMinerva.Smoke: PASS");
 }
 finally
@@ -535,6 +542,115 @@ static void TestCommandSurface(string root)
         "status 必须以 HistoryMinerva 身份报告 Worker 状态");
 }
 
+/// <summary>
+/// V4.10.2 的无状态计划命令（G-2 / G-3）。
+///
+/// 这一组存在的理由就是「别的模块能不能真的消费 Minerva」：入参是路径本身而不是页面选择，
+/// 结果放进 <c>CommandResult.Data</c> 而不是一句中文文本，只读且不隐藏所以 AI 也看得见。
+/// 三条都锁在这里——任何一条退回去，跨模块消费就又只剩「自己抄一份计划逻辑」。
+/// </summary>
+static void TestPlanCommandSurface(string root)
+{
+    var workspace = Path.Combine(root, "plan-commands");
+    Directory.CreateDirectory(workspace);
+    var assemblyPath = Path.Combine(workspace, "GHLSS-06-00 总装.SLDASM");
+    var partPath = Path.Combine(workspace, "GHLSS-06-01 阀体.SLDPRT");
+    var drawingPath = Path.Combine(workspace, "GHLSS-06-01 阀体.SLDDRW");
+    foreach (var file in new[] { assemblyPath, partPath, drawingPath })
+        File.WriteAllText(file, "fixture");
+    var purchasedPath = Path.Combine(workspace, "标准件", "GB70 M8x20 内六角螺钉.SLDPRT");
+    Directory.CreateDirectory(Path.GetDirectoryName(purchasedPath)!);
+    File.WriteAllText(purchasedPath, "fixture");
+
+    var probeResult = new AssemblyProbeResult(
+        assemblyPath,
+        [new AssemblyOccurrence("1", null, partPath, false, false, false, Identity(), null)],
+        [partPath],
+        0,
+        0,
+        1,
+        0,
+        [],
+        PurchasedParts: [new PurchasedPartReading(purchasedPath, 4)]);
+
+    // 路径没过关时一次探查都不该发生：写错路径不该先开一遍 SolidWorks 再说不行。
+    var refusing = BuildPlanBus(_ => new StubAssemblyProbe(
+        () => throw new InvalidOperationException("路径校验之前不得启动探查")));
+    foreach (var bad in new[]
+             {
+                 "minerva.plan.package",
+                 "minerva.plan.package path=relative\\Top.SLDASM",
+                 @"minerva.plan.package path=C:\missing\Top.SLDPRT",
+                 @"minerva.plan.package path=C:\missing\Top.SLDASM",
+             })
+    {
+        var refused = refusing.Bus.ExecuteAsync(bad, "Smoke").GetAwaiter().GetResult();
+        True(!refused.Success, $"计划命令必须在启动探查之前拒绝：{bad}");
+    }
+
+    var planned = BuildPlanBus(_ => new StubAssemblyProbe(() => probeResult));
+    var package = planned.Bus.ExecuteAsync(
+        "minerva.plan.package path=" + CommandParser.QuoteArg(assemblyPath), "Smoke").GetAwaiter().GetResult();
+    True(package.Success, "整体打包计划必须能只按路径算出来，不依赖页面选择");
+    var packagePlan = package.Data as PackagePlan;
+    True(packagePlan is not null,
+        "minerva.plan.package 必须把 PackagePlan 放进 Data——消费方要的是强类型，不是中文文本");
+    Equal(1, packagePlan!.Machined.Count, "与总装同级的 .SLDPRT 必须进机加件表");
+    Equal(1, packagePlan.Purchased.Count, "子文件夹外购件必须进外购件表");
+    Equal(4, packagePlan.Purchased[0].Quantity, "外购件数量必须照抄探查读数");
+    Equal("GHLSS", packagePlan.BomNamePrefix, "BOM 前缀必须去掉图号里的纯数字段");
+    True(packagePlan.DrawingTargets.Count == 1,
+        "同名同目录的 .SLDDRW 必须被认作工程图来源");
+
+    var rename = planned.Bus.ExecuteAsync(
+        "minerva.plan.rename path=" + CommandParser.QuoteArg(assemblyPath), "Smoke").GetAwaiter().GetResult();
+    True(rename.Success, "改名计划必须能只按路径算出来");
+    var renamePlan = rename.Data as AssemblyRenamePlan;
+    True(renamePlan is not null, "minerva.plan.rename 必须把 AssemblyRenamePlan 放进 Data");
+    Equal("GHLSS-06", renamePlan!.DrawingPrefix,
+        "省略 prefix 时必须按根装配文件名推断，而不是当成空前缀去删图号");
+
+    var explicitPrefix = planned.Bus.ExecuteAsync(
+        "minerva.plan.rename prefix=ZS-LHL path=" + CommandParser.QuoteArg(assemblyPath), "Smoke")
+        .GetAwaiter().GetResult();
+    Equal("ZS-LHL", (explicitPrefix.Data as AssemblyRenamePlan)?.DrawingPrefix,
+        "显式 prefix 必须原样进计划");
+
+    var cleared = planned.Bus.ExecuteAsync(
+        "minerva.plan.rename clearnumber=true prefix=ZS-LHL path=" + CommandParser.QuoteArg(assemblyPath), "Smoke")
+        .GetAwaiter().GetResult();
+    Equal(string.Empty, (cleared.Data as AssemblyRenamePlan)?.DrawingPrefix,
+        "clearnumber=true 就是空前缀那一份计划（DEC-057），并且盖过 prefix");
+
+    foreach (var name in new[] { "minerva.plan.package", "minerva.plan.rename" })
+    {
+        True(planned.Registry.TryGet(name, out var descriptor), $"missing plan command {name}");
+        True(descriptor.Readonly, $"{name} 只解析不写盘，必须是只读命令");
+        True(!descriptor.RequiresUiThread,
+            $"{name} 不得占 UI 线程——绑页面线程就等于又绑回页面状态");
+        True(string.IsNullOrWhiteSpace(descriptor.HiddenReason),
+            $"{name} 不得隐藏，否则 MCP 投影不到，AI 仍然问不出设备事实");
+    }
+
+    static double[] Identity() =>
+    [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+    ];
+
+    static (CommandBus Bus, CommandRegistry Registry) BuildPlanBus(
+        Func<MappingRuntimePaths, IAssemblyProbe> probeFactory)
+    {
+        var context = new RecordingModuleContext(
+            Path.Combine(Path.GetTempPath(), "plan-data"),
+            Path.Combine(Path.GetTempPath(), "plan-modules"));
+        new PlanCommands(probeFactory).Attach(context);
+        return (context.Bus, context.Registry);
+    }
+}
+
 static void TestVulcanModuleHostSurface(string root)
 {
     var moduleAssembly = LocateRepoFile(Path.Combine(
@@ -544,7 +660,19 @@ static void TestVulcanModuleHostSurface(string root)
     var log = new RecordingShellLog();
     var bus = new CommandBus(registry, log);
     var settings = new RecordingSettingsService(Path.GetDirectoryName(moduleAssembly)!);
-    using var host = new ModuleHost(Path.GetDirectoryName(moduleAssembly)!, log)
+    var runtimeRoot = Path.Combine(root, "runtime-modules");
+    var package = Path.Combine(runtimeRoot, "HistoryMinerva");
+    Directory.CreateDirectory(package);
+    File.Copy(moduleAssembly, Path.Combine(package, "HistoryMinerva.dll"), overwrite: true);
+    foreach (var fileName in new[] { "HistoryMinerva.xml", "HistoryMinerva.Contracts.dll" })
+        File.Copy(Path.Combine(Path.GetDirectoryName(moduleAssembly)!, fileName), Path.Combine(package, fileName), overwrite: true);
+    File.Copy(LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "module.manifest.json")),
+        Path.Combine(package, "module.manifest.json"), overwrite: true);
+    File.WriteAllLines(Path.Combine(package, "SHA256SUMS"), Directory.GetFiles(package)
+        .Where(file => Path.GetFileName(file) != "SHA256SUMS")
+        .Select(file => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file)))
+            + "  " + Path.GetFileName(file)));
+    using var host = new ModuleHost(new RuntimeModuleDiscoverySource(runtimeRoot), log)
     {
         // Minerva's single assembly carries both WorkerCommands and the Aurora pane;
         // the host must load the UI-marked package for either context to attach.
@@ -557,7 +685,8 @@ static void TestVulcanModuleHostSurface(string root)
     var commandNames = registry.All().Select(command => command.Name).ToArray();
     Equal(5, commandNames.Count(name => name.StartsWith("minerva.worker.", StringComparison.OrdinalIgnoreCase)),
         "the real Vulcan ModuleHost must register all five Minerva worker commands");
-    Equal(4, commandNames.Count(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)),
+    // V4.9 起是 probe / run / cancel 三条：删图号并回写入，strip 退役（DEC-057）。
+    Equal(3, commandNames.Count(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)),
         "ModuleHost must register conversion commands during Attach, before ShellUi exists");
     True(!commandNames.Any(name => name.StartsWith("HistoryMinerva.", StringComparison.OrdinalIgnoreCase)),
         "the real Vulcan ModuleHost must not synthesize the legacy HistoryMinerva command surface");
@@ -653,6 +782,8 @@ static void TestConversionCommandBusOutcomes(string root)
         var (bus, log) = CreateProbeBus(invalidViewModel);
         var result = bus.ExecuteAsync("minerva.conversion.probe", "Smoke").GetAwaiter().GetResult();
         True(!result.Success, "未选择来源的探查必须通过命令总线返回失败");
+        True(result.Data is null,
+            "失败的解析不得带回 Data——消费方按 Data 有没有来判断这一轮拿没拿到事实");
         True(log.Entries.Any(entry =>
                 entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)
                 && entry.Level == ShellLogLevel.Error),
@@ -1891,7 +2022,7 @@ static void TestSolidWorksSelfPipelineContracts()
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
     Equal(ConversionSourceFormat.SolidWorks, renameContent.SourceFormat, "属性整备项的源格式必须是 SolidWorks");
     True(renameContent.IsAssemblySource, "属性整备的来源是单个装配体文件");
-    Equal(4, MappingContentOption.Available.Count, "转换内容必须包含属性整备改名这一项");
+    Equal(5, MappingContentOption.Available.Count, "转换内容必须包含属性整备改名与整体打包两项");
 }
 
 /// <summary>图号前缀手写，层级数字按所选装配体推断；子文件夹外购件不编号。</summary>
@@ -1987,19 +2118,27 @@ static void TestPropertyPrepDrawingNumbers(string root)
     Equal("ZS-LHL-01-02-01 阀体.SLDPRT", Path.GetFileName(Target(minorPlan, valveBody)), "小组件零件从 -01 起编");
     Equal("ZS-LHL-01-02-02 阀芯.SLDPRT", Path.GetFileName(Target(minorPlan, valveCore)), "小组件零件按出现顺序递增");
 
+    // V4.9：空前缀是删图号，不是非法输入（DEC-057）。
     var empty = PropertyPrepPlanner.Create(minorProbe, " ");
-    True(empty.BlockingIssues.Count > 0 && empty.BlockingIssues[0].Contains("前缀", StringComparison.Ordinal),
-        "空前缀必须阻断，不能猜一个前缀出来");
+    True(empty.BlockingIssues.Count == 0, "空前缀是删图号，不得阻断：" + string.Join("；", empty.BlockingIssues));
+    True(empty.Entries.All(entry => entry.DrawingNumber.Length == 0), "空前缀下每一条的图号都必须是空");
 
-    True(DrawingNumber.TryStripBySpace("ZS-LHL-00 总装.SLDASM", out var stripToken, out var stripName),
-        "必须能按第一个空格洗掉图号");
-    Equal("ZS-LHL-00", stripToken, "空格前是图号");
-    Equal("总装", stripName, "空格后是原名称");
-    True(DrawingNumber.TryStripBySpace("ZS-LHL-01-02-01 进样器 模块.SLDPRT", out _, out var spacedName),
-        "原名里还有空格时，只切第一处");
-    Equal("进样器 模块", spacedName, "第一空格之后全部保留为原名");
-    True(!DrawingNumber.TryStripBySpace("阀体.SLDPRT", out _, out _),
-        "没有空格的文件不得假装有图号");
+    DrawingNumber.SplitFileName("ZS-LHL-00 总装.SLDASM", out var stripToken, out var stripName);
+    Equal("ZS-LHL-00", stripToken, "空格前是图号段");
+    Equal("总装", stripName, "空格后是名称");
+    DrawingNumber.SplitFileName("ZS-LHL-01-02-01 进样器 模块.SLDPRT", out _, out var spacedName);
+    Equal("进样器 模块", spacedName, "名称里还有空格时，只切第一处");
+    DrawingNumber.SplitFileName("阀体.SLDPRT", out var noToken, out var wholeName);
+    Equal("", noToken, "没有空格的文件不得假装有图号");
+    Equal("阀体", wholeName, "没有空格时整个主名都是名称");
+    // 现场那些不合命名规则的旧号照样按空格切——那一段马上就会被本轮的新号整体换掉，
+    // 拿规则去卡它只会把真名当成图号留在新名字里（DEC-058）。
+    DrawingNumber.SplitFileName("QT-88(旧) 阀盖.SLDPRT", out var legacyToken, out var legacyName);
+    Equal("QT-88(旧)", legacyToken, "不合规则的旧图号段也要按空格认出来");
+    Equal("阀盖", legacyName, "不合规则的旧图号后面仍然是名称");
+
+    Equal("ZS-LHL", DrawingNumber.InferPrefix("ZS-LHL-00 总装.SLDASM"), "根装配名去掉 -00 尾巴就是前缀");
+    Equal("", DrawingNumber.InferPrefix("总装.SLDASM"), "没编过号的装配推不出前缀，必须留空");
 
     var stripDir = Path.Combine(root, "property-prep-strip");
     var stripStandardDir = Path.Combine(stripDir, "标准件");
@@ -2039,18 +2178,19 @@ static void TestPropertyPrepDrawingNumbers(string root)
                 new AssemblyChild("螺钉-1", numberedScrew, false, false, identity),
             ], []),
         ]);
-    var stripPlan = PropertyPrepPlanner.CreateStrip(stripProbe);
-    True(stripPlan.BlockingIssues.Count == 0, "合法装配的洗图号规划不得有阻断：" + string.Join("；", stripPlan.BlockingIssues));
-    True(stripPlan.CanRename, "带空格图号的装配必须允许按空格洗名");
-    Equal("总装.SLDASM", Path.GetFileName(Target(stripPlan, numberedRoot)), "总装必须洗成原名");
-    Equal("进样器模块.SLDASM", Path.GetFileName(Target(stripPlan, numberedMajor)), "大组件必须洗成原名");
-    Equal("轴.SLDPRT", Path.GetFileName(Target(stripPlan, numberedShaft)), "零件必须洗成原名");
+    // 删图号就是前缀为空的那一份计划，没有第二条管线（DEC-057）。
+    var stripPlan = PropertyPrepPlanner.Create(stripProbe, string.Empty);
+    True(stripPlan.BlockingIssues.Count == 0, "合法装配的删图号规划不得有阻断：" + string.Join("；", stripPlan.BlockingIssues));
+    True(stripPlan.CanRename, "带图号的装配在空前缀下必须有文件要改名");
+    Equal("总装.SLDASM", Path.GetFileName(Target(stripPlan, numberedRoot)), "总装必须只剩名称");
+    Equal("进样器模块.SLDASM", Path.GetFileName(Target(stripPlan, numberedMajor)), "大组件必须只剩名称");
+    Equal("轴.SLDPRT", Path.GetFileName(Target(stripPlan, numberedShaft)), "零件必须只剩名称");
     True(stripPlan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, numberedStandard)),
-        "子文件夹外购件装配体不得按空格洗名");
+        "子文件夹外购件装配体不得被删图号");
     True(stripPlan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, numberedScrew)),
-        "子文件夹外购件内部不得按空格洗名");
-    True(stripPlan.Unnumbered.Any(entry => AssemblyRenamePlan.SamePath(entry.SourcePath, plainPlate)),
-        "没有空格的文件必须保持原名");
+        "子文件夹外购件内部不得被删图号");
+    // 本来就没有图号的文件在空前缀下目标名与原名相同，因此不在待改名之列。
+    Equal("底板.SLDPRT", Path.GetFileName(Target(stripPlan, plainPlate)), "没有图号的文件必须保持原名");
 }
 
 static string Target(AssemblyRenamePlan plan, string source)
@@ -2097,13 +2237,18 @@ static void TestPropertyPrepViewModel(string root)
     viewModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(viewModel.CanConvert, "解析成功且前缀有效后必须允许写入");
-    True(viewModel.CanStrip, "解析完成后洗图号按钮必须可点，不得因文件名没有空格而灰掉");
     True(viewModel.Parts.Any(row => row.DisplayName.Contains("ZS-LHL-00", StringComparison.Ordinal)
                                     || row.DisplayName.Contains("ZS-LHL-01", StringComparison.Ordinal)),
         "「文件」列必须直接展示规划后的文件名，不再另开一列改名后预览");
     True(viewModel.Parts.Any(row => row.Detail.Contains("ZS-LHL-00", StringComparison.Ordinal)
                                     || row.Detail.Contains("ZS-LHL-01", StringComparison.Ordinal)),
         "改名预览必须展示规划后的文件名");
+    // V4.10.2（G-2）：解析成功之后，探查结果与本轮计划必须是可以取出来的强类型对象，
+    // 而不是只剩一句中文结论——命令处理器正是从这两处取值填进 CommandResult.Data。
+    True(ReferenceEquals(viewModel.LastProbeResult, probe),
+        "解析成功后必须能取回本次的 AssemblyProbeResult，供 minerva.conversion.probe 放进 Data");
+    True(viewModel.LastExecutedPlan is AssemblyRenamePlan,
+        "属性整备下 minerva.conversion.run 的 Data 必须是 AssemblyRenamePlan");
     viewModel.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     True(renamed, "主按钮在属性整备下必须走 rename Worker，而不是装配转换");
@@ -2171,25 +2316,23 @@ static void TestPropertyPrepViewModel(string root)
     UseAssemblySource(stripModel, numberedAssembly);
     stripModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(!stripModel.CanConvert, "未填前缀时不得写入");
-    True(stripModel.CanStrip, "解析完成后洗图号按钮必须可点");
-    True(stripModel.CanExecuteStrip, "文件名带空格时必须允许按空格洗图号");
-    Equal("请填写图号前缀后再写入。", stripModel.RenameBlockedReason,
-        "未填前缀时写入必须给出可读原因，不得沿用转换状态文案");
-    True(stripModel.Parts.Any(row => row.DisplayName.Contains("总装", StringComparison.Ordinal)
-                                    || row.DisplayName.Contains("阀体", StringComparison.Ordinal)),
-        "未填前缀时「文件」列必须展示洗掉图号后的文件名");
-    stripModel.StripDrawingNumbersAsync().GetAwaiter().GetResult();
+    // 解析时按根装配名把前缀认出来预填；这一份样件的根装配是「ZS-LHL-00 总装.SLDASM」。
+    Equal("ZS-LHL", stripModel.DrawingPrefix, "解析必须按根装配名把图号前缀认出来填进框里");
+    // 用户把前缀清空＝删图号。这一轮照样是一次写入，不是另一条管线（DEC-057）。
+    stripModel.DrawingPrefix = string.Empty;
+    True(stripModel.CanConvert, "前缀为空是删图号，必须允许写入");
+    True(stripModel.Parts.Any(row => row.DrawingText.Length == 0 && row.PartName.Length > 0),
+        "前缀为空时图号列必须是空的，名称列仍要有名字");
+    stripModel.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(stripRequest is { StripBySpace: true }, "洗图号按钮必须走 rename Worker 并带上 StripBySpace");
-    True(stripRequest is { WriteProperties: false },
-        "洗图号是反向操作，不得顺手把七个属性槽也写一遍");
-    var cleared = SolidWorksDocumentRenamer.DescribePropertyTargets(stripRequest!);
-    True(cleared.Count == 1
-         && cleared[0].Pairs.Count == 1
-         && cleared[0].Pairs[0].Key == PartPropertyNames.DrawingNumber
-         && cleared[0].Pairs[0].Value.Length == 0,
-        "洗图号必须把零件的「图号」属性清成空串，且只动这一槽");
+    True(stripRequest is { WriteProperties: true }, "删图号也走同一条写入路径");
+    Equal(string.Empty, stripRequest!.DrawingPrefix, "删图号那一轮的前缀必须是空串");
+    var cleared = SolidWorksDocumentRenamer.DescribePropertyTargets(stripRequest);
+    True(cleared.Count >= 1, "删图号那一轮仍然要写零件属性");
+    var clearedSlots = cleared[0].Pairs.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+    True(clearedSlots.TryGetValue(PartPropertyNames.DrawingNumber, out var clearedNumber)
+         && clearedNumber.Length == 0,
+        "删图号必须把「图号」槽写成空串——清空，而不是把整槽删掉");
 }
 
 /// <summary>
@@ -2271,7 +2414,7 @@ static void TestPropertyPrepPropertyWrite(string root)
 
     model.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(request is { WriteProperties: true, StripBySpace: false }, "写入必须带上 WriteProperties");
+    True(request is { WriteProperties: true }, "写入必须带上 WriteProperties");
     True(request!.Entries.Count == 2,
         "整份清单都要送到 Worker：只送待改名条目，第二次写入会一个属性都写不进去");
 
@@ -2949,8 +3092,8 @@ static void TestUiModuleRegistration(string root)
         "HistoryVulcan 前端必须注册 minerva.conversion.cancel");
     True(context.Registry.TryGet("minerva.conversion.probe", out var probe),
         "HistoryVulcan frontend must register minerva.conversion.probe");
-    True(context.Registry.TryGet("minerva.conversion.strip", out var strip),
-        "HistoryVulcan 前端必须注册 minerva.conversion.strip");
+    True(!context.Registry.TryGet("minerva.conversion.strip", out _),
+        "V4.9 删图号并入写入，不得再注册 minerva.conversion.strip");
     True(!context.Registry.TryGet("minerva.ui.pane", out _),
         "Minerva must not register a self-owned WPF pane command");
     True(context.Registry.TryGet("minerva.ui.describe", out var describe),
@@ -2973,7 +3116,7 @@ static void TestUiModuleRegistration(string root)
         "Aurora UI protocol commands must be hidden from remote consumers");
     True(probe.Readonly && probe.RequiresUiThread,
         "minerva.conversion.probe must be a UI-thread read command");
-    foreach (var registeredCommand in new[] { convert, cancel, strip })
+    foreach (var registeredCommand in new[] { convert, cancel })
     {
         True(!registeredCommand.Readonly && registeredCommand.RequiresUiThread,
             $"{registeredCommand.Name} 必须是需要 UI 线程的写命令");
@@ -3043,12 +3186,12 @@ static void TestUiModuleRegistration(string root)
                 "属性整备必须在顶部提供写入按钮（改名并写零件属性）");
             True(pageJson.Contains("\"action\": \"minerva.property.today\", \"text\": \"一键设置日期\"", StringComparison.Ordinal),
                 "属性整备必须在顶部提供一键设置日期按钮");
-            True(pageJson.Contains("\"text\": \"按空格洗图号\"", StringComparison.Ordinal),
-                "属性整备必须在顶部提供按空格洗图号按钮");
-            True(pageJson.Contains("\"id\": \"sw-property-parts\", \"dataSource\": { \"command\": \"minerva.ui.data\", \"args\": { \"view\": \"parts\" } }, \"columns\": [{ \"key\": \"file\", \"title\": \"文件\", \"width\": \"*\" }, { \"key\": \"status\", \"title\": \"状态\", \"width\": \"80\" }, { \"key\": \"material\", \"title\": \"材料\", \"width\": \"110\", \"cellAction\": \"minerva.cell.material\" }, { \"key\": \"surface\", \"title\": \"表面处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.surface\" }, { \"key\": \"heat\", \"title\": \"热处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.heat\" }]", StringComparison.Ordinal),
-                "属性整备零件表必须是文件、状态加三个可点属性列，不得再显示特征/草图列");
+            True(!pageJson.Contains("按空格洗图号", StringComparison.Ordinal),
+                "V4.9 删图号＝清空前缀后写入，顶部不得再留一个同义按钮（DEC-057）");
+            True(pageJson.Contains("\"id\": \"sw-property-parts\", \"dataSource\": { \"command\": \"minerva.ui.data\", \"args\": { \"view\": \"parts\" } }, \"columns\": [{ \"key\": \"drawing\", \"title\": \"图号\", \"width\": \"150\" }, { \"key\": \"name\", \"title\": \"名称\", \"width\": \"*\", \"cellAction\": \"minerva.cell.name\" }, { \"key\": \"status\", \"title\": \"状态\", \"width\": \"80\" }, { \"key\": \"material\", \"title\": \"材料\", \"width\": \"110\", \"cellAction\": \"minerva.cell.material\" }, { \"key\": \"surface\", \"title\": \"表面处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.surface\" }, { \"key\": \"heat\", \"title\": \"热处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.heat\" }]", StringComparison.Ordinal),
+                "属性整备零件表必须是图号、名称、状态加三个可点属性列（V4.9 把「文件」拆成图号与名称）");
             True(!pageJson.Contains("改名后预览", StringComparison.Ordinal),
-                "改名后的名字直接进「文件」列，不得再有独立的改名后预览列");
+                "改名后的名字由图号列与名称列直接给出，不得再有独立的改名后预览列");
             True(pageJson.Contains("\"id\": \"prefix\", \"label\": \"图号前缀\", \"commitAction\": \"minerva.options.prefix\"", StringComparison.Ordinal),
                 "属性整备必须保留图号前缀输入框");
             True(pageJson.Contains("\"id\": \"designer\", \"label\": \"设计\", \"commitAction\": \"minerva.property.designer\"", StringComparison.Ordinal),
@@ -3150,13 +3293,6 @@ static void TestUiModuleRegistration(string root)
                 .ExecuteAsync("minerva.ui.data view=parts", "UI").GetAwaiter().GetResult().Data;
             True(propertyRows is { Count: 0 },
                 $"属性整备选完装配体不得自动解析，实得 {propertyRows?.Count}");
-            var stripOnRenamePage = context.Bus.ExecuteAsync(
-                "minerva.conversion.strip content=" + CommandParser.QuoteArg(renameContent), "UI")
-                .GetAwaiter().GetResult();
-            True(!stripOnRenamePage.Success
-                 && stripOnRenamePage.Message.Contains("请先解析", StringComparison.Ordinal)
-                 && !stripOnRenamePage.Message.Contains("特征整备", StringComparison.Ordinal),
-                "改名页洗图号必须进入改名模式，不得报只能在特征整备用。实得：" + stripOnRenamePage.Message);
             var runOnRenamePage = context.Bus.ExecuteAsync(
                 "minerva.conversion.run content=" + CommandParser.QuoteArg(renameContent), "UI")
                 .GetAwaiter().GetResult();
@@ -3242,8 +3378,8 @@ static void TestUnifiedSourceWorkspace()
                 "单页工作区默认必须等待用户选择来源");
             True(workspace.UnifiedPage.ViewModel.SourcePath.Length == 0,
                 "未选择来源时不能残留旧路径");
-            Equal(4, workspace.UnifiedPage.ViewModel.MappingContents.Count,
-                "通用 Mapping 页面必须提供当前支持的四种转换内容");
+            Equal(5, workspace.UnifiedPage.ViewModel.MappingContents.Count,
+                "通用 Mapping 页面必须提供当前支持的五种转换内容（V4.10 追加整体打包）");
             Equal(MappingContent.SolidEdgePartToSolidWorksPart,
                 workspace.UnifiedPage.ViewModel.SelectedMappingContent.Kind,
                 "默认转换内容必须是 .par → .SLDPRT");
@@ -4149,6 +4285,384 @@ static T Capture<T>(Action action) where T : Exception
         return exception;
     }
     throw new InvalidOperationException($"Expected exception {typeof(T).Name}");
+}
+
+// ---------------------------------------------------------------- V4.10 整体打包
+
+static void TestPurchasedPartNaming()
+{
+    // 用户逐条确认过的四个样例。中文归名称、其余归规格，不按位置切。
+    foreach (var (fileName, specification, name) in new[]
+             {
+                 ("GB70 M8x20 内六角螺钉.SLDPRT", "GB70 M8x20", "内六角螺钉"),
+                 ("深沟球轴承 6205.SLDPRT", "6205", "深沟球轴承"),
+                 ("SKF-6205-2RS.SLDPRT", "SKF-6205-2RS", ""),
+                 ("油封 TC-25-40-7.SLDPRT", "TC-25-40-7", "油封"),
+             })
+    {
+        PurchasedPartNaming.Split(fileName, out var actualSpecification, out var actualName);
+        Equal(specification, actualSpecification, $"{fileName} 的规格必须是非中文字段");
+        Equal(name, actualName, $"{fileName} 的名称必须是中文字段");
+    }
+
+    // 中英夹杂无空格：仍然分得开，只是型号被拼在一起。这是已知边界，钉住它。
+    PurchasedPartNaming.Split("M8x20内六角螺钉GB70.SLDPRT", out var mixedSpecification, out var mixedName);
+    Equal("M8x20GB70", mixedSpecification, "无空格的中英夹杂名，非中文段直接相接");
+    Equal("内六角螺钉", mixedName, "无空格时中文段仍必须完整切出来");
+}
+
+static void TestPurchasedBoundary()
+{
+    // Name2 天然是 "父-1/子-1/孙-1"。外购件 BOM 上应该只出现边界那一层——
+    // 采购买的是气缸，不是气缸里的缸体、活塞和端盖（V4.10.1）。
+    var purchased = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "气缸-1",
+        "进样模块-1/电磁阀-2",
+    };
+
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor("气缸-1", purchased),
+        "外购件自己不算落在自己底下，否则边界那一层也会被跳掉");
+    True(SolidWorksAssemblyExplorer.HasPurchasedAncestor("气缸-1/缸体-1", purchased),
+        "外购装配体的直接内部件必须判为落在外购件底下");
+    True(SolidWorksAssemblyExplorer.HasPurchasedAncestor("气缸-1/活塞组-1/活塞-1", purchased),
+        "深层内部件同样不得进外购件清单");
+    True(SolidWorksAssemblyExplorer.HasPurchasedAncestor("进样模块-1/电磁阀-2/阀芯-1", purchased),
+        "嵌在子装配里的外购件，其内部件也必须判出来");
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor("进样模块-1/底板-1", purchased),
+        "同一个子装配下的自制件不得被邻居外购件带走");
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor("底板-1", purchased),
+        "顶层自制零件不得判为外购件内部件");
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor("气缸-10/缸体-1", purchased),
+        "前缀匹配必须按整段实例名，气缸-10 不是气缸-1 的孩子");
+    True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor(string.Empty, purchased),
+        "空实例名不得判为外购件内部件");
+}
+
+static void TestPackagePlanning(string root)
+{
+    var dir = Path.Combine(root, "package-plan");
+    var standardDir = Path.Combine(dir, "标准件");
+    Directory.CreateDirectory(standardDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "GHLSS-06-00 总装.SLDASM");
+    var module = Path.Combine(dir, "GHLSS-06-01-00 进样模块.SLDASM");
+    var plate = Path.Combine(dir, "GHLSS-06-02 底板.SLDPRT");
+    var shaft = Path.Combine(dir, "GHLSS-06-01-01 轴.SLDPRT");
+    var plateDrawing = Path.ChangeExtension(plate, ".SLDDRW");
+    var screw = Path.Combine(standardDir, "GB70 M8x20 内六角螺钉.SLDPRT");
+    foreach (var path in new[] { rootAsm, module, plate, shaft, plateDrawing, screw })
+        File.WriteAllText(path, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        [
+            new AssemblyOccurrence("进样模块-1", null, module, true, false, false, identity, null),
+            new AssemblyOccurrence("进样模块-1/轴-1", "进样模块-1", shaft, false, false, false, identity, null),
+            new AssemblyOccurrence("进样模块-2", null, module, true, false, false, identity, null),
+            new AssemblyOccurrence("进样模块-2/轴-1", "进样模块-2", shaft, false, false, false, identity, null),
+            new AssemblyOccurrence("底板-1", null, plate, false, false, false, identity, null),
+            // 抑制件不进数量：BOM 上的数字必须与真要采购的件数一致。
+            new AssemblyOccurrence("底板-2", null, plate, false, true, false, identity, null),
+        ],
+        [shaft, plate],
+        1, 0, 2, 0, [],
+        [
+            new AssemblyDocumentReading(rootAsm,
+            [
+                new AssemblyChild("进样模块-1", module, true, false, identity),
+                new AssemblyChild("底板-1", plate, false, false, identity),
+            ], []),
+            new AssemblyDocumentReading(module,
+            [
+                new AssemblyChild("轴-1", shaft, false, false, identity),
+            ], []),
+        ],
+        PartProperties: null,
+        PurchasedParts: [new PurchasedPartReading(screw, 12)]);
+
+    var plan = PackagePlanner.Create(probe);
+    True(plan.CanPack, "合法总装的打包计划必须可执行：" + string.Join("；", plan.BlockingIssues));
+    Equal("GHLSS", plan.BomNamePrefix, "BOM 前缀必须是总装图号去掉全部纯数字段之后的部分");
+    Equal("GHLSS 机加件清单.xlsx", plan.MachinedBomFileName, "机加件 BOM 必须带总装前缀");
+    Equal("GHLSS 外购件清单.xlsx", plan.PurchasedBomFileName, "外购件 BOM 必须带总装前缀");
+
+    Equal(2, plan.Machined.Count, "机加件只数与总装同级的零件，子装配体不进表");
+    True(plan.Entries.All(entry => !string.Equals(entry.SourcePath, module, StringComparison.OrdinalIgnoreCase)),
+        "子装配体不得出现在打包清单里");
+
+    var shaftEntry = plan.Machined.Single(entry => entry.SourcePath == shaft);
+    Equal(2, shaftEntry.Quantity, "子装配用两次，里面的零件数量必须按嵌套倍数算");
+    Equal("GHLSS-06-01-01", shaftEntry.DrawingNumber, "机加件图号取自文件名第一个空格之前");
+    Equal("轴", shaftEntry.PartName, "机加件名称取自文件名第一个空格之后");
+    True(!shaftEntry.HasDrawing, "没有同名 .SLDDRW 的零件不得报告有工程图");
+
+    var plateEntry = plan.Machined.Single(entry => entry.SourcePath == plate);
+    Equal(1, plateEntry.Quantity, "抑制实例不得计入数量");
+    True(plateEntry.HasDrawing, "同目录同名 .SLDDRW 必须被识别为该零件的工程图");
+
+    var screwEntry = plan.Purchased.Single();
+    Equal(PackagePartCategory.Purchased, screwEntry.Category, "子文件夹里的件必须判为外购件");
+    Equal(12, screwEntry.Quantity, "外购件数量必须来自探查侧的实例计数");
+    Equal("GB70 M8x20", screwEntry.Specification, "外购件规格是文件名里的非中文字段");
+    Equal("内六角螺钉", screwEntry.PartName, "外购件名称是文件名里的中文字段");
+    Equal(string.Empty, screwEntry.DrawingNumber, "外购件不编号，图号必须为空");
+
+    Equal(2, plan.StepTargets.Count, "只有机加件导 STEP，外购件不导");
+    Equal(1, plan.DrawingTargets.Count, "只有找到同名工程图的零件才导 DWG/PDF");
+    Equal(
+        Path.Combine(dir, ConversionPathLayout.StepDirectoryName),
+        plan.Directories.StepDirectory,
+        "四个打包目录必须与总装配体同级");
+
+    // 认不出图号的总装：前缀退回装配体主名，绝不生成「 机加件清单.xlsx」。
+    var plainDir = Path.Combine(root, "package-plan-plain");
+    Directory.CreateDirectory(plainDir);
+    var plainAsm = Path.Combine(plainDir, "总装.SLDASM");
+    File.WriteAllText(plainAsm, "cad");
+    Equal("总装", PackagePlanner.ResolveBomNamePrefix(plainAsm), "没有图号时 BOM 前缀退回装配体主名");
+}
+
+static void TestPackageBomWorkbooks(string root)
+{
+    var dir = Path.Combine(root, "package-bom");
+    var standardDir = Path.Combine(dir, "标准件");
+    Directory.CreateDirectory(standardDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "GHLSS-06-00 总装.SLDASM");
+    var parts = new[]
+    {
+        Path.Combine(dir, "GHLSS-06-01 阀体.SLDPRT"),
+        Path.Combine(dir, "GHLSS-06-02 阀盖.SLDPRT"),
+        Path.Combine(dir, "GHLSS-06-03 底板.SLDPRT"),
+    };
+    var screw = Path.Combine(standardDir, "GB70 M8x20 内六角螺钉.SLDPRT");
+    File.WriteAllText(rootAsm, "cad");
+    foreach (var path in parts)
+        File.WriteAllText(path, "cad");
+    File.WriteAllText(screw, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        parts.Select((path, index) =>
+            new AssemblyOccurrence($"件-{index + 1}", null, path, false, false, false, identity, null)).ToArray(),
+        parts,
+        0, 0, parts.Length, 0, [],
+        [new AssemblyDocumentReading(rootAsm, parts
+            .Select(path => new AssemblyChild(Path.GetFileNameWithoutExtension(path), path, false, false, identity))
+            .ToArray(), [])],
+        PartProperties: null,
+        PurchasedParts: [new PurchasedPartReading(screw, 8)]);
+
+    var plan = PackagePlanner.Create(probe);
+    var bomDirectory = Path.Combine(dir, ConversionPathLayout.BomDirectoryName);
+    Directory.CreateDirectory(bomDirectory);
+    var machinedPath = Path.Combine(bomDirectory, plan.MachinedBomFileName);
+    var purchasedPath = Path.Combine(bomDirectory, plan.PurchasedBomFileName);
+    Equal(3, BomWorkbookWriter.WriteMachined(plan, machinedPath), "机加件 BOM 必须写满三行");
+    Equal(1, BomWorkbookWriter.WritePurchased(plan, purchasedPath), "外购件 BOM 必须写满一行");
+
+    var machined = ReadSheetCells(machinedPath);
+    Equal("1", machined["A6"], "机加件序号从 1 开始");
+    Equal("GHLSS-06-01", machined["B6"], "机加件第一行必须写零件图号");
+    Equal("阀体", machined["C6"], "机加件第一行必须写零件名称");
+    Equal("1", machined["D6"], "机加件第一行必须写数量");
+    Equal("3", machined["A8"], "三行数据必须占满第 6..8 行");
+    Equal("GHLSS-06-03", machined["B8"], "第三行图号必须落在插入后的第 8 行");
+    True(!machined.ContainsKey("E6") || machined["E6"].Length == 0, "报价栏必须留空给供应商");
+    // 模板里的合计行原本在第 9 行，插两行之后必须整体下移到第 11 行。
+    Equal("单价总计", machined["A11"], "数据行插入后合计行必须跟着下移");
+    Equal("SUM(U6:U8)", ReadFormula(machinedPath, "D11"), "单价总计必须重新指向本次的数据区");
+    Equal(
+        "SUMPRODUCT(D6:D8,U6:U8)",
+        ReadFormula(machinedPath, "H11"),
+        "总价必须重新指向本次的数量与含税单价");
+    True(!HasZipEntry(machinedPath, "xl/calcChain.xml"), "行号变了以后必须删掉计算链，否则 Excel 判为文件损坏");
+    True(ReadMergeReferences(machinedPath).Contains("A11:C11"), "合并格必须跟着数据行一起下移");
+
+    var purchased = ReadSheetCells(purchasedPath);
+    Equal("1", purchased["A6"], "外购件序号从 1 开始");
+    Equal("GB70 M8x20", purchased["D6"], "外购件规格必须落在 D 列");
+    Equal("内六角螺钉", purchased["E6"], "外购件名称必须落在 E 列");
+    Equal("8", purchased["F6"], "外购件数量必须落在 F 列");
+    True(!purchased.ContainsKey("C6") || purchased["C6"].Length == 0, "物料编码留给采购，不得代填");
+}
+
+/// <summary>把 sheet1 读成「单元格引用 → 显示值」。内联字符串与数字都还原成文本。</summary>
+static Dictionary<string, string> ReadSheetCells(string workbookPath)
+{
+    var cells = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    using var archive = System.IO.Compression.ZipFile.OpenRead(workbookPath);
+    var sheet = LoadSheet(archive);
+    System.Xml.Linq.XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    var shared = LoadSharedStrings(archive);
+    foreach (var cell in sheet.Descendants(main + "c"))
+    {
+        var reference = (string?)cell.Attribute("r");
+        if (string.IsNullOrEmpty(reference))
+            continue;
+        var type = (string?)cell.Attribute("t");
+        var text = type switch
+        {
+            "inlineStr" => cell.Element(main + "is")?.Element(main + "t")?.Value ?? string.Empty,
+            "s" => shared.ElementAtOrDefault(int.Parse(cell.Element(main + "v")?.Value ?? "-1")) ?? string.Empty,
+            _ => cell.Element(main + "v")?.Value ?? string.Empty,
+        };
+        cells[reference] = text;
+    }
+
+    return cells;
+}
+
+static string ReadFormula(string workbookPath, string cellReference)
+{
+    using var archive = System.IO.Compression.ZipFile.OpenRead(workbookPath);
+    var sheet = LoadSheet(archive);
+    System.Xml.Linq.XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    return sheet.Descendants(main + "c")
+        .FirstOrDefault(cell => string.Equals((string?)cell.Attribute("r"), cellReference, StringComparison.OrdinalIgnoreCase))?
+        .Element(main + "f")?.Value ?? string.Empty;
+}
+
+static IReadOnlyList<string> ReadMergeReferences(string workbookPath)
+{
+    using var archive = System.IO.Compression.ZipFile.OpenRead(workbookPath);
+    var sheet = LoadSheet(archive);
+    System.Xml.Linq.XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    return sheet.Descendants(main + "mergeCell")
+        .Select(item => (string?)item.Attribute("ref") ?? string.Empty)
+        .ToArray();
+}
+
+static bool HasZipEntry(string workbookPath, string entryPath)
+{
+    using var archive = System.IO.Compression.ZipFile.OpenRead(workbookPath);
+    return archive.GetEntry(entryPath) is not null;
+}
+
+static System.Xml.Linq.XDocument LoadSheet(System.IO.Compression.ZipArchive archive)
+{
+    using var stream = archive.GetEntry("xl/worksheets/sheet1.xml")!.Open();
+    return System.Xml.Linq.XDocument.Load(stream);
+}
+
+static IReadOnlyList<string> LoadSharedStrings(System.IO.Compression.ZipArchive archive)
+{
+    var entry = archive.GetEntry("xl/sharedStrings.xml");
+    if (entry is null)
+        return [];
+    using var stream = entry.Open();
+    var document = System.Xml.Linq.XDocument.Load(stream);
+    System.Xml.Linq.XNamespace main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    return document.Root!.Elements(main + "si")
+        .Select(item => string.Concat(item.Descendants(main + "t").Select(text => text.Value)))
+        .ToArray();
+}
+
+static void TestPackageViewModelFlow(string root)
+{
+    var dir = Path.Combine(root, "package-vm");
+    var standardDir = Path.Combine(dir, "标准件");
+    Directory.CreateDirectory(standardDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "GHLSS-06-00 总装.SLDASM");
+    var plate = Path.Combine(dir, "GHLSS-06-01 底板.SLDPRT");
+    var plateDrawing = Path.ChangeExtension(plate, ".SLDDRW");
+    var screw = Path.Combine(standardDir, "GB70 M8x20 内六角螺钉.SLDPRT");
+    foreach (var path in new[] { rootAsm, plate, plateDrawing, screw })
+        File.WriteAllText(path, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        [new AssemblyOccurrence("底板-1", null, plate, false, false, false, identity, null)],
+        [plate],
+        0, 0, 1, 0, [],
+        [new AssemblyDocumentReading(rootAsm,
+            [new AssemblyChild("底板-1", plate, false, false, identity)], [])],
+        PartProperties: null,
+        PurchasedParts: [new PurchasedPartReading(screw, 4)]);
+
+    PackageRequest? captured = null;
+    using var viewModel = new AssemblyViewModel(
+        (request, progress, token) => Task.FromResult(probe),
+        (request, progress, token) => Task.FromResult(0),
+        _ => { },
+        Dispatcher.CurrentDispatcher,
+        packWorker: (request, progress, token) =>
+        {
+            captured = request;
+            return Task.FromResult(0);
+        });
+
+    viewModel.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPackage);
+    True(viewModel.IsPackMode, "选中整体打包后 ViewModel 必须进入打包模式");
+    True(!viewModel.ShowConversionOptions, "打包不改任何模型，识别/失败继续/装配关系三个开关必须隐藏");
+    Equal("打包", viewModel.PrimaryActionText, "打包模式的主按钮必须叫「打包」");
+
+    viewModel.SetSourcePath(rootAsm);
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    Equal(2, viewModel.Parts.Count, "打包表必须列出机加件与外购件，且只列零件");
+    var plateRow = viewModel.Parts.Single(row => row.PartName == "底板");
+    Equal("1", plateRow.QuantityText, "打包表的数量列必须来自计划");
+    Equal("有", plateRow.DrawingStateText, "找到同名工程图的行必须显示「有」");
+    Equal("机加件", plateRow.CategoryText, "与总装同级的零件必须显示为机加件");
+    var screwRow = viewModel.Parts.Single(row => row.PartName == "内六角螺钉");
+    Equal("外购件", screwRow.CategoryText, "子文件夹里的件必须显示为外购件");
+    Equal("无", screwRow.DrawingStateText, "外购件没有工程图时必须显示「无」");
+    True(viewModel.CanConvert, "解析完成后打包按钮必须可用：" + viewModel.PackBlockedReason);
+
+    viewModel.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    True(captured is not null, "打包必须把导出作业交给 Worker");
+    var jobs = captured!.Jobs;
+    Equal(3, jobs.Count, "一个机加件一个 STEP，一张工程图一个 DWG 加一个 PDF");
+    True(jobs.Any(job => job.Artifact == PackageArtifact.Step && job.SourcePath == plate),
+        "机加件必须有 STEP 作业");
+    True(jobs.All(job => job.Artifact != PackageArtifact.Step || job.SourcePath != screw),
+        "外购件不得导 STEP");
+    True(jobs.Count(job => job.SourcePath == plateDrawing) == 2, "工程图必须同时导 DWG 与 PDF");
+    True(captured.Overwrite, "重复打包必须覆盖上一轮产物");
+
+    foreach (var directoryName in new[]
+             {
+                 ConversionPathLayout.StepDirectoryName,
+                 ConversionPathLayout.DwgDirectoryName,
+                 ConversionPathLayout.PdfDirectoryName,
+                 ConversionPathLayout.BomDirectoryName,
+             })
+    {
+        True(Directory.Exists(Path.Combine(dir, directoryName)),
+            $"打包必须在总装配体同级建出 {directoryName} 目录，哪怕本轮没有东西放进去");
+    }
+
+    var bomDirectory = Path.Combine(dir, ConversionPathLayout.BomDirectoryName);
+    True(File.Exists(Path.Combine(bomDirectory, "GHLSS 机加件清单.xlsx")), "必须生成机加件清单");
+    True(File.Exists(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx")), "必须生成外购件清单");
+    True(viewModel.LastOperationSucceeded, "全部作业成功时本轮打包必须判为成功");
+}
+
+/// <summary>
+/// 计划命令的替身探查。让 <c>minerva.plan.*</c> 的合同能在没有 SolidWorks、
+/// 不启动 Worker 的情况下被锁住——那两样都不是这一组命令要验的事。
+/// </summary>
+sealed class StubAssemblyProbe(Func<AssemblyProbeResult> result) : IAssemblyProbe
+{
+    public void ValidateEnvironment()
+    {
+    }
+
+    public Task<AssemblyProbeResult> ProbeAsync(
+        AssemblyProbeRequest request,
+        Action<WorkerEvent> progress,
+        CancellationToken cancellationToken)
+    {
+        progress(new WorkerEvent(request.BatchId, null, ConversionStage.AssemblyProbe, "替身探查"));
+        return Task.FromResult(result());
+    }
 }
 
 sealed class RecordingModuleContext : IModuleContext
