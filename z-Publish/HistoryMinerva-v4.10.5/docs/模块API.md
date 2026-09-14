@@ -563,7 +563,8 @@ minerva.plan.rename path=D:\设备\GHLSS-06-00 总装.SLDASM clearnumber=true
   - 属性整备：改名 + 写零件属性（图号前缀为空即删图号），改完自动重建索引（A-9）。
   - 整体打包：生成 `STP/` `DWG/` `PDF/` `BOM/` 四个目录，两张 BOM 由前端直接写。
     4.10.4 起写 BOM 前先经总线调 `apollo.chat.ask web=true` 查外购件品牌（软依赖，见第 6 节），
-    查询期间本命令会多占几十秒到几分钟。
+    查询期间本命令会多占几十秒到几分钟。4.10.5 起受 `minerva.ui.options option=brandai` 开关控制；
+    结论文本末尾逐种列出「型号 → 品牌｜查询明细」，因此是多行文本。
   - 其余三种：按对应管线转换。
 - **`Data`**（4.10.2 起）：属性整备 `AssemblyRenamePlan`、整体打包 `PackagePlan`，
   其余三种转换没有对应的公开计划类型，为 `null`。失败时不带 `Data`。
@@ -594,9 +595,11 @@ minerva.plan.rename path=D:\设备\GHLSS-06-00 总装.SLDASM clearnumber=true
 - 形态不符（例如属性整备只收 `.SLDASM`）时不失败、不改来源、不解析。
 
 #### `minerva.ui.options` — 设选项
-- **参数**：`option=recognize|continue|mates|prefix`，`value=`
+- **参数**：`option=recognize|continue|mates|prefix|brandai`，`value=`
 - `prefix` 允许空值且不失败（＝删图号）；改 `prefix` 会顺带刷新表格，
   因为「文件」列显示的就是改完之后的名字。
+- `brandai`（4.10.5）：整体打包的「AI 查品牌」开关，立即生效并存本机，下次打开页面保持。
+  关着时打包不查品牌，品牌列与外购件清单 H 列留空。
 - **`value` 的真值判定只认 `开启` / `开` / `true` / `1`（不区分大小写），其余一律为假。**
   写 `value=yes` 会静默变成关闭。
 
