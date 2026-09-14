@@ -133,7 +133,7 @@ public sealed partial class AssemblyViewModel
         var jobs = BuildPackageJobs(plan);
         if (jobs.Count == 0)
         {
-            _lastResultText = "打包完成：只生成了两张 BOM，没有可导出的零件或工程图" + brands.Describe() + "。";
+            _lastResultText = "打包完成：只生成了两张 BOM，没有可导出的零件或工程图" + brands.Describe();
             _lastOperationSucceeded = true;
             QueueUiUpdate(() =>
             {

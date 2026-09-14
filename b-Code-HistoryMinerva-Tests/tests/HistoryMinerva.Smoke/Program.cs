@@ -92,6 +92,7 @@ try
     TestPackageBomWorkbooks(root);
     TestPackageViewModelFlow(root);
     TestPackageBrandLookup(root);
+    TestPackageOptions(root);
     Console.WriteLine("HistoryMinerva.Smoke: PASS");
 }
 finally
@@ -4672,6 +4673,33 @@ static void TestPackageViewModelFlow(string root)
     viewModel.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     Equal(1, brandQueries.Count, "已查到的品牌必须走缓存，重新打包不得再查");
+    True(viewModel.ResultText.Contains("GB70 M8x20 → 东明", StringComparison.Ordinal), "打包结论必须逐种列出品牌明细：" + viewModel.ResultText);
+
+    // V4.10.5：关掉「AI 查品牌」——不调用、不拿缓存填，品牌列与 H 列留空，结论说清楚这一轮没查。
+    viewModel.SetBrandLookupEnabled(false);
+    Equal(string.Empty, viewModel.Parts.Single(row => row.PartName == "内六角螺钉").BrandText, "关掉开关后表里的品牌列立即留空");
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    viewModel.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    Equal(1, brandQueries.Count, "关掉开关后打包不得发起品牌查询");
+    Equal(string.Empty, viewModel.Parts.Single(row => row.PartName == "内六角螺钉").BrandText, "关掉开关时品牌列留空，不拿缓存填");
+    var offSheet = ReadSheetCells(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx"));
+    True(!offSheet.ContainsKey("H6") || offSheet["H6"].Length == 0, "关掉开关时外购件清单 H 列留空");
+    True(viewModel.ResultText.Contains("未开启 AI 查品牌", StringComparison.Ordinal), "打包结论必须说明这一轮没查品牌：" + viewModel.ResultText);
+    True(viewModel.LastOperationSucceeded, "关掉开关不影响打包成功");
+}
+
+static void TestPackageOptions(string root)
+{
+    var path = PackageOptions.PathIn(Path.Combine(root, "package-options"));
+    True(PackageOptions.LoadBrandLookup(path), "没有保存过时「AI 查品牌」默认开启");
+    PackageOptions.SaveBrandLookup(path, false);
+    True(!PackageOptions.LoadBrandLookup(path), "关掉后必须落盘，下次打开仍是关");
+    PackageOptions.SaveBrandLookup(path, true);
+    True(PackageOptions.LoadBrandLookup(path), "重新打开后必须落盘");
+    File.WriteAllText(path, "not json");
+    True(PackageOptions.LoadBrandLookup(path), "配置文件损坏时回到默认开启，而不是让页面打不开");
 }
 
 static void TestPackageBrandLookup(string root)
@@ -4736,6 +4764,23 @@ static void TestPackageBrandLookup(string root)
     var absent = PurchasedBrandLookup.Read(CommandResult.Fail("未知指令: apollo.chat.ask"));
     True(absent.Failed && absent.Brand == PurchasedBrandLookup.NotAvailable, "Apollo 不在时必须是 N/A 加失败原因");
     True(PurchasedBrandLookup.Read(CommandResult.Ok("大概是 SMC")).Failed, "非 JSON 答复必须记为失败");
+
+    // 控制台明细（DEC-066）：取自 Apollo 回执的结构化载荷。
+    var traced = PurchasedBrandLookup.Read(CommandResult.Ok(
+        "  {\"brand\": \"AirTAC\"}",
+        """{"content":"{\"brand\": \"AirTAC\"}","usage":{"total":4517},"elapsedMs":5154,"searches":[{"query":"F-M10X125F 气动浮头","results":6,"error":null},{"query":"F-M10X125F 浮动接头","results":0,"error":"bocha 请求超时（120s）"}]}"""));
+    Equal("AirTAC", traced.Brand, "带载荷的回执照样读出品牌");
+    True(
+        traced.Trace is { } trace
+        && trace.Contains("搜索 2 次", StringComparison.Ordinal)
+        && trace.Contains("「F-M10X125F 气动浮头」6 条", StringComparison.Ordinal)
+        && trace.Contains("失败：bocha 请求超时", StringComparison.Ordinal)
+        && trace.Contains("DeepSeek 答复 {\"brand\": \"AirTAC\"}", StringComparison.Ordinal)
+        && trace.Contains("4517 tokens", StringComparison.Ordinal),
+        "控制台明细必须带搜索词、结果条数、失败原因、DeepSeek 原始答复与用量：" + traced.Trace);
+    True(
+        PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\": \"SMC\"}", "not json")).Trace!.Contains("DeepSeek 答复", StringComparison.Ordinal),
+        "载荷读不出来时明细退化成原始答复，不得让查询失败");
 
     // 熔断：Apollo 不可用时每一种都以同一个原因失败，连续失败到阈值就不再往下查，打包照常成功。
     var dir = Path.Combine(root, "package-brand-circuit");
