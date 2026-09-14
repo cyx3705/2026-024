@@ -6,7 +6,8 @@ namespace HistoryMinerva;
 
 /// <summary>
 /// V4.10.4 整体打包：外购件品牌联网查询。在写 BOM 之前跑，结果进「品牌」列与外购件清单 H 列。
-/// V4.10.5：页面开关可以整个关掉它（DEC-066）；每种件的搜索词、结果条数与 DeepSeek 原始答复打到控制台。
+/// V4.10.5：页面开关可以整个关掉它（DEC-066）。模型的思考、搜索与答复由 HistoryApollo 自己逐轮写进控制台，
+/// 这里只报每一种的结论和没发起调用的原因。
 /// </summary>
 public sealed partial class AssemblyViewModel
 {
@@ -95,7 +96,7 @@ public sealed partial class AssemblyViewModel
         if (toQuery > 0 && lookup is not null)
         {
             QueueUiUpdate(() => StatusText = $"正在联网查询 {toQuery} 种外购件的品牌");
-            _operationProgress?.Report($"正在联网查询 {toQuery} 种外购件的品牌（HistoryApollo）");
+            _operationProgress?.Report($"正在联网查询 {toQuery} 种外购件的品牌（模型的思考、搜索与答复由 HistoryApollo 逐轮输出）");
         }
 
         var found = 0;
@@ -104,7 +105,6 @@ public sealed partial class AssemblyViewModel
         var consecutiveFailures = 0;
         var tripped = false;
         string? firstFailure = toQuery > 0 && lookup is null ? "品牌查询没有接入命令总线" : null;
-        var details = new List<(string Label, string Line)>();
 
         using var gate = new SemaphoreSlim(BrandLookupConcurrency);
         async Task ResolveAsync(IGrouping<string, PackagePartEntry> group)
@@ -113,7 +113,8 @@ public sealed partial class AssemblyViewModel
             var query = PurchasedBrandLookup.QuerySpecification(entry);
             var label = query.Length > 0 ? query : Path.GetFileNameWithoutExtension(entry.SourcePath);
             var brand = PurchasedBrandLookup.NotAvailable;
-            string note;
+            // 没有发起调用的原因。发起了的，经过由 Apollo 在控制台上逐轮输出，这里只报结论。
+            string? skipped;
             string? cached;
             lock (_brandGate)
                 cached = _brandCache.GetValueOrDefault(group.Key);
@@ -121,19 +122,19 @@ public sealed partial class AssemblyViewModel
             if (cached is not null)
             {
                 brand = cached;
-                note = "沿用本页已查到的结果，未再调用";
+                skipped = "沿用本页已查到的结果，未再调用";
             }
             else if (!PurchasedBrandLookup.IsQueryable(entry))
             {
-                note = "文件名里没有可搜索的型号，未查询";
+                skipped = "文件名里没有可搜索的型号，未查询";
             }
             else if (lookup is null)
             {
-                note = "品牌查询没有接入命令总线";
+                skipped = "品牌查询没有接入命令总线";
             }
             else
             {
-                note = $"连续 {BrandFailureCircuit} 次查询失败后停查，未调用";
+                skipped = $"连续 {BrandFailureCircuit} 次查询失败后停查，未调用";
                 await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
@@ -142,13 +143,11 @@ public sealed partial class AssemblyViewModel
                         skip = tripped;
                     if (!skip)
                     {
+                        skipped = null;
                         var answer = await lookup(entry, cancellationToken).ConfigureAwait(false);
                         // 总线把取消翻译成失败回执，不抛异常；不在这里补一刀，取消就会被记成「查询失败」。
                         cancellationToken.ThrowIfCancellationRequested();
                         brand = answer.Brand;
-                        note = answer.Failed
-                            ? $"查询失败：{answer.Failure}" + (answer.Trace is null ? string.Empty : $"；{answer.Trace}")
-                            : answer.Trace ?? "已查询";
                         int progress;
                         lock (_brandGate)
                         {
@@ -165,7 +164,9 @@ public sealed partial class AssemblyViewModel
                             }
                         }
 
-                        _operationProgress?.Report($"品牌 {progress}/{toQuery}：{label} → {brand}｜{note}");
+                        _operationProgress?.Report(
+                            $"品牌 {progress}/{toQuery}：{label} → {brand}"
+                            + (answer.Failed ? $"（查询失败：{answer.Failure}）" : string.Empty));
                     }
                 }
                 finally
@@ -173,6 +174,9 @@ public sealed partial class AssemblyViewModel
                     gate.Release();
                 }
             }
+
+            if (skipped is not null)
+                _operationProgress?.Report($"品牌：{label} → {brand}｜{skipped}");
 
             lock (_brandGate)
             {
@@ -182,7 +186,6 @@ public sealed partial class AssemblyViewModel
                     notAvailable++;
                 else
                     found++;
-                details.Add((label, $"  {label} → {brand}｜{note}"));
             }
 
             QueueUiUpdate(() =>
@@ -196,16 +199,11 @@ public sealed partial class AssemblyViewModel
         }
 
         await Task.WhenAll(groups.Select(ResolveAsync)).ConfigureAwait(false);
-        var lines = details
-            .OrderBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
-            .Select(item => item.Line)
-            .ToArray();
-        return new PurchasedBrandSummary(byId, found, notAvailable, firstFailure, lines);
+        return new PurchasedBrandSummary(byId, found, notAvailable, firstFailure);
     }
 
     /// <summary>
     /// 一轮品牌查询的结论。计数按「种」（同型号同名称算一种），不按件。
-    /// <c>Details</c> 是逐种明细行，接在结论后面——进度行被控制台刷掉时，结论里仍查得到；
     /// <c>Skipped</c> 表示「AI 查品牌」开关关着，这一轮根本没查。
     /// </summary>
     private sealed record PurchasedBrandSummary(
@@ -213,22 +211,17 @@ public sealed partial class AssemblyViewModel
         int Found,
         int NotAvailable,
         string? FirstFailure,
-        IReadOnlyList<string>? Details = null,
         bool Skipped = false)
     {
-        /// <summary>接在打包结论后面的部分；没有外购件时为空串。</summary>
+        /// <summary>接在打包结论后面的那半句；没有外购件时为空串。</summary>
         public string Describe()
         {
             if (Skipped)
                 return "；未开启 AI 查品牌，品牌列留空";
-            if (Found + NotAvailable == 0)
-                return string.Empty;
-
-            var head = $"；外购件品牌查到 {Found} 种、N/A {NotAvailable} 种"
-                       + (FirstFailure is null ? string.Empty : $"（查询失败：{FirstFailure}）");
-            return Details is { Count: > 0 }
-                ? head + Environment.NewLine + string.Join(Environment.NewLine, Details)
-                : head;
+            return Found + NotAvailable == 0
+                ? string.Empty
+                : $"；外购件品牌查到 {Found} 种、N/A {NotAvailable} 种"
+                  + (FirstFailure is null ? string.Empty : $"（查询失败：{FirstFailure}）");
         }
     }
 }

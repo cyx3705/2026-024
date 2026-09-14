@@ -13,10 +13,7 @@ namespace HistoryMinerva.Bom;
 /// 查询本身失败（HistoryApollo 没装、没配密钥、断网）时的原因。
 /// 模型搜过之后确认查不到，是一个**答案**而不是失败，此时为 null。
 /// </param>
-/// <param name="Trace">
-/// 控制台上的一行明细（V4.10.5）：模型搜了什么、每次几条、DeepSeek 原样答了什么、用量与耗时。拿不到回执时为 null。
-/// </param>
-internal sealed record BrandAnswer(string Brand, string? Failure, string? Trace = null)
+internal sealed record BrandAnswer(string Brand, string? Failure)
 {
     public bool Failed => Failure is not null;
 }
@@ -141,7 +138,7 @@ internal static class PurchasedBrandLookup
             return new BrandAnswer(NotAvailable, FirstLine(result.Message));
 
         // json=true 时回执正文就是模型答复本身，不带用量脚注（HistoryApollo 模块API）。
-        var trace = DescribeTrace(result);
+        // 模型搜了什么、怎么答的，HistoryApollo 0.3.0 起在调用进行中逐轮写进控制台，这里不再复述（DEC-066）。
         try
         {
             using var document = JsonDocument.Parse(result.Message);
@@ -149,81 +146,13 @@ internal static class PurchasedBrandLookup
             return root.ValueKind == JsonValueKind.Object
                    && root.TryGetProperty("brand", out var brand)
                    && brand.ValueKind == JsonValueKind.String
-                ? new BrandAnswer(Normalize(brand.GetString()), null, trace)
-                : new BrandAnswer(NotAvailable, null, trace);
+                ? new BrandAnswer(Normalize(brand.GetString()), null)
+                : new BrandAnswer(NotAvailable, null);
         }
         catch (JsonException)
         {
-            return new BrandAnswer(NotAvailable, "模型答复不是 JSON：" + FirstLine(result.Message), trace);
+            return new BrandAnswer(NotAvailable, "模型答复不是 JSON：" + FirstLine(result.Message));
         }
-    }
-
-    /// <summary>
-    /// 一种件的查询明细（V4.10.5，DEC-066）。取自 Apollo 回执的结构化载荷（<c>CommandResult.Data</c> 是 JSON 文本）：
-    /// 搜索词与结果条数、单次搜索失败原因、DeepSeek 原始答复、token 用量与耗时。
-    ///
-    /// 「查到 2 种、N/A 6 种」一句话看不出是没搜到还是搜错了——4.10.4 首次实打就是翻宿主日志才发现
-    /// 搜索词带着 <c>_step</c>。载荷读不出来时只退化成原始答复，不因为明细失败让查询失败。
-    /// </summary>
-    internal static string DescribeTrace(CommandResult result)
-    {
-        var answer = $"DeepSeek 答复 {OneLine(result.Message)}";
-        if (result.Data is not string payload)
-            return answer;
-
-        try
-        {
-            using var document = JsonDocument.Parse(payload);
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
-                return answer;
-
-            var parts = new List<string>();
-            if (root.TryGetProperty("searches", out var searches) && searches.ValueKind == JsonValueKind.Array)
-            {
-                var items = searches.EnumerateArray().Select(DescribeSearch).ToArray();
-                parts.Add(items.Length == 0 ? "模型未搜索" : $"搜索 {items.Length} 次：{string.Join(" | ", items)}");
-            }
-
-            parts.Add(answer);
-            if (root.TryGetProperty("usage", out var usage)
-                && usage.ValueKind == JsonValueKind.Object
-                && usage.TryGetProperty("total", out var total)
-                && total.TryGetInt32(out var tokens))
-            {
-                parts.Add($"{tokens} tokens");
-            }
-
-            if (root.TryGetProperty("elapsedMs", out var elapsed) && elapsed.TryGetInt64(out var milliseconds))
-                parts.Add($"{milliseconds / 1000.0:0.0}s");
-            return string.Join("；", parts);
-        }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
-        {
-            return answer;
-        }
-    }
-
-    private static string DescribeSearch(JsonElement search)
-    {
-        if (search.ValueKind != JsonValueKind.Object)
-            return "?";
-        var query = search.TryGetProperty("query", out var queryNode) && queryNode.ValueKind == JsonValueKind.String
-            ? queryNode.GetString()
-            : "?";
-        var count = search.TryGetProperty("results", out var countNode) && countNode.TryGetInt32(out var number)
-            ? number
-            : 0;
-        return search.TryGetProperty("error", out var errorNode) && errorNode.ValueKind == JsonValueKind.String
-            ? $"「{query}」失败：{errorNode.GetString()}"
-            : $"「{query}」{count} 条";
-    }
-
-    /// <summary>模型答复可能带前导空白或换行，控制台上压成一行。</summary>
-    private static string OneLine(string? message)
-    {
-        var line = Whitespace.Replace(message ?? string.Empty, " ").Trim();
-        return line.Length <= 300 ? line : line[..300] + "…";
     }
 
     /// <summary>模型说「未知」「无」「n/a」都折成同一个 N/A，表格上不能出现五种写法的查不到。</summary>

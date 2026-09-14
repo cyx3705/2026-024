@@ -4673,7 +4673,8 @@ static void TestPackageViewModelFlow(string root)
     viewModel.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     Equal(1, brandQueries.Count, "已查到的品牌必须走缓存，重新打包不得再查");
-    True(viewModel.ResultText.Contains("GB70 M8x20 → 东明", StringComparison.Ordinal), "打包结论必须逐种列出品牌明细：" + viewModel.ResultText);
+    True(!viewModel.ResultText.Contains("GB70 M8x20 → 东明", StringComparison.Ordinal),
+        "打包结论不再逐种复述品牌明细：查询经过由 HistoryApollo 逐轮输出到控制台：" + viewModel.ResultText);
 
     // V4.10.5：关掉「AI 查品牌」——不调用、不拿缓存填，品牌列与 H 列留空，结论说清楚这一轮没查。
     viewModel.SetBrandLookupEnabled(false);
@@ -4765,22 +4766,12 @@ static void TestPackageBrandLookup(string root)
     True(absent.Failed && absent.Brand == PurchasedBrandLookup.NotAvailable, "Apollo 不在时必须是 N/A 加失败原因");
     True(PurchasedBrandLookup.Read(CommandResult.Ok("大概是 SMC")).Failed, "非 JSON 答复必须记为失败");
 
-    // 控制台明细（DEC-066）：取自 Apollo 回执的结构化载荷。
-    var traced = PurchasedBrandLookup.Read(CommandResult.Ok(
+    // 回执带结构化载荷（Apollo 的 Data）时照样只读正文；载荷怎么变都不影响品牌。
+    var withPayload = PurchasedBrandLookup.Read(CommandResult.Ok(
         "  {\"brand\": \"AirTAC\"}",
-        """{"content":"{\"brand\": \"AirTAC\"}","usage":{"total":4517},"elapsedMs":5154,"searches":[{"query":"F-M10X125F 气动浮头","results":6,"error":null},{"query":"F-M10X125F 浮动接头","results":0,"error":"bocha 请求超时（120s）"}]}"""));
-    Equal("AirTAC", traced.Brand, "带载荷的回执照样读出品牌");
-    True(
-        traced.Trace is { } trace
-        && trace.Contains("搜索 2 次", StringComparison.Ordinal)
-        && trace.Contains("「F-M10X125F 气动浮头」6 条", StringComparison.Ordinal)
-        && trace.Contains("失败：bocha 请求超时", StringComparison.Ordinal)
-        && trace.Contains("DeepSeek 答复 {\"brand\": \"AirTAC\"}", StringComparison.Ordinal)
-        && trace.Contains("4517 tokens", StringComparison.Ordinal),
-        "控制台明细必须带搜索词、结果条数、失败原因、DeepSeek 原始答复与用量：" + traced.Trace);
-    True(
-        PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\": \"SMC\"}", "not json")).Trace!.Contains("DeepSeek 答复", StringComparison.Ordinal),
-        "载荷读不出来时明细退化成原始答复，不得让查询失败");
+        """{"content":"{\"brand\": \"AirTAC\"}","usage":{"total":4517},"searches":[{"query":"F-M10X125F 气动浮头","results":6,"error":null}]}"""));
+    True(withPayload.Brand == "AirTAC" && !withPayload.Failed, "带载荷的回执照样读出品牌");
+    True(!PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\": \"SMC\"}", "not json")).Failed, "载荷读不出来不得让查询失败");
 
     // 熔断：Apollo 不可用时每一种都以同一个原因失败，连续失败到阈值就不再往下查，打包照常成功。
     var dir = Path.Combine(root, "package-brand-circuit");
