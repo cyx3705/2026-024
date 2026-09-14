@@ -1,5 +1,6 @@
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Modules;
+using HistoryMinerva.Bom;
 using HistoryMinerva.Contracts;
 using System.IO;
 using System.Text.Json;
@@ -161,7 +162,12 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         {
             if (_context is null || _runtimePaths is null)
                 throw new InvalidOperationException("Minerva 模块尚未装配。");
-            _viewModel = new AssemblyViewModel(_runtimePaths);
+            _viewModel = new AssemblyViewModel(_runtimePaths)
+            {
+                // V4.10.4：打包时经总线借用 HistoryApollo 查外购件品牌。Apollo 装没装、配没配密钥，
+                // 要到发出那一行指令时才知道——不在就是失败回执，那一格写 N/A，打包照常完成。
+                BrandLookup = _context.Bus is { } bus ? PurchasedBrandLookup.OverBus(bus) : null,
+            };
         }
 
         return _viewModel;
@@ -746,6 +752,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             ["quantity"] = row.QuantityText,
             ["hasdrawing"] = row.DrawingStateText,
             ["category"] = row.CategoryText,
+            // V4.10.4：外购件品牌，打包时联网查询；机加件与没查过的行为空。
+            ["brand"] = row.BrandText,
         }).ToList();
     }
 
@@ -810,7 +818,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 ] },
                 { "case": "SolidWorks .SLDASM → 整体打包（STP/DWG/PDF/BOM）", "type": "stack", "gap": "tight", "children": [
                   { "type": "panel", "id": "sw-package-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "打包" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
-                  { "type": "table", "id": "sw-package-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号 / 规格", "width": "170" }, { "key": "name", "title": "名称", "width": "*" }, { "key": "quantity", "title": "数量", "width": "60" }, { "key": "category", "title": "件别", "width": "70" }, { "key": "hasdrawing", "title": "工程图", "width": "70" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "detail", "title": "结果", "width": "2*" }] }
+                  { "type": "table", "id": "sw-package-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号 / 规格", "width": "170" }, { "key": "name", "title": "名称", "width": "*" }, { "key": "quantity", "title": "数量", "width": "60" }, { "key": "category", "title": "件别", "width": "70" }, { "key": "brand", "title": "品牌", "width": "110" }, { "key": "hasdrawing", "title": "工程图", "width": "70" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "detail", "title": "结果", "width": "2*" }] }
                 ] }
               ] }
             ] }

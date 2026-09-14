@@ -936,40 +936,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         OnPropertyChanged(nameof(CanConvert));
     }
 
-    private void QueueUiUpdate(Action update)
-    {
-        lock (_dispatchGate)
-        {
-            if (_disposed)
-                return;
-            _pendingUiUpdates.Enqueue(update);
-            if (_dispatchOperation?.Status is DispatcherOperationStatus.Pending or DispatcherOperationStatus.Executing)
-                return;
-            _dispatchOperation = _uiDispatcher.BeginInvoke(
-                DispatcherPriority.DataBind,
-                new Action(DrainUiUpdates));
-        }
-    }
-
-    private void DrainUiUpdates()
-    {
-        while (true)
-        {
-            Action update;
-            lock (_dispatchGate)
-            {
-                if (_disposed || _pendingUiUpdates.Count == 0)
-                {
-                    _pendingUiUpdates.Clear();
-                    _dispatchOperation = null;
-                    return;
-                }
-                update = _pendingUiUpdates.Dequeue();
-            }
-            update();
-        }
-    }
-
     private static string ComputeSha256(string path)
     {
         using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);

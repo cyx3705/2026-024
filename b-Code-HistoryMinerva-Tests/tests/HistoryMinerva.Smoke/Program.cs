@@ -91,6 +91,7 @@ try
     TestPackagePlanning(root);
     TestPackageBomWorkbooks(root);
     TestPackageViewModelFlow(root);
+    TestPackageBrandLookup(root);
     Console.WriteLine("HistoryMinerva.Smoke: PASS");
 }
 finally
@@ -4460,7 +4461,11 @@ static void TestPackageBomWorkbooks(string root)
     var machinedPath = Path.Combine(bomDirectory, plan.MachinedBomFileName);
     var purchasedPath = Path.Combine(bomDirectory, plan.PurchasedBomFileName);
     Equal(3, BomWorkbookWriter.WriteMachined(plan, machinedPath), "机加件 BOM 必须写满三行");
-    Equal(1, BomWorkbookWriter.WritePurchased(plan, purchasedPath), "外购件 BOM 必须写满一行");
+    Equal(
+        1,
+        BomWorkbookWriter.WritePurchased(
+            plan, purchasedPath, new Dictionary<string, string> { [plan.Purchased[0].Id] = "东明" }),
+        "外购件 BOM 必须写满一行");
 
     var machined = ReadSheetCells(machinedPath);
     Equal("1", machined["A6"], "机加件序号从 1 开始");
@@ -4486,6 +4491,8 @@ static void TestPackageBomWorkbooks(string root)
     Equal("内六角螺钉", purchased["E6"], "外购件名称必须落在 E 列");
     Equal("8", purchased["F6"], "外购件数量必须落在 F 列");
     True(!purchased.ContainsKey("C6") || purchased["C6"].Length == 0, "物料编码留给采购，不得代填");
+    Equal("东明", purchased["H6"], "V4.10.4：外购件品牌必须落在 H 列「备注[参考供应商]」");
+    True(!purchased.ContainsKey("I6") || purchased["I6"].Length == 0, "I 列备注留给采购，不得代填");
 }
 
 /// <summary>把 sheet1 读成「单元格引用 → 显示值」。内联字符串与数字都还原成文本。</summary>
@@ -4593,6 +4600,13 @@ static void TestPackageViewModelFlow(string root)
             captured = request;
             return Task.FromResult(0);
         });
+    var brandQueries = new List<string>();
+    viewModel.BrandLookup = (entry, _) =>
+    {
+        lock (brandQueries)
+            brandQueries.Add(entry.Specification);
+        return Task.FromResult(new BrandAnswer("东明", null));
+    };
 
     viewModel.SelectedMappingContent = MappingContentOption.Available
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPackage);
@@ -4626,6 +4640,8 @@ static void TestPackageViewModelFlow(string root)
         "外购件不得导 STEP");
     True(jobs.Count(job => job.SourcePath == plateDrawing) == 2, "工程图必须同时导 DWG 与 PDF");
     True(captured.Overwrite, "重复打包必须覆盖上一轮产物");
+    Equal(1, brandQueries.Count, "V4.10.4：打包时每种外购件查一次品牌，机加件不查");
+    Equal("GB70 M8x20", brandQueries[0], "品牌按外购件规格查询");
 
     foreach (var directoryName in new[]
              {
@@ -4643,6 +4659,110 @@ static void TestPackageViewModelFlow(string root)
     True(File.Exists(Path.Combine(bomDirectory, "GHLSS 机加件清单.xlsx")), "必须生成机加件清单");
     True(File.Exists(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx")), "必须生成外购件清单");
     True(viewModel.LastOperationSucceeded, "全部作业成功时本轮打包必须判为成功");
+
+    Equal("东明", viewModel.Parts.Single(row => row.PartName == "内六角螺钉").BrandText, "查到的品牌必须回填到打包表");
+    Equal(string.Empty, viewModel.Parts.Single(row => row.PartName == "底板").BrandText, "机加件的品牌列必须留空");
+    Equal("东明", ReadSheetCells(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx"))["H6"], "打包写出的外购件清单必须带品牌");
+    True(viewModel.ResultText.Contains("品牌查到 1 种", StringComparison.Ordinal), "打包结论必须报告品牌查询结果：" + viewModel.ResultText);
+
+    // 同一页面重新解析再打包：已确定的品牌走缓存，不再花一次调用。
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    Equal("东明", viewModel.Parts.Single(row => row.PartName == "内六角螺钉").BrandText, "重新解析后品牌列应显示已查到的值");
+    viewModel.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    Equal(1, brandQueries.Count, "已查到的品牌必须走缓存，重新打包不得再查");
+}
+
+static void TestPackageBrandLookup(string root)
+{
+    // 指令文本必须能被宿主解析器原样读回：提示词里有引号、花括号与中文标点，全靠 QuoteArg 转义。
+    var screwEntry = new PackagePartEntry(
+        "screw",
+        Path.Combine(root, "标准件", "GB70 M8x20 内六角螺钉.SLDPRT"),
+        null,
+        string.Empty,
+        "内六角螺钉",
+        "GB70 M8x20",
+        4,
+        PackagePartCategory.Purchased);
+    var parsed = CommandParser.Parse(PurchasedBrandLookup.BuildCommand(screwEntry));
+    Equal("apollo.chat.ask", parsed.Name, "品牌查询必须走 apollo.chat.ask");
+    Equal("true", parsed.Named["web"], "品牌查询必须允许模型联网");
+    Equal("true", parsed.Named["json"], "品牌查询必须要求 JSON 答复");
+    True(parsed.Named["prompt"].Contains("GB70 M8x20", StringComparison.Ordinal), "提示词必须带上规格：" + parsed.Named["prompt"]);
+    True(
+        parsed.Named["system"].Contains("{\"brand\": \"N/A\"}", StringComparison.Ordinal),
+        "系统提示里的引号必须原样读回：" + parsed.Named["system"]);
+
+    // 回执读法：成功读 brand；各种「查不到」折成 N/A 且不算失败；失败回执与非 JSON 答复记为失败。
+    Equal("SMC", PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\":\" SMC \"}")).Brand, "品牌取自 JSON 的 brand 字段");
+    Equal(
+        PurchasedBrandLookup.NotAvailable,
+        PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\":\"未知\"}")).Brand,
+        "「未知」必须折成 N/A");
+    True(!PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\":\"n/a\"}")).Failed, "模型确认查不到是答案，不是失败");
+    var absent = PurchasedBrandLookup.Read(CommandResult.Fail("未知指令: apollo.chat.ask"));
+    True(absent.Failed && absent.Brand == PurchasedBrandLookup.NotAvailable, "Apollo 不在时必须是 N/A 加失败原因");
+    True(PurchasedBrandLookup.Read(CommandResult.Ok("大概是 SMC")).Failed, "非 JSON 答复必须记为失败");
+
+    // 熔断：Apollo 不可用时每一种都以同一个原因失败，连续失败到阈值就不再往下查，打包照常成功。
+    var dir = Path.Combine(root, "package-brand-circuit");
+    var standardDir = Path.Combine(dir, "标准件");
+    Directory.CreateDirectory(standardDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "GHLSS-07-00 总装.SLDASM");
+    var plate = Path.Combine(dir, "GHLSS-07-01 底板.SLDPRT");
+    var purchased = Enumerable.Range(1, 8)
+        .Select(index => Path.Combine(standardDir, $"MISUMI SFJ{index}-100 直线轴.SLDPRT"))
+        .ToArray();
+    foreach (var path in purchased.Append(rootAsm).Append(plate))
+        File.WriteAllText(path, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        [new AssemblyOccurrence("底板-1", null, plate, false, false, false, identity, null)],
+        [plate],
+        0, 0, 1, 0, [],
+        [new AssemblyDocumentReading(rootAsm,
+            [new AssemblyChild("底板-1", plate, false, false, identity)], [])],
+        PartProperties: null,
+        PurchasedParts: purchased.Select(path => new PurchasedPartReading(path, 2)).ToArray());
+
+    var calls = 0;
+    using var viewModel = new AssemblyViewModel(
+        (request, progress, token) => Task.FromResult(probe),
+        (request, progress, token) => Task.FromResult(0),
+        _ => { },
+        Dispatcher.CurrentDispatcher,
+        packWorker: (request, progress, token) => Task.FromResult(0))
+    {
+        BrandLookup = (entry, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            return Task.FromResult(new BrandAnswer(PurchasedBrandLookup.NotAvailable, "未知指令: apollo.chat.ask"));
+        },
+    };
+
+    viewModel.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPackage);
+    viewModel.SetSourcePath(rootAsm);
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(viewModel.CanConvert, "解析完成后打包按钮必须可用：" + viewModel.PackBlockedReason);
+    viewModel.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    True(calls < purchased.Length, $"连续失败必须熔断，不得把 {purchased.Length} 种全查一遍（实际 {calls} 次）");
+    True(viewModel.LastOperationSucceeded, "品牌查询全部失败时打包仍必须判为成功");
+    True(
+        viewModel.Parts.Where(row => row.CategoryText == "外购件").All(row => row.BrandText == PurchasedBrandLookup.NotAvailable),
+        "查询失败的外购件品牌列必须写 N/A");
+    True(
+        viewModel.ResultText.Contains("查询失败：未知指令", StringComparison.Ordinal),
+        "打包结论必须带出品牌查询的首个失败原因：" + viewModel.ResultText);
+    var sheet = ReadSheetCells(Path.Combine(dir, ConversionPathLayout.BomDirectoryName, "GHLSS 外购件清单.xlsx"));
+    Equal(PurchasedBrandLookup.NotAvailable, sheet["H6"], "查询失败时外购件清单 H 列写 N/A");
 }
 
 /// <summary>

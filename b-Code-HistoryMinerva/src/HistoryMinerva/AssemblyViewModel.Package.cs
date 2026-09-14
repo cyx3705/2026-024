@@ -80,6 +80,7 @@ public sealed partial class AssemblyViewModel
             row.QuantityText = entry.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture);
             row.DrawingStateText = entry.HasDrawing ? "有" : "无";
             row.CategoryText = entry.Category == PackagePartCategory.Machined ? "机加件" : "外购件";
+            row.BrandText = CachedBrandText(entry);
             row.RenamesFile = false;
             row.WritesProperties = false;
             row.Status = ConversionFileRow.ReadyStatus;
@@ -113,12 +114,16 @@ public sealed partial class AssemblyViewModel
 
         CreatePackageDirectories(plan.Directories);
 
-        // BOM 先写。它不需要 SolidWorks，也就没有理由陪着 CAD 导出一起失败——
+        // V4.10.4：品牌在 BOM 之前查，外购件清单的「备注[参考供应商]」要带着它出厂。
+        // 查不到、查询失败都只让那一格写 N/A，不拦打包（见 PurchasedBrandLookup）。
+        var brands = await LookupPurchasedBrandsAsync(plan, cancellationToken).ConfigureAwait(false);
+
+        // BOM 先于 CAD 导出写。它不需要 SolidWorks，也就没有理由陪着 CAD 导出一起失败——
         // 现场最常见的一幕正是「SolidWorks 起不来」，而采购要的清单本来就已经算好了。
         var machinedCount = BomWorkbookWriter.WriteMachined(
             plan, Path.Combine(plan.Directories.BomDirectory, plan.MachinedBomFileName));
         var purchasedCount = BomWorkbookWriter.WritePurchased(
-            plan, Path.Combine(plan.Directories.BomDirectory, plan.PurchasedBomFileName));
+            plan, Path.Combine(plan.Directories.BomDirectory, plan.PurchasedBomFileName), brands.ById);
         QueueUiUpdate(() => StatusText =
             $"BOM 已生成：{machinedCount} 个机加件、{purchasedCount} 个外购件");
         _operationProgress?.Report(
@@ -128,7 +133,7 @@ public sealed partial class AssemblyViewModel
         var jobs = BuildPackageJobs(plan);
         if (jobs.Count == 0)
         {
-            _lastResultText = $"打包完成：只生成了两张 BOM，没有可导出的零件或工程图。";
+            _lastResultText = "打包完成：只生成了两张 BOM，没有可导出的零件或工程图" + brands.Describe() + "。";
             _lastOperationSucceeded = true;
             QueueUiUpdate(() =>
             {
@@ -163,8 +168,10 @@ public sealed partial class AssemblyViewModel
             ? $"打包完成：{plan.Directories.RootDirectory} 下的 STP／DWG／PDF／BOM 四个目录已就绪"
                 + $"（{stepCount} 个 STEP、{drawingCount} 张工程图、"
                 + $"{machinedCount} + {purchasedCount} 行 BOM）"
+                + brands.Describe()
             : "打包结束，存在导出失败项：BOM 已生成，失败的零件或图纸见上方逐条报告"
-                + (string.IsNullOrEmpty(_firstWorkerFailure) ? string.Empty : "；首个原因：" + _firstWorkerFailure);
+                + (string.IsNullOrEmpty(_firstWorkerFailure) ? string.Empty : "；首个原因：" + _firstWorkerFailure)
+                + brands.Describe();
         QueueUiUpdate(() =>
         {
             _conversionCompleted = true;
