@@ -19,8 +19,8 @@ namespace HistoryMinerva.Bom;
 /// <list type="bullet">
 ///   <item><b>机加件清单</b>（数据从第 6 行起）：A 序号、B 零件图号、C 零件名称、D 数量。
 ///         E..V 是供应商填的报价栏。</item>
-///   <item><b>外购件清单</b>（数据从第 6 行起）：A 序号、D 规格、E 名称、F 数量。
-///         B 工位、C 物料编码、G 交货时间、H/I 备注留给采购。</item>
+///   <item><b>外购件清单</b>（数据从第 6 行起）：A 序号、D 规格、E 名称、F 数量、
+///         H 品牌（表头「备注[参考供应商]」，V4.10.4）。B 工位、C 物料编码、G 交货时间、I 备注留给采购。</item>
 /// </list>
 /// </summary>
 public static class BomWorkbookWriter
@@ -62,8 +62,18 @@ public static class BomWorkbookWriter
         return entries.Count;
     }
 
-    /// <inheritdoc cref="WriteMachined"/>
-    public static int WritePurchased(PackagePlan plan, string outputPath)
+    /// <summary>写外购件清单。</summary>
+    /// <param name="plan">本轮打包计划，只取 <see cref="PackagePlan.Purchased"/>。</param>
+    /// <param name="outputPath">产物全路径，落在 <c>BOM/</c> 目录里。</param>
+    /// <param name="brands">
+    /// V4.10.4：按 <see cref="PackagePartEntry.Id"/> 取的品牌，写进 H 列。为 null 或缺这一行时 H 列留空——
+    /// 「没查过」与「查过、写 N/A」在清单上必须分得开。
+    /// </param>
+    /// <returns>写进去的数据行数。</returns>
+    public static int WritePurchased(
+        PackagePlan plan,
+        string outputPath,
+        IReadOnlyDictionary<string, string>? brands = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         var entries = plan.Purchased;
@@ -73,11 +83,17 @@ public static class BomWorkbookWriter
             SheetCellValue.Text("D", entry.Specification),
             SheetCellValue.Text("E", entry.PartName),
             SheetCellValue.Number("F", entry.Quantity),
+            .. BrandCell(brands, entry),
         ]).ToArray();
 
         Write(PurchasedTemplateResource, outputPath, rows, afterFill: null);
         return entries.Count;
     }
+
+    private static SheetCellValue[] BrandCell(IReadOnlyDictionary<string, string>? brands, PackagePartEntry entry)
+        => brands is not null && brands.TryGetValue(entry.Id, out var brand)
+            ? [SheetCellValue.Text("H", brand)]
+            : [];
 
     private static void Write(
         string resourceName,

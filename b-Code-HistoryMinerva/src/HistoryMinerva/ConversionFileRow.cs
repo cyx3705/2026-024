@@ -29,6 +29,7 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     private string _quantityText = "";
     private string _drawingStateText = "";
     private string _categoryText = "";
+    private string _brandText = "";
 
     /// <summary>
     /// 建一行。<c>showsTargetName</c> 为 true 时「文件」列显示产物名而不是源文件名——
@@ -243,6 +244,16 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     {
         get => _categoryText;
         set => SetField(ref _categoryText, value ?? "");
+    }
+
+    /// <summary>
+    /// V4.10.4 整体打包「品牌」列：外购件打包时联网查到的品牌，查不到是 <c>N/A</c>；
+    /// 还没查过时为空，机加件恒为空。与外购件清单 H 列是同一个值。
+    /// </summary>
+    public string BrandText
+    {
+        get => _brandText;
+        set => SetField(ref _brandText, value ?? "");
     }
 
     /// <summary>
