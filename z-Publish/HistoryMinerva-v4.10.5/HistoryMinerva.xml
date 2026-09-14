@@ -117,7 +117,8 @@
         <member name="T:HistoryMinerva.AssemblyViewModel">
             <summary>
             V4.10.4 整体打包：外购件品牌联网查询。在写 BOM 之前跑，结果进「品牌」列与外购件清单 H 列。
-            V4.10.5：页面开关可以整个关掉它（DEC-066）；每种件的搜索词、结果条数与 DeepSeek 原始答复打到控制台。
+            V4.10.5：页面开关可以整个关掉它（DEC-066）。模型的思考、搜索与答复由 HistoryApollo 自己逐轮写进控制台，
+            这里只报每一种的结论和没发起调用的原因。
             </summary>
             <summary>
             后台操作回 UI 线程的唯一通道：排队、合批，按 DataBind 优先级一次排空。
@@ -170,19 +171,17 @@
         <member name="T:HistoryMinerva.AssemblyViewModel.PurchasedBrandSummary">
             <summary>
             一轮品牌查询的结论。计数按「种」（同型号同名称算一种），不按件。
-            <c>Details</c> 是逐种明细行，接在结论后面——进度行被控制台刷掉时，结论里仍查得到；
             <c>Skipped</c> 表示「AI 查品牌」开关关着，这一轮根本没查。
             </summary>
         </member>
-        <member name="M:HistoryMinerva.AssemblyViewModel.PurchasedBrandSummary.#ctor(System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},System.Int32,System.Int32,System.String,System.Collections.Generic.IReadOnlyList{System.String},System.Boolean)">
+        <member name="M:HistoryMinerva.AssemblyViewModel.PurchasedBrandSummary.#ctor(System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},System.Int32,System.Int32,System.String,System.Boolean)">
             <summary>
             一轮品牌查询的结论。计数按「种」（同型号同名称算一种），不按件。
-            <c>Details</c> 是逐种明细行，接在结论后面——进度行被控制台刷掉时，结论里仍查得到；
             <c>Skipped</c> 表示「AI 查品牌」开关关着，这一轮根本没查。
             </summary>
         </member>
         <member name="M:HistoryMinerva.AssemblyViewModel.PurchasedBrandSummary.Describe">
-            <summary>接在打包结论后面的部分；没有外购件时为空串。</summary>
+            <summary>接在打包结论后面的那半句；没有外购件时为空串。</summary>
         </member>
         <member name="F:HistoryMinerva.AssemblyViewModel._firstWorkerFailure">
             <summary>本轮 Worker 报回的第一条失败原因，用于把根因带进命令的最终失败消息。</summary>
@@ -634,19 +633,13 @@
             查询本身失败（HistoryApollo 没装、没配密钥、断网）时的原因。
             模型搜过之后确认查不到，是一个**答案**而不是失败，此时为 null。
             </param>
-            <param name="Trace">
-            控制台上的一行明细（V4.10.5）：模型搜了什么、每次几条、DeepSeek 原样答了什么、用量与耗时。拿不到回执时为 null。
-            </param>
         </member>
-        <member name="M:HistoryMinerva.Bom.BrandAnswer.#ctor(System.String,System.String,System.String)">
+        <member name="M:HistoryMinerva.Bom.BrandAnswer.#ctor(System.String,System.String)">
             <summary>一种外购件的品牌查询结果。</summary>
             <param name="Brand">品牌名；查不到、不能确定或查询失败时都是 <see cref="F:HistoryMinerva.Bom.PurchasedBrandLookup.NotAvailable"/>。</param>
             <param name="Failure">
             查询本身失败（HistoryApollo 没装、没配密钥、断网）时的原因。
             模型搜过之后确认查不到，是一个**答案**而不是失败，此时为 null。
-            </param>
-            <param name="Trace">
-            控制台上的一行明细（V4.10.5）：模型搜了什么、每次几条、DeepSeek 原样答了什么、用量与耗时。拿不到回执时为 null。
             </param>
         </member>
         <member name="P:HistoryMinerva.Bom.BrandAnswer.Brand">
@@ -656,11 +649,6 @@
             <summary>
             查询本身失败（HistoryApollo 没装、没配密钥、断网）时的原因。
             模型搜过之后确认查不到，是一个**答案**而不是失败，此时为 null。
-            </summary>
-        </member>
-        <member name="P:HistoryMinerva.Bom.BrandAnswer.Trace">
-            <summary>
-            控制台上的一行明细（V4.10.5）：模型搜了什么、每次几条、DeepSeek 原样答了什么、用量与耗时。拿不到回执时为 null。
             </summary>
         </member>
         <member name="T:HistoryMinerva.Bom.PurchasedBrandLookup">
@@ -723,18 +711,6 @@
         </member>
         <member name="M:HistoryMinerva.Bom.PurchasedBrandLookup.Read(HistoryVulcan.Core.Commands.CommandResult)">
             <summary>把 Apollo 的回执读成一个答案。</summary>
-        </member>
-        <member name="M:HistoryMinerva.Bom.PurchasedBrandLookup.DescribeTrace(HistoryVulcan.Core.Commands.CommandResult)">
-             <summary>
-             一种件的查询明细（V4.10.5，DEC-066）。取自 Apollo 回执的结构化载荷（<c>CommandResult.Data</c> 是 JSON 文本）：
-             搜索词与结果条数、单次搜索失败原因、DeepSeek 原始答复、token 用量与耗时。
-            
-             「查到 2 种、N/A 6 种」一句话看不出是没搜到还是搜错了——4.10.4 首次实打就是翻宿主日志才发现
-             搜索词带着 <c>_step</c>。载荷读不出来时只退化成原始答复，不因为明细失败让查询失败。
-             </summary>
-        </member>
-        <member name="M:HistoryMinerva.Bom.PurchasedBrandLookup.OneLine(System.String)">
-            <summary>模型答复可能带前导空白或换行，控制台上压成一行。</summary>
         </member>
         <member name="M:HistoryMinerva.Bom.PurchasedBrandLookup.Normalize(System.String)">
             <summary>模型说「未知」「无」「n/a」都折成同一个 N/A，表格上不能出现五种写法的查不到。</summary>
@@ -1249,36 +1225,6 @@
         </member>
         <member name="T:HistoryMinerva.WorkerCommands">
             <summary>后台 Worker 状态命令。转换执行走前端 <c>minerva.conversion.*</c>。</summary>
-        </member>
-        <member name="T:XamlGeneratedNamespace.GeneratedInternalTypeHelper">
-            <summary>
-            GeneratedInternalTypeHelper
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.CreateInstance(System.Type,System.Globalization.CultureInfo)">
-            <summary>
-            CreateInstance
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.GetPropertyValue(System.Reflection.PropertyInfo,System.Object,System.Globalization.CultureInfo)">
-            <summary>
-            GetPropertyValue
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.SetPropertyValue(System.Reflection.PropertyInfo,System.Object,System.Object,System.Globalization.CultureInfo)">
-            <summary>
-            SetPropertyValue
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.CreateDelegate(System.Type,System.Object,System.String)">
-            <summary>
-            CreateDelegate
-            </summary>
-        </member>
-        <member name="M:XamlGeneratedNamespace.GeneratedInternalTypeHelper.AddEventHandler(System.Reflection.EventInfo,System.Object,System.Delegate)">
-            <summary>
-            AddEventHandler
-            </summary>
         </member>
     </members>
 </doc>

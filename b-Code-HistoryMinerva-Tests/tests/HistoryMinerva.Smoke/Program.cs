@@ -92,6 +92,7 @@ try
     TestPackageBomWorkbooks(root);
     TestPackageViewModelFlow(root);
     TestPackageBrandLookup(root);
+    TestPackageOptions(root);
     Console.WriteLine("HistoryMinerva.Smoke: PASS");
 }
 finally
@@ -4672,6 +4673,34 @@ static void TestPackageViewModelFlow(string root)
     viewModel.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     Equal(1, brandQueries.Count, "已查到的品牌必须走缓存，重新打包不得再查");
+    True(!viewModel.ResultText.Contains("GB70 M8x20 → 东明", StringComparison.Ordinal),
+        "打包结论不再逐种复述品牌明细：查询经过由 HistoryApollo 逐轮输出到控制台：" + viewModel.ResultText);
+
+    // V4.10.5：关掉「AI 查品牌」——不调用、不拿缓存填，品牌列与 H 列留空，结论说清楚这一轮没查。
+    viewModel.SetBrandLookupEnabled(false);
+    Equal(string.Empty, viewModel.Parts.Single(row => row.PartName == "内六角螺钉").BrandText, "关掉开关后表里的品牌列立即留空");
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    viewModel.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    Equal(1, brandQueries.Count, "关掉开关后打包不得发起品牌查询");
+    Equal(string.Empty, viewModel.Parts.Single(row => row.PartName == "内六角螺钉").BrandText, "关掉开关时品牌列留空，不拿缓存填");
+    var offSheet = ReadSheetCells(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx"));
+    True(!offSheet.ContainsKey("H6") || offSheet["H6"].Length == 0, "关掉开关时外购件清单 H 列留空");
+    True(viewModel.ResultText.Contains("未开启 AI 查品牌", StringComparison.Ordinal), "打包结论必须说明这一轮没查品牌：" + viewModel.ResultText);
+    True(viewModel.LastOperationSucceeded, "关掉开关不影响打包成功");
+}
+
+static void TestPackageOptions(string root)
+{
+    var path = PackageOptions.PathIn(Path.Combine(root, "package-options"));
+    True(PackageOptions.LoadBrandLookup(path), "没有保存过时「AI 查品牌」默认开启");
+    PackageOptions.SaveBrandLookup(path, false);
+    True(!PackageOptions.LoadBrandLookup(path), "关掉后必须落盘，下次打开仍是关");
+    PackageOptions.SaveBrandLookup(path, true);
+    True(PackageOptions.LoadBrandLookup(path), "重新打开后必须落盘");
+    File.WriteAllText(path, "not json");
+    True(PackageOptions.LoadBrandLookup(path), "配置文件损坏时回到默认开启，而不是让页面打不开");
 }
 
 static void TestPackageBrandLookup(string root)
@@ -4695,6 +4724,37 @@ static void TestPackageBrandLookup(string root)
         parsed.Named["system"].Contains("{\"brand\": \"N/A\"}", StringComparison.Ordinal),
         "系统提示里的引号必须原样读回：" + parsed.Named["system"]);
 
+    // 查询词另行清洗（DEC-065）：全角括号保留为半角，STEP 导入残留与中文去掉，清洗后为空的不查。
+    // 样本是 2026-09-14 首次实打时现场装配体里的真实文件名。
+    foreach (var (fileName, expected) in new[]
+             {
+                 ("BNTB-M20（1.0）_step.SLDPRT", "BNTB-M20(1.0)"),
+                 ("MPTNZ-d25-L30_step.SLDPRT", "MPTNZ-d25-L30"),
+                 ("AS2201F-01-06SA_stp.SLDPRT", "AS2201F-01-06SA"),
+                 ("CP96SDB32-50C_0_0__stp.SLDASM", "CP96SDB32-50C"),
+                 ("CP96SDB32-50C-M9BL(0_0).sldasm", "CP96SDB32-50C-M9BL"),
+                 ("EML 200 Premium筛分仪.STEP-1.SLDPRT", "EML 200 Premium"),
+                 ("E-PSAGU25-625-F35-MMC20-T35-N20-SC20.SLDPRT", "E-PSAGU25-625-F35-MMC20-T35-N20-SC20"),
+                 ("F-M10X125F.SLDPRT", "F-M10X125F"),
+                 ("蒸笼（客户提供）.SLDPRT", ""),
+             })
+    {
+        var sample = screwEntry with { SourcePath = Path.Combine(root, "气缸", fileName) };
+        Equal(expected, PurchasedBrandLookup.QuerySpecification(sample), "查询词清洗：" + fileName);
+    }
+
+    True(
+        !PurchasedBrandLookup.IsQueryable(screwEntry with { SourcePath = Path.Combine(root, "蒸笼", "蒸笼（客户提供）.SLDPRT") }),
+        "清洗后为空的外购件不得发起查询");
+    var floatingJoint = screwEntry with { SourcePath = Path.Combine(root, "气动浮头", "F-M10X125F.SLDPRT"), PartName = string.Empty };
+    var jointPrompt = PurchasedBrandLookup.BuildPrompt(floatingJoint);
+    True(jointPrompt.Contains("品类（所在文件夹）：气动浮头", StringComparison.Ordinal), "提示词必须带上所在文件夹作品类：" + jointPrompt);
+    True(jointPrompt.Contains("外购件规格型号：F-M10X125F", StringComparison.Ordinal), "提示词必须用清洗后的查询词：" + jointPrompt);
+    Equal(
+        PurchasedBrandLookup.Key(screwEntry with { SourcePath = Path.Combine(root, "a", "AS2201F-01-06SA_stp.SLDPRT") }),
+        PurchasedBrandLookup.Key(screwEntry with { SourcePath = Path.Combine(root, "b", "AS2201F-01-06SA.SLDPRT") }),
+        "只差导入残留的同一型号必须算同一种，只查一次");
+
     // 回执读法：成功读 brand；各种「查不到」折成 N/A 且不算失败；失败回执与非 JSON 答复记为失败。
     Equal("SMC", PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\":\" SMC \"}")).Brand, "品牌取自 JSON 的 brand 字段");
     Equal(
@@ -4705,6 +4765,13 @@ static void TestPackageBrandLookup(string root)
     var absent = PurchasedBrandLookup.Read(CommandResult.Fail("未知指令: apollo.chat.ask"));
     True(absent.Failed && absent.Brand == PurchasedBrandLookup.NotAvailable, "Apollo 不在时必须是 N/A 加失败原因");
     True(PurchasedBrandLookup.Read(CommandResult.Ok("大概是 SMC")).Failed, "非 JSON 答复必须记为失败");
+
+    // 回执带结构化载荷（Apollo 的 Data）时照样只读正文；载荷怎么变都不影响品牌。
+    var withPayload = PurchasedBrandLookup.Read(CommandResult.Ok(
+        "  {\"brand\": \"AirTAC\"}",
+        """{"content":"{\"brand\": \"AirTAC\"}","usage":{"total":4517},"searches":[{"query":"F-M10X125F 气动浮头","results":6,"error":null}]}"""));
+    True(withPayload.Brand == "AirTAC" && !withPayload.Failed, "带载荷的回执照样读出品牌");
+    True(!PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\": \"SMC\"}", "not json")).Failed, "载荷读不出来不得让查询失败");
 
     // 熔断：Apollo 不可用时每一种都以同一个原因失败，连续失败到阈值就不再往下查，打包照常成功。
     var dir = Path.Combine(root, "package-brand-circuit");

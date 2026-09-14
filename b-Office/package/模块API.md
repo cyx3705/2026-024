@@ -564,7 +564,7 @@ minerva.plan.rename path=D:\设备\GHLSS-06-00 总装.SLDASM clearnumber=true
   - 整体打包：生成 `STP/` `DWG/` `PDF/` `BOM/` 四个目录，两张 BOM 由前端直接写。
     4.10.4 起写 BOM 前先经总线调 `apollo.chat.ask web=true` 查外购件品牌（软依赖，见第 6 节），
     查询期间本命令会多占几十秒到几分钟。4.10.5 起受 `minerva.ui.options option=brandai` 开关控制；
-    结论文本末尾逐种列出「型号 → 品牌｜查询明细」，因此是多行文本。
+    查询经过（提问、思考、搜索、答复）由 HistoryApollo 0.3.0 逐轮写进控制台，本命令的结论只报查到几种。
   - 其余三种：按对应管线转换。
 - **`Data`**（4.10.2 起）：属性整备 `AssemblyRenamePlan`、整体打包 `PackagePlan`，
   其余三种转换没有对应的公开计划类型，为 `null`。失败时不带 `Data`。
