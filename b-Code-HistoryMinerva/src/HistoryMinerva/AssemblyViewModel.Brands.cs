@@ -116,7 +116,7 @@ public sealed partial class AssemblyViewModel
                         }
 
                         _operationProgress?.Report(
-                            $"品牌 {progress}/{toQuery}：{entry.Specification} → {brand}"
+                            $"品牌 {progress}/{toQuery}：{PurchasedBrandLookup.QuerySpecification(entry)} → {brand}"
                             + (answer.Failed ? $"（{answer.Failure}）" : string.Empty));
                     }
                 }

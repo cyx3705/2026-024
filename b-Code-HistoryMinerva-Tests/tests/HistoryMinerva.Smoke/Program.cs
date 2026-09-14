@@ -4695,6 +4695,37 @@ static void TestPackageBrandLookup(string root)
         parsed.Named["system"].Contains("{\"brand\": \"N/A\"}", StringComparison.Ordinal),
         "系统提示里的引号必须原样读回：" + parsed.Named["system"]);
 
+    // 查询词另行清洗（DEC-065）：全角括号保留为半角，STEP 导入残留与中文去掉，清洗后为空的不查。
+    // 样本是 2026-09-14 首次实打时现场装配体里的真实文件名。
+    foreach (var (fileName, expected) in new[]
+             {
+                 ("BNTB-M20（1.0）_step.SLDPRT", "BNTB-M20(1.0)"),
+                 ("MPTNZ-d25-L30_step.SLDPRT", "MPTNZ-d25-L30"),
+                 ("AS2201F-01-06SA_stp.SLDPRT", "AS2201F-01-06SA"),
+                 ("CP96SDB32-50C_0_0__stp.SLDASM", "CP96SDB32-50C"),
+                 ("CP96SDB32-50C-M9BL(0_0).sldasm", "CP96SDB32-50C-M9BL"),
+                 ("EML 200 Premium筛分仪.STEP-1.SLDPRT", "EML 200 Premium"),
+                 ("E-PSAGU25-625-F35-MMC20-T35-N20-SC20.SLDPRT", "E-PSAGU25-625-F35-MMC20-T35-N20-SC20"),
+                 ("F-M10X125F.SLDPRT", "F-M10X125F"),
+                 ("蒸笼（客户提供）.SLDPRT", ""),
+             })
+    {
+        var sample = screwEntry with { SourcePath = Path.Combine(root, "气缸", fileName) };
+        Equal(expected, PurchasedBrandLookup.QuerySpecification(sample), "查询词清洗：" + fileName);
+    }
+
+    True(
+        !PurchasedBrandLookup.IsQueryable(screwEntry with { SourcePath = Path.Combine(root, "蒸笼", "蒸笼（客户提供）.SLDPRT") }),
+        "清洗后为空的外购件不得发起查询");
+    var floatingJoint = screwEntry with { SourcePath = Path.Combine(root, "气动浮头", "F-M10X125F.SLDPRT"), PartName = string.Empty };
+    var jointPrompt = PurchasedBrandLookup.BuildPrompt(floatingJoint);
+    True(jointPrompt.Contains("品类（所在文件夹）：气动浮头", StringComparison.Ordinal), "提示词必须带上所在文件夹作品类：" + jointPrompt);
+    True(jointPrompt.Contains("外购件规格型号：F-M10X125F", StringComparison.Ordinal), "提示词必须用清洗后的查询词：" + jointPrompt);
+    Equal(
+        PurchasedBrandLookup.Key(screwEntry with { SourcePath = Path.Combine(root, "a", "AS2201F-01-06SA_stp.SLDPRT") }),
+        PurchasedBrandLookup.Key(screwEntry with { SourcePath = Path.Combine(root, "b", "AS2201F-01-06SA.SLDPRT") }),
+        "只差导入残留的同一型号必须算同一种，只查一次");
+
     // 回执读法：成功读 brand；各种「查不到」折成 N/A 且不算失败；失败回执与非 JSON 答复记为失败。
     Equal("SMC", PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\":\" SMC \"}")).Brand, "品牌取自 JSON 的 brand 字段");
     Equal(

@@ -1,4 +1,7 @@
+using System.IO;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using HistoryMinerva.Contracts;
 using HistoryVulcan.Core.Commands;
 
@@ -34,15 +37,37 @@ internal static class PurchasedBrandLookup
     private const int MaxBrandLength = 60;
 
     /// <summary>
-    /// 「不要猜」写得这么重，是因为一个编出来的品牌比 N/A 更糟：采购会照着它去询价。
+    /// 一个编出来的品牌比 N/A 更糟：采购会照着它去询价，所以「不许凭型号长相猜」一直在。
+    /// 4.10.5 放宽的是**证据**而不是猜测（DEC-065）：代理商、电商页把该型号或同系列写在某品牌下就算数——
+    /// 4.10.4 只认「明确对应这个型号」，模型把 F-M10X125F 标着 AirTAC 的商品页也拒收了。
+    /// 三步检索策略写死在这里，是因为模型自己往往只搜一次完整型号，而目录件的长型号在网页上几乎从不逐字出现。
     /// GB / DIN / ISO 标准件点名说明，是因为模型最爱给「GB70 M8x20」这类件随手安一个大厂。
     /// 提示里必须出现 json 字样——DeepSeek 的 JSON 输出模式要求如此。
     /// </summary>
     private const string SystemPrompt =
-        "你是工业采购助手，负责确认外购件的品牌（生产厂家）。先用 web_search 联网搜索规格型号，再根据搜索结果判断。"
-        + "规则：只采信搜索结果里明确对应这个型号的品牌；GB、DIN、ISO 等国标或通用标准件没有特定品牌时视为查不到；"
-        + "查不到或不能确定时 brand 写 N/A，绝对不要猜。"
+        "你是工业采购助手，负责确认外购件的品牌（生产厂家）。"
+        + "搜索策略：先用 web_search 搜完整型号；结果里没有页面对应这个型号时，换成「型号 + 品类」再搜，品类参考所在文件夹名；"
+        + "仍没有时，搜型号去掉尺寸参数后的系列代号加品类。"
+        + "判断规则：只要有搜索结果把这个型号、或同一系列型号，明确标在某个品牌名下（官网、代理商、电商商品页写明品牌都算），就采信那个品牌；"
+        + "找不到任何把型号或系列对应到品牌的页面时 brand 写 N/A，不要凭型号长得像就猜；GB、DIN、ISO 等通用标准件没有特定品牌时写 N/A。"
+        + "品牌写厂家常用英文名，例如 SMC、AirTAC、MISUMI。"
         + "只输出一个 json 对象，例如 {\"brand\": \"SMC\"} 或 {\"brand\": \"N/A\"}，不要输出其他文字。";
+
+    /// <summary>
+    /// STEP 导入留在文件名尾巴上的东西：<c>_step</c>、<c>_stp</c>、<c>.STEP-1</c>、<c>(0_0)</c>、<c>_0_0_</c>。
+    /// 它们进了搜索词，搜到的就是一堆模型下载站，而不是那个型号的商品页。
+    /// </summary>
+    private static readonly Regex ImportResidue = new(
+        @"(\.step-\d+|[_\s.\-]+(step|stp|x_t|igs|iges)|\(\d+(_\d+)*\)|(_\d+){2,}_*)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex ChineseText = new(
+        @"[\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]+",
+        RegexOptions.CultureInvariant);
+
+    private static readonly Regex EmptyBrackets = new(@"\(\s*\)|\[\s*\]", RegexOptions.CultureInvariant);
+
+    private static readonly Regex Whitespace = new(@"\s+", RegexOptions.CultureInvariant);
 
     private static readonly HashSet<string> NotFoundWords = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -54,11 +79,41 @@ internal static class PurchasedBrandLookup
     /// 规格为空的外购件不查：只凭「气缸」两个字搜出来的品牌没有意义，还白花一次计费调用。
     /// </summary>
     public static bool IsQueryable(PackagePartEntry entry)
-        => entry.Category == PackagePartCategory.Purchased && entry.Specification.Trim().Length > 0;
+        => entry.Category == PackagePartCategory.Purchased && QuerySpecification(entry).Length > 0;
 
-    /// <summary>去重与缓存的键：同规格同名称的外购件只查一次。</summary>
+    /// <summary>去重与缓存的键：同查询词同名称的外购件只查一次。</summary>
     public static string Key(PackagePartEntry entry)
-        => entry.Specification.Trim().ToUpperInvariant() + "\u001f" + entry.PartName.Trim();
+        => QuerySpecification(entry).ToUpperInvariant() + "\u001f" + entry.PartName.Trim();
+
+    /// <summary>
+    /// 搜索用的型号，从**文件主名**另行清洗，不复用 BOM 上的规格（DEC-065）。
+    ///
+    /// BOM 的规格按 <see cref="PurchasedPartNaming"/> 切，那是交付给采购的口径，不为搜索去改它；
+    /// 但那条口径把全角括号当中文丢掉——<c>BNTB-M20（1.0）</c> 在 BOM 上是 <c>BNTB-M201.0</c>，
+    /// 拿它去搜就是搜一个不存在的型号。这里先全角转半角，再剥导入残留，最后才去中文。
+    /// </summary>
+    internal static string QuerySpecification(PackagePartEntry entry)
+    {
+        var text = Path.GetFileNameWithoutExtension(entry.SourcePath ?? string.Empty).Normalize(NormalizationForm.FormKC);
+        string previous;
+        do
+        {
+            previous = text;
+            text = ImportResidue.Replace(text, string.Empty).Trim(' ', '_', '-', '.');
+        }
+        while (!string.Equals(text, previous, StringComparison.Ordinal));
+
+        text = ChineseText.Replace(text, " ");
+        text = EmptyBrackets.Replace(text, " ");
+        return Whitespace.Replace(text, " ").Trim(' ', '_', '-', '.');
+    }
+
+    /// <summary>
+    /// 品类提示：外购件所在文件夹名（气缸、气动浮头、螺纹杆……）。现场按品类建文件夹，
+    /// 这是模型手里唯一一条「这是个什么东西」的线索，一个光秃秃的型号它常常连搜什么品类都猜错。
+    /// </summary>
+    internal static string FolderCategory(PackagePartEntry entry)
+        => Path.GetFileName(Path.GetDirectoryName(entry.SourcePath ?? string.Empty) ?? string.Empty) ?? string.Empty;
 
     /// <summary>发给总线的那一行。参数值一律经 <see cref="CommandParser.QuoteArg"/> 编码，不含换行。</summary>
     public static string BuildCommand(PackagePartEntry entry)
@@ -68,11 +123,12 @@ internal static class PurchasedBrandLookup
 
     internal static string BuildPrompt(PackagePartEntry entry)
     {
-        var specification = entry.Specification.Trim();
-        var name = entry.PartName.Trim();
-        return name.Length == 0
-            ? $"外购件规格型号：{specification}。请联网确认它的品牌，按 json 输出。"
-            : $"外购件规格型号：{specification}；名称：{name}。请联网确认它的品牌，按 json 输出。";
+        var parts = new List<string> { $"外购件规格型号：{QuerySpecification(entry)}" };
+        if (entry.PartName.Trim() is { Length: > 0 } name)
+            parts.Add($"名称：{name}");
+        if (FolderCategory(entry).Trim() is { Length: > 0 } folder)
+            parts.Add($"品类（所在文件夹）：{folder}");
+        return string.Join("；", parts) + "。请联网确认它的品牌，按 json 输出。";
     }
 
     /// <summary>把 Apollo 的回执读成一个答案。</summary>
