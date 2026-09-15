@@ -88,6 +88,7 @@ try
     TestImportIdentityAndSessionFaultGuards();
     TestPurchasedPartNaming();
     TestPurchasedBoundary();
+    TestReferencePartsBoundary(root);
     TestPackagePlanning(root);
     TestPackageBomWorkbooks(root);
     TestPackageViewModelFlow(root);
@@ -4339,6 +4340,67 @@ static void TestPurchasedBoundary()
         "前缀匹配必须按整段实例名，气缸-10 不是气缸-1 的孩子");
     True(!SolidWorksAssemblyExplorer.HasPurchasedAncestor(string.Empty, purchased),
         "空实例名不得判为外购件内部件");
+}
+
+static void TestReferencePartsBoundary(string root)
+{
+    var directory = Path.Combine(root, "reference-parts-boundary");
+    var referenceDirectory = Path.Combine(directory, ConversionPathLayout.ReferencePartsDirectoryName, "供应商样件");
+    Directory.CreateDirectory(referenceDirectory);
+    Directory.CreateDirectory(Path.Combine(directory, "STP"));
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAssembly = Path.Combine(directory, "ZS-00 总装.SLDASM");
+    var machined = Path.Combine(directory, "ZS-01 底板.SLDPRT");
+    var referencePart = Path.Combine(referenceDirectory, "供应商轴承.SLDPRT");
+    var referenceDrawing = Path.ChangeExtension(referencePart, ConversionPathLayout.SolidWorksDrawingExtension);
+    foreach (var path in new[] { rootAssembly, machined, referencePart, referenceDrawing })
+        File.WriteAllText(path, "cad");
+
+    True(ConversionPathLayout.IsUnderReferencePartsDirectory(referencePart),
+        "参考部件目录的任意层级后代必须被识别");
+    True(!ConversionPathLayout.IsUnderReferencePartsDirectory(Path.Combine(directory, "参考部件备份", "零件.SLDPRT")),
+        "参考部件判据必须按完整目录段匹配，不得误伤相似目录名");
+
+    var probe = new AssemblyProbeResult(
+        rootAssembly,
+        [
+            new AssemblyOccurrence("底板-1", null, machined, false, false, false, identity, null),
+            new AssemblyOccurrence("供应商样件-1/轴承-1", "供应商样件-1", referencePart, false, false, false, identity, null),
+        ],
+        [machined, referencePart],
+        0, 0, 2, 0, [],
+        [new AssemblyDocumentReading(rootAssembly,
+        [
+            new AssemblyChild("底板-1", machined, false, false, identity),
+            new AssemblyChild("供应商样件-1/轴承-1", referencePart, false, false, identity),
+        ], [])],
+        PartProperties: null,
+        // 即便旧探查结果已把它带成外购件，计划器仍必须兜底排除。
+        PurchasedParts: [new PurchasedPartReading(referencePart, 3)]);
+
+    var package = PackagePlanner.Create(probe);
+    True(package.CanPack, "留下机加件后打包计划仍必须可执行");
+    True(package.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, referencePart)),
+        "参考部件不得进入任一 BOM、STEP 或工程图导出计划");
+    Equal(1, package.StepTargets.Count, "参考部件不得增加 STEP 作业");
+    Equal(0, package.DrawingTargets.Count, "参考部件的工程图不得导出 DWG 或 PDF");
+    True(package.Purchased.Count == 0, "参考部件不得被识别成外购件");
+
+    var rename = PropertyPrepPlanner.Create(probe, "ZS");
+    True(rename.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, referencePart)),
+        "参考部件不得进改名或属性整备清单");
+    True(rename.Unnumbered.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, referencePart)),
+        "参考部件不得作为未编号内部件泄入属性整备结果");
+    var forgedReferenceEntry = new RenameEntry(
+        "reference", referencePart, referencePart, "ZS-99", true, [], 1);
+    True(!AssemblyRenamePlan.IsWritablePart(forgedReferenceEntry),
+        "属性写入判据必须独立拒绝参考部件");
+    Throws<InvalidDataException>(() => WorkerRequestValidator.Validate(new AssemblyRenameRequest(
+        "reference-rename", rootAssembly, "ZS", [forgedReferenceEntry], WriteProperties: true)));
+    Throws<InvalidDataException>(() => WorkerRequestValidator.Validate(new PackageRequest(
+        "reference-package",
+        rootAssembly,
+        [new PackageJob("reference-drawing", referenceDrawing, Path.Combine(directory, "STP", "供应商轴承.DWG"), PackageArtifact.Dwg)])));
 }
 
 static void TestPackagePlanning(string root)

@@ -69,6 +69,7 @@ public static class ConversionPathLayout
     public const string DwgDirectoryName = "DWG";
     public const string PdfDirectoryName = "PDF";
     public const string BomDirectoryName = "BOM";
+    public const string ReferencePartsDirectoryName = "参考部件";
 
     /// <summary>源零件扩展名。SW 特征整备的源就是 <c>.SLDPRT</c> 本身。</summary>
     public static string GetSourcePartExtension(ConversionSourceFormat format)
@@ -193,5 +194,40 @@ public static class ConversionPathLayout
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// 文件是否位于名为 <c>参考部件</c> 的目录之下。
+    ///
+    /// 该目录是现场明确标出的参考资料，不是外购件目录：其下的零件不参与属性整备，
+    /// 也不进入任一打包清单或导出作业。检查目录段而不是字符串前缀，避免把
+    /// <c>参考部件备份</c> 之类的无关目录误排除。
+    /// </summary>
+    public static bool IsUnderReferencePartsDirectory(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return false;
+
+        try
+        {
+            for (var directory = Path.GetDirectoryName(Path.GetFullPath(filePath.Trim()));
+                 !string.IsNullOrEmpty(directory);
+                 directory = Path.GetDirectoryName(directory))
+            {
+                if (string.Equals(
+                        Path.GetFileName(directory),
+                        ReferencePartsDirectoryName,
+                        StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        return false;
     }
 }
