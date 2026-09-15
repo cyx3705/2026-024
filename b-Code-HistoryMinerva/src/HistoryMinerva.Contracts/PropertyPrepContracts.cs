@@ -154,6 +154,7 @@ public sealed record AssemblyRenamePlan(
     /// <summary>属性只写识别出的零件：装配体和未编号的内部件都不碰。</summary>
     public static bool IsWritablePart(RenameEntry entry)
         => entry.AssignsDrawingNumber
+           && !ConversionPathLayout.IsUnderReferencePartsDirectory(entry.SourcePath)
            && ConversionPathLayout.HasExtension(
                entry.SourcePath, ConversionPathLayout.SolidWorksPartExtension);
 

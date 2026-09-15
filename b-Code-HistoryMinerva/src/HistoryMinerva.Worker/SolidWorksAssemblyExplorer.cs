@@ -229,7 +229,8 @@ internal static class SolidWorksAssemblyExplorer
                 foreach (var component in descendants)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (ConversionPathLayout.IsOutsideAssemblyDirectory(
+                    if (!ConversionPathLayout.IsUnderReferencePartsDirectory(interop.GetComponentPath(component))
+                        && ConversionPathLayout.IsOutsideAssemblyDirectory(
                             interop.GetComponentPath(component), rootAssemblyPath))
                     {
                         purchasedIds.Add(interop.GetComponentName(component));
@@ -779,6 +780,10 @@ internal static class SolidWorksAssemblyExplorer
         IReadOnlySet<string>? purchasedIds)
     {
         var rawPath = interop.GetComponentPath(component);
+        // 「参考部件」不是外购件：它只是供装配定位的参考资料，所有后代都必须从
+        // 属性整备和整体打包的探查结果里消失，且绝不能记进外购件 BOM。
+        if (ConversionPathLayout.IsUnderReferencePartsDirectory(rawPath))
+            return true;
         var isPurchased = ConversionPathLayout.IsOutsideAssemblyDirectory(rawPath, rootAssemblyPath);
         var underPurchased = purchasedIds is not null
             && HasPurchasedAncestor(interop.GetComponentName(component), purchasedIds);

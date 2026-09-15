@@ -161,6 +161,7 @@ public static class PropertyPrepPlanner
         var sequence = 1;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var skippedPurchased = 0;
+        var skippedReferenceParts = 0;
         foreach (var child in document.Children)
         {
             if (!Path.IsPathFullyQualified(child.SourcePath))
@@ -174,6 +175,12 @@ public static class PropertyPrepPlanner
             {
                 if (planned.TryGetValue(childPath, out var existing))
                     existing.AddParent(assemblyPath);
+                continue;
+            }
+
+            if (ConversionPathLayout.IsUnderReferencePartsDirectory(childPath))
+            {
+                skippedReferenceParts++;
                 continue;
             }
 
@@ -225,6 +232,8 @@ public static class PropertyPrepPlanner
 
         if (skippedPurchased > 0)
             warnings.Add($"已跳过 {skippedPurchased} 个外购件（子文件夹，与装配体不同级）。");
+        if (skippedReferenceParts > 0)
+            warnings.Add($"已跳过 {skippedReferenceParts} 个参考部件目录下的文件。");
     }
 
     private static bool ShouldTreatAsPart(bool isSubAssembly, DrawingNumber parentNumber)
@@ -257,6 +266,8 @@ public static class PropertyPrepPlanner
                 continue;
             var childPath = Path.GetFullPath(child.SourcePath);
             if (!seen.Add(childPath) || planned.ContainsKey(childPath))
+                continue;
+            if (ConversionPathLayout.IsUnderReferencePartsDirectory(childPath))
                 continue;
             if (ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, rootPath))
                 continue;

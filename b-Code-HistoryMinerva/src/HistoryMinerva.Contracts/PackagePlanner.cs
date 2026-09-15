@@ -83,6 +83,11 @@ public static class PackagePlanner
             var path = Path.GetFullPath(occurrence.SourcePath);
             if (!ConversionPathLayout.HasExtension(path, ConversionPathLayout.SolidWorksPartExtension))
                 continue;
+            if (ConversionPathLayout.IsUnderReferencePartsDirectory(path))
+            {
+                warnings.Add($"跳过参考部件目录下的零件：{path}");
+                continue;
+            }
             if (!File.Exists(path))
             {
                 warnings.Add($"跳过未解析的零件引用：{path}");
@@ -123,6 +128,12 @@ public static class PackagePlanner
             catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
             {
                 warnings.Add($"跳过路径无法解析的外购件：{reading.SourcePath}");
+                continue;
+            }
+
+            if (ConversionPathLayout.IsUnderReferencePartsDirectory(path))
+            {
+                warnings.Add($"跳过参考部件目录下的零件：{path}");
                 continue;
             }
 

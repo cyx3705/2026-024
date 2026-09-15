@@ -172,6 +172,8 @@ internal static class WorkerRequestValidator
             ValidateSolidWorksDocument(entry.TargetPath, mustExist: false);
             var source = Path.GetFullPath(entry.SourcePath);
             var target = Path.GetFullPath(entry.TargetPath);
+            if (ConversionPathLayout.IsUnderReferencePartsDirectory(source))
+                throw new InvalidDataException($"参考部件目录下的文件不得改名或整备属性：{source}");
             if (!sources.Add(source))
                 throw new InvalidDataException($"改名清单存在重复源文件：{source}");
             if (!targets.Add(target))
@@ -220,6 +222,8 @@ internal static class WorkerRequestValidator
                 throw new InvalidDataException($"打包作业路径必须是绝对路径：{job.SourcePath}");
             if (!File.Exists(job.SourcePath))
                 throw new FileNotFoundException("打包源文件不存在。", job.SourcePath);
+            if (ConversionPathLayout.IsUnderReferencePartsDirectory(job.SourcePath))
+                throw new InvalidDataException($"参考部件目录下的文件不得导出：{job.SourcePath}");
 
             var expectedSource = job.Artifact == PackageArtifact.Step
                 ? ConversionPathLayout.SolidWorksPartExtension
