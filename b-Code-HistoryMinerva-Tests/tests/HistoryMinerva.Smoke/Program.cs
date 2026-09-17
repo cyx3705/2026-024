@@ -4305,17 +4305,22 @@ static void TestPurchasedPartNaming()
                  ("深沟球轴承 6205.SLDPRT", "6205", "深沟球轴承"),
                  ("SKF-6205-2RS.SLDPRT", "SKF-6205-2RS", ""),
                  ("油封 TC-25-40-7.SLDPRT", "TC-25-40-7", "油封"),
+                 // V4.11.1（DEC-069）：含汉字的词整体是名称，没有明显型号前缀的字母不抠出来。
+                 ("G型O型圈 G56.SLDPRT", "G56", "G型O型圈"),
+                 ("G型O型圈G50.SLDPRT", "G50", "G型O型圈"),
+                 ("O型圈.SLDPRT", "", "O型圈"),
+                 ("V型块 VB-40.SLDPRT", "VB-40", "V型块"),
+                 // 词头词尾贴着带数字的型号段才剥出去，各段以空格分开。
+                 ("M8x20内六角螺钉GB70.SLDPRT", "M8x20 GB70", "内六角螺钉"),
+                 // 全角括号不是汉字：整个词是型号。
+                 ("BNTB-M20（1.0）_step.SLDPRT", "BNTB-M20（1.0）_step", ""),
+                 ("蒸笼（客户提供）.SLDPRT", "", "蒸笼（客户提供）"),
              })
     {
         PurchasedPartNaming.Split(fileName, out var actualSpecification, out var actualName);
-        Equal(specification, actualSpecification, $"{fileName} 的规格必须是非中文字段");
-        Equal(name, actualName, $"{fileName} 的名称必须是中文字段");
+        Equal(specification, actualSpecification, $"{fileName} 的规格");
+        Equal(name, actualName, $"{fileName} 的名称");
     }
-
-    // 中英夹杂无空格：仍然分得开，只是型号被拼在一起。这是已知边界，钉住它。
-    PurchasedPartNaming.Split("M8x20内六角螺钉GB70.SLDPRT", out var mixedSpecification, out var mixedName);
-    Equal("M8x20GB70", mixedSpecification, "无空格的中英夹杂名，非中文段直接相接");
-    Equal("内六角螺钉", mixedName, "无空格时中文段仍必须完整切出来");
 }
 
 static void TestPurchasedBoundary()
