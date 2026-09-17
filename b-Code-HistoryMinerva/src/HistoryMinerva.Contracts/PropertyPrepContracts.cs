@@ -129,14 +129,23 @@ public sealed record PartPropertyReading(
     string HeatTreatment);
 
 /// <summary>按所选装配体层级生成的改名计划。纯内存，不碰 CAD。</summary>
+/// <param name="Excluded">
+/// V4.11：因件别不参与编号的文件——被设成外购件或参考的同级件，以及子文件夹里的外购件。
+/// 它们不进 Worker 请求，只在表里占一行，让用户看得见、点得回来。
+/// 为 null 等同于空（V4.10 及以前的计划没有这一项）。
+/// </param>
 public sealed record AssemblyRenamePlan(
     string SourceAssemblyPath,
     string DrawingPrefix,
     IReadOnlyList<RenameEntry> Entries,
     IReadOnlyList<RenameEntry> Unnumbered,
     IReadOnlyList<string> BlockingIssues,
-    IReadOnlyList<string> Warnings)
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<RenameEntry>? Excluded = null)
 {
+    /// <inheritdoc cref="Excluded"/>
+    public IReadOnlyList<RenameEntry> ExcludedEntries => Excluded ?? [];
+
     public bool CanRename =>
         BlockingIssues.Count == 0
         && Entries.Any(entry => !SamePath(entry.SourcePath, entry.TargetPath));

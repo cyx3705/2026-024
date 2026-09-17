@@ -461,8 +461,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         var rowId = command.GetString("id")?.Trim();
         if (string.IsNullOrWhiteSpace(fieldText) || string.IsNullOrWhiteSpace(rowId))
             return CommandResult.Fail("需要 field 和 id");
-        if (fieldText is not ("name" or "material" or "surface" or "heat"))
-            return CommandResult.Fail("未知列；单元格只支持 name、material、surface、heat");
+        if (fieldText is not ("name" or "kind" or "material" or "surface" or "heat"))
+            return CommandResult.Fail("未知列；单元格只支持 name、kind、material、surface、heat");
 
         var bus = _context?.Bus;
         if (bus is null)
@@ -470,6 +470,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
         if (fieldText == "name")
             return await EditNameAsync(bus, command, rowId).ConfigureAwait(true);
+        if (fieldText == "kind")
+            return await CycleKindAsync(command, rowId).ConfigureAwait(true);
 
         var field = ParsePartPropertyField(fieldText);
         var label = DescribeField(field);
@@ -528,6 +530,24 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
         await RefreshPartsTableAsync(command).ConfigureAwait(true);
         return CommandResult.Ok($"名称已改为 {model.GetPartName(rowId)}");
+    }
+
+    /// <summary>
+    /// V4.11：点件别格，机加件 → 外购件 → 参考 轮换。手感照 Janus「操作」格——点了就改，不弹窗。
+    ///
+    /// 件别一变，属性整备的编号和打包的清单都要重算，所以刷的是整张表而不只是这一格；
+    /// 属性整备下写属性的行也可能变了，底下那排框的统一态要跟着对齐。
+    /// 改不了（没解析、正在执行、参考部件目录）时命令仍然成功，只把原因说出来（REQ-002）。
+    /// </summary>
+    private async Task<CommandResult> CycleKindAsync(CommandContext command, string rowId)
+    {
+        var model = GetViewModel();
+        var name = model.FindRow(rowId) is { } row ? Path.GetFileName(row.SourcePath) : rowId;
+        if (model.CyclePartKind(rowId, out var reason) is not { } next)
+            return CommandResult.Ok(reason);
+
+        await RefreshPropertyPrepTableAsync(command).ConfigureAwait(true);
+        return CommandResult.Ok($"{name} 的件别已改为{PartKinds.Label(next)}");
     }
 
     /// <summary>「（不写）」这一项，空串也算——两者在模型层是同一个意思。</summary>
@@ -849,12 +869,12 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 ] },
                 { "case": "SolidWorks .SLDASM → 属性整备（改名）", "type": "stack", "gap": "tight", "children": [
                   { "type": "panel", "id": "sw-property-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.property.today", "text": "一键设置日期" }, { "kind": "button", "action": "minerva.conversion.run", "text": "写入" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
-                  { "type": "table", "id": "sw-property-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号", "width": "150" }, { "key": "name", "title": "名称", "width": "*", "cellAction": "minerva.cell.name" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "material", "title": "材料", "width": "110", "cellAction": "minerva.cell.material" }, { "key": "surface", "title": "表面处理", "width": "110", "cellAction": "minerva.cell.surface" }, { "key": "heat", "title": "热处理", "width": "110", "cellAction": "minerva.cell.heat" }] },
+                  { "type": "table", "id": "sw-property-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号", "width": "150" }, { "key": "name", "title": "名称", "width": "*", "cellAction": "minerva.cell.name" }, { "key": "category", "title": "件别", "width": "90", "cellAction": "minerva.cell.kind" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "material", "title": "材料", "width": "110", "cellAction": "minerva.cell.material" }, { "key": "surface", "title": "表面处理", "width": "110", "cellAction": "minerva.cell.surface" }, { "key": "heat", "title": "热处理", "width": "110", "cellAction": "minerva.cell.heat" }] },
                   { "type": "panel", "id": "sw-property-options", "text": "图号前缀", "rows": [{ "mode": "flex", "widgets": [{ "kind": "textbox", "id": "prefix", "label": "图号前缀", "commitAction": "minerva.options.prefix", "flex": true, "minWidth": 160 }, { "kind": "textbox", "id": "designer", "label": "设计", "commitAction": "minerva.property.designer", "flex": true, "minWidth": 120 }] }, { "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-material", "label": "材料", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "materials" } }, "commitAction": "minerva.property.material" }, { "kind": "textbox", "id": "batch-surface", "label": "表面处理", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "surfaces" } }, "commitAction": "minerva.property.surface" }, { "kind": "textbox", "id": "batch-heat", "label": "热处理", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "heats" } }, "commitAction": "minerva.property.heat" }] }] }
                 ] },
-                { "case": "SolidWorks .SLDASM → 整体打包（STP/DWG/PDF/BOM）", "type": "stack", "gap": "tight", "children": [
+                { "case": "SolidWorks .SLDASM → 整体打包（零件采购：BOM + 图纸）", "type": "stack", "gap": "tight", "children": [
                   { "type": "panel", "id": "sw-package-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "打包" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
-                  { "type": "table", "id": "sw-package-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号 / 规格", "width": "170" }, { "key": "name", "title": "名称", "width": "*" }, { "key": "quantity", "title": "数量", "width": "60" }, { "key": "category", "title": "件别", "width": "70" }, { "key": "brand", "title": "品牌", "width": "110" }, { "key": "hasdrawing", "title": "工程图", "width": "70" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "detail", "title": "结果", "width": "2*" }] },
+                  { "type": "table", "id": "sw-package-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号 / 规格", "width": "170" }, { "key": "name", "title": "名称", "width": "*" }, { "key": "quantity", "title": "数量", "width": "60" }, { "key": "category", "title": "件别", "width": "90", "cellAction": "minerva.cell.kind" }, { "key": "brand", "title": "品牌", "width": "110" }, { "key": "hasdrawing", "title": "工程图", "width": "70" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "detail", "title": "结果", "width": "2*" }] },
                   { "type": "panel", "id": "sw-package-options", "text": "打包选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "switch", "id": "package-brand-ai", "label": "AI 查品牌（DeepSeek 联网搜索，按次计费）", "value": "__BRAND_AI__", "action": "minerva.options.brandai" }] }] }
                 ] }
               ] }
@@ -883,6 +903,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             { "id": "minerva.property.material", "title": "一键设置材料", "command": "minerva.ui.property", "args": { "field": "material", "value": "{value}" }, "summary": "把「材料」一次刷满全部零件" },
             { "id": "minerva.property.surface", "title": "一键设置表面处理", "command": "minerva.ui.property", "args": { "field": "surface", "value": "{value}" }, "summary": "把「表面处理」一次刷满全部零件" },
             { "id": "minerva.property.heat", "title": "一键设置热处理", "command": "minerva.ui.property", "args": { "field": "heat", "value": "{value}" }, "summary": "把「热处理」一次刷满全部零件" },
+            { "id": "minerva.cell.kind", "title": "切换件别", "command": "minerva.ui.cell", "args": { "field": "kind", "id": "{id}" }, "summary": "点一下切换这一行的件别：机加件 → 外购件 → 参考" },
             { "id": "minerva.cell.name", "title": "修改名称", "command": "minerva.ui.cell", "args": { "field": "name", "id": "{id}" }, "summary": "修改这一行的名称；文件名是图号加空格加名称" },
             { "id": "minerva.cell.material", "title": "修改材料", "command": "minerva.ui.cell", "args": { "field": "material", "id": "{id}" }, "summary": "修改这一行零件的「材料」" },
             { "id": "minerva.cell.surface", "title": "修改表面处理", "command": "minerva.ui.cell", "args": { "field": "surface", "id": "{id}" }, "summary": "修改这一行零件的「表面处理」" },

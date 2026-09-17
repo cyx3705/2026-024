@@ -3191,8 +3191,10 @@ static void TestUiModuleRegistration(string root)
                 "属性整备必须在顶部提供一键设置日期按钮");
             True(!pageJson.Contains("按空格洗图号", StringComparison.Ordinal),
                 "V4.9 删图号＝清空前缀后写入，顶部不得再留一个同义按钮（DEC-057）");
-            True(pageJson.Contains("\"id\": \"sw-property-parts\", \"dataSource\": { \"command\": \"minerva.ui.data\", \"args\": { \"view\": \"parts\" } }, \"columns\": [{ \"key\": \"drawing\", \"title\": \"图号\", \"width\": \"150\" }, { \"key\": \"name\", \"title\": \"名称\", \"width\": \"*\", \"cellAction\": \"minerva.cell.name\" }, { \"key\": \"status\", \"title\": \"状态\", \"width\": \"80\" }, { \"key\": \"material\", \"title\": \"材料\", \"width\": \"110\", \"cellAction\": \"minerva.cell.material\" }, { \"key\": \"surface\", \"title\": \"表面处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.surface\" }, { \"key\": \"heat\", \"title\": \"热处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.heat\" }]", StringComparison.Ordinal),
-                "属性整备零件表必须是图号、名称、状态加三个可点属性列（V4.9 把「文件」拆成图号与名称）");
+            True(pageJson.Contains("\"id\": \"sw-property-parts\", \"dataSource\": { \"command\": \"minerva.ui.data\", \"args\": { \"view\": \"parts\" } }, \"columns\": [{ \"key\": \"drawing\", \"title\": \"图号\", \"width\": \"150\" }, { \"key\": \"name\", \"title\": \"名称\", \"width\": \"*\", \"cellAction\": \"minerva.cell.name\" }, { \"key\": \"category\", \"title\": \"件别\", \"width\": \"90\", \"cellAction\": \"minerva.cell.kind\" }, { \"key\": \"status\", \"title\": \"状态\", \"width\": \"80\" }, { \"key\": \"material\", \"title\": \"材料\", \"width\": \"110\", \"cellAction\": \"minerva.cell.material\" }, { \"key\": \"surface\", \"title\": \"表面处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.surface\" }, { \"key\": \"heat\", \"title\": \"热处理\", \"width\": \"110\", \"cellAction\": \"minerva.cell.heat\" }]", StringComparison.Ordinal),
+                "属性整备零件表必须是图号、名称、可点件别、状态加三个可点属性列（V4.11 加件别）");
+            True(pageJson.Contains("{ \"key\": \"category\", \"title\": \"件别\", \"width\": \"90\", \"cellAction\": \"minerva.cell.kind\" }, { \"key\": \"brand\"", StringComparison.Ordinal),
+                "V4.11：打包零件表的件别列必须可点");
             True(!pageJson.Contains("改名后预览", StringComparison.Ordinal),
                 "改名后的名字由图号列与名称列直接给出，不得再有独立的改名后预览列");
             True(pageJson.Contains("\"id\": \"prefix\", \"label\": \"图号前缀\", \"commitAction\": \"minerva.options.prefix\"", StringComparison.Ordinal),
@@ -3220,6 +3222,8 @@ static void TestUiModuleRegistration(string root)
             var actionsResult = context.Bus.ExecuteAsync("minerva.ui.actions", "UI").GetAwaiter().GetResult();
             var actionsJson = actionsResult.Data as string ?? actionsResult.Message;
             True(actionsResult.Success && actionsJson.TrimStart().StartsWith("{", StringComparison.Ordinal), "Aurora 动作声明必须返回 JSON 字符串");
+            True(actionsJson.Contains("\"id\": \"minerva.cell.kind\", \"title\": \"切换件别\", \"command\": \"minerva.ui.cell\", \"args\": { \"field\": \"kind\", \"id\": \"{id}\" }", StringComparison.Ordinal),
+                "V4.11：件别格动作必须按行 id 发 minerva.ui.cell field=kind");
             using var actionSet = JsonDocument.Parse(actionsJson);
             True(actionSet.RootElement.GetProperty("actions").GetArrayLength() >= 4,
                 "Minerva 页面必须声明转换和来源动作");
@@ -4380,8 +4384,22 @@ static void TestReferencePartsBoundary(string root)
 
     var package = PackagePlanner.Create(probe);
     True(package.CanPack, "留下机加件后打包计划仍必须可执行");
-    True(package.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, referencePart)),
+    True(package.Machined.Concat(package.Purchased).Concat(package.StepTargets).Concat(package.DrawingTargets)
+            .All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, referencePart)),
         "参考部件不得进入任一 BOM、STEP 或工程图导出计划");
+    Equal(PackagePartCategory.Reference,
+        package.Entries.Single(entry => AssemblyRenamePlan.SamePath(entry.SourcePath, referencePart)).Category,
+        "V4.11：参考部件在打包表里只作为「参考」一行出现");
+    // 参考部件目录下的件别锁死：用户的改写记账不得把它变成机加件，否则 Worker 会拒绝整批导出。
+    var forcedKinds = new Dictionary<string, PackagePartCategory>(StringComparer.OrdinalIgnoreCase)
+    {
+        [referencePart] = PackagePartCategory.Machined,
+    };
+    var forced = PackagePlanner.Create(probe, forcedKinds);
+    True(forced.StepTargets.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, referencePart)),
+        "参考部件目录下的件不得因改写记账而导出");
+    Equal(PackagePartCategory.Reference, PartKinds.Next(PackagePartCategory.Reference, referencePart, rootAssembly),
+        "参考部件目录下的件点件别格不得换到别的件别");
     Equal(1, package.StepTargets.Count, "参考部件不得增加 STEP 作业");
     Equal(0, package.DrawingTargets.Count, "参考部件的工程图不得导出 DWG 或 PDF");
     True(package.Purchased.Count == 0, "参考部件不得被识别成外购件");
@@ -4451,9 +4469,12 @@ static void TestPackagePlanning(string root)
     Equal("GHLSS 机加件清单.xlsx", plan.MachinedBomFileName, "机加件 BOM 必须带总装前缀");
     Equal("GHLSS 外购件清单.xlsx", plan.PurchasedBomFileName, "外购件 BOM 必须带总装前缀");
 
-    Equal(2, plan.Machined.Count, "机加件只数与总装同级的零件，子装配体不进表");
-    True(plan.Entries.All(entry => !string.Equals(entry.SourcePath, module, StringComparison.OrdinalIgnoreCase)),
-        "子装配体不得出现在打包清单里");
+    Equal(2, plan.Machined.Count, "机加件只数与总装同级的零件，子装配体不进 BOM");
+    var moduleEntry = plan.Entries.Single(entry => string.Equals(entry.SourcePath, module, StringComparison.OrdinalIgnoreCase));
+    True(moduleEntry.IsAssembly && moduleEntry.Category == PackagePartCategory.Machined,
+        "V4.11：自制子装配体在表里占一行（供改件别），件别缺省为机加件");
+    True(plan.Machined.Concat(plan.Purchased).All(entry => !entry.IsAssembly),
+        "自制子装配体不得出现在任一 BOM 里");
 
     var shaftEntry = plan.Machined.Single(entry => entry.SourcePath == shaft);
     Equal(2, shaftEntry.Quantity, "子装配用两次，里面的零件数量必须按嵌套倍数算");
@@ -4475,9 +4496,16 @@ static void TestPackagePlanning(string root)
     Equal(2, plan.StepTargets.Count, "只有机加件导 STEP，外购件不导");
     Equal(1, plan.DrawingTargets.Count, "只有找到同名工程图的零件才导 DWG/PDF");
     Equal(
-        Path.Combine(dir, ConversionPathLayout.StepDirectoryName),
-        plan.Directories.StepDirectory,
-        "四个打包目录必须与总装配体同级");
+        Path.Combine(dir, "GHLSS 零件采购"),
+        plan.Directories.PackageDirectory,
+        "V4.11：打包目录是总装配体旁边的「前缀 零件采购」");
+    Equal(
+        Path.Combine(dir, "GHLSS 零件采购", "图纸"),
+        plan.Directories.DrawingDirectory,
+        "V4.11：机加件三件套放进打包目录下的「图纸」");
+    Equal("GHLSS 机加件清单.png", plan.MachinedBomImageFileName, "BOM 截图与 BOM 同名");
+
+    TestPackageKinds(probe, rootAsm, module, shaft, plate, screw);
 
     // 认不出图号的总装：前缀退回装配体主名，绝不生成「 机加件清单.xlsx」。
     var plainDir = Path.Combine(root, "package-plan-plain");
@@ -4485,6 +4513,92 @@ static void TestPackagePlanning(string root)
     var plainAsm = Path.Combine(plainDir, "总装.SLDASM");
     File.WriteAllText(plainAsm, "cad");
     Equal("总装", PackagePlanner.ResolveBomNamePrefix(plainAsm), "没有图号时 BOM 前缀退回装配体主名");
+}
+
+/// <summary>
+/// V4.11 件别改写：同一份记账同时决定打包清单与属性整备编号。
+/// 探查结果沿用 <see cref="TestPackagePlanning"/> 那台设备：总装下一个用了两次的进样模块（内含轴）、
+/// 一块底板、子文件夹里 12 个螺钉。
+/// </summary>
+static void TestPackageKinds(
+    AssemblyProbeResult probe,
+    string rootAsm,
+    string module,
+    string shaft,
+    string plate,
+    string screw)
+{
+    Dictionary<string, PackagePartCategory> Kinds(params (string Path, PackagePartCategory Kind)[] items)
+        => items.ToDictionary(item => item.Path, item => item.Kind, StringComparer.OrdinalIgnoreCase);
+
+    // 缺省判据与 V4.10 一致。
+    Equal(PackagePartCategory.Machined, PartKinds.Default(plate, rootAsm), "同级零件缺省是机加件");
+    Equal(PackagePartCategory.Purchased, PartKinds.Default(screw, rootAsm), "子文件夹零件缺省是外购件");
+    Equal("机加件 ●", PartKinds.Cell(PackagePartCategory.Machined), "件别格照 Janus 写成「文字 + 符号」");
+    Equal(PackagePartCategory.Purchased, PartKinds.Next(PackagePartCategory.Machined, plate, rootAsm), "机加件点一下是外购件");
+    Equal(PackagePartCategory.Reference, PartKinds.Next(PackagePartCategory.Purchased, plate, rootAsm), "外购件点一下是参考");
+    Equal(PackagePartCategory.Machined, PartKinds.Next(PackagePartCategory.Reference, plate, rootAsm), "参考点一下回到机加件");
+    var purchasedAssembly = Path.Combine(Path.GetDirectoryName(screw)!, "SMC 气缸组件.SLDASM");
+    Equal(PackagePartCategory.Purchased, PartKinds.Next(PackagePartCategory.Reference, purchasedAssembly, rootAsm),
+        "子文件夹里的装配体展不开，轮换必须跳过机加件");
+
+    // 子装配体设成外购件：整体一种货，数量按实例数；里面的轴不再出现在任何清单里。
+    var moduleBought = PackagePlanner.Create(probe, Kinds((module, PackagePartCategory.Purchased)));
+    var boughtModule = moduleBought.Purchased.Single(entry => entry.SourcePath == module);
+    True(boughtModule.IsAssembly, "整体外购的子装配体在外购件清单里是一行装配体");
+    Equal(2, boughtModule.Quantity, "整体外购的子装配体数量是它的实例数");
+    True(moduleBought.Entries.All(entry => entry.SourcePath != shaft), "外购组件里面的件不得出现在表里");
+    Equal(1, moduleBought.Machined.Count, "外购组件里面的件不得进机加件清单");
+    Equal(1, moduleBought.StepTargets.Count, "外购组件里面的件不得导 STEP");
+
+    // 子装配体设成参考：它与里面的件一起排除，只留一行参考。
+    var moduleReference = PackagePlanner.Create(probe, Kinds((module, PackagePartCategory.Reference)));
+    Equal(PackagePartCategory.Reference, moduleReference.Entries.Single(entry => entry.SourcePath == module).Category,
+        "参考子装配体在表里保留一行，便于点回来");
+    True(moduleReference.Purchased.All(entry => entry.SourcePath != module), "参考子装配体不得进外购件清单");
+    True(moduleReference.Entries.All(entry => entry.SourcePath != shaft), "参考子装配体里面的件不得出现");
+
+    // 同级零件设成外购件：进外购件清单，不导 STEP、不导图纸（它有同名工程图也不导）。
+    var plateBought = PackagePlanner.Create(probe, Kinds((plate, PackagePartCategory.Purchased)));
+    True(plateBought.Purchased.Any(entry => entry.SourcePath == plate), "同级零件改成外购件后必须进外购件清单");
+    True(plateBought.StepTargets.All(entry => entry.SourcePath != plate), "改成外购件的零件不得导 STEP");
+    Equal(0, plateBought.DrawingTargets.Count, "V4.11：图纸只导机加件");
+
+    // 子文件夹零件设成机加件：按文件名拆图号、导 STEP，数量沿用探查侧计数。
+    var screwMade = PackagePlanner.Create(probe, Kinds((screw, PackagePartCategory.Machined)));
+    var madeScrew = screwMade.Machined.Single(entry => entry.SourcePath == screw);
+    Equal(12, madeScrew.Quantity, "子文件夹件改成机加件后数量沿用探查计数");
+    Equal("GB70", madeScrew.DrawingNumber, "改成机加件后按「图号 名称」拆文件名");
+    True(screwMade.StepTargets.Any(entry => entry.SourcePath == screw), "改成机加件的子文件夹件必须导 STEP");
+    Equal(0, screwMade.Purchased.Count, "改走的外购件不得留在外购件清单");
+
+    // 全部设成参考：没有可交付的东西，打包被拦下。
+    var nothing = PackagePlanner.Create(probe, Kinds(
+        (module, PackagePartCategory.Reference),
+        (plate, PackagePartCategory.Reference),
+        (screw, PackagePartCategory.Reference)));
+    True(!nothing.CanPack, "只剩参考件时不得打包");
+
+    // 属性整备：同一份记账让组件不编号、不占序号，行仍留在表里。
+    var baseline = PropertyPrepPlanner.Create(probe, "GHLSS-06");
+    Equal("GHLSS-06-02", baseline.Entries.Single(entry => entry.SourcePath == plate).DrawingNumber,
+        "基线：底板排在进样模块之后是 02");
+    var excludedPrep = PropertyPrepPlanner.Create(probe, "GHLSS-06", kinds: Kinds((module, PackagePartCategory.Purchased)));
+    Equal("GHLSS-06-01", excludedPrep.Entries.Single(entry => entry.SourcePath == plate).DrawingNumber,
+        "外购组件不占序号，底板顺延为 01");
+    True(excludedPrep.Entries.All(entry => entry.SourcePath != module && entry.SourcePath != shaft),
+        "外购组件与其内部件都不编号");
+    True(excludedPrep.Unnumbered.All(entry => entry.SourcePath != shaft), "外购组件的内部件不得作为未编号件列出");
+    True(excludedPrep.ExcludedEntries.Any(entry => entry.SourcePath == module && !entry.AssignsDrawingNumber),
+        "外购组件必须留一行不编号的行");
+    True(excludedPrep.ExcludedEntries.Any(entry => entry.SourcePath == screw),
+        "子文件夹外购件也在属性整备表里列出，件别看得见");
+    True(excludedPrep.ExcludedEntries.All(entry => !AssemblyRenamePlan.IsWritablePart(entry)),
+        "按件别排除的行不得写属性");
+    var platePrep = PropertyPrepPlanner.Create(probe, "GHLSS-06", kinds: Kinds((plate, PackagePartCategory.Reference)));
+    True(platePrep.Entries.All(entry => entry.SourcePath != plate), "参考件不编号");
+    True(platePrep.Warnings.Any(warning => warning.Contains("按件别跳过", StringComparison.Ordinal)),
+        "按件别跳过必须记进警告");
 }
 
 static void TestPackageBomWorkbooks(string root)
@@ -4519,7 +4633,7 @@ static void TestPackageBomWorkbooks(string root)
         PurchasedParts: [new PurchasedPartReading(screw, 8)]);
 
     var plan = PackagePlanner.Create(probe);
-    var bomDirectory = Path.Combine(dir, ConversionPathLayout.BomDirectoryName);
+    var bomDirectory = plan.Directories.PackageDirectory;
     Directory.CreateDirectory(bomDirectory);
     var machinedPath = Path.Combine(bomDirectory, plan.MachinedBomFileName);
     var purchasedPath = Path.Combine(bomDirectory, plan.PurchasedBomFileName);
@@ -4556,6 +4670,48 @@ static void TestPackageBomWorkbooks(string root)
     True(!purchased.ContainsKey("C6") || purchased["C6"].Length == 0, "物料编码留给采购，不得代填");
     Equal("东明", purchased["H6"], "V4.10.4：外购件品牌必须落在 H 列「备注[参考供应商]」");
     True(!purchased.ContainsKey("I6") || purchased["I6"].Length == 0, "I 列备注留给采购，不得代填");
+
+    // V4.11：同名截图。按表格版式画：宽度是 A..V 列宽之和，三行数据让图比空模板高。
+    var machinedImage = Path.Combine(bomDirectory, plan.MachinedBomImageFileName);
+    BomSheetImageRenderer.Render(machinedPath, machinedImage);
+    var (imageWidth, imageHeight) = ReadPngSize(machinedImage);
+    True(imageWidth > 1000 && imageHeight > 150, $"机加件清单截图尺寸不合理：{imageWidth}x{imageHeight}");
+    var purchasedImage = Path.Combine(bomDirectory, plan.PurchasedBomImageFileName);
+    BomSheetImageRenderer.Render(purchasedPath, purchasedImage);
+    True(ReadPngSize(purchasedImage).Width > 1000, "外购件清单截图必须覆盖到 I 列");
+    True(!File.Exists(machinedImage + ".tmp"), "截图必须原子落盘，不得留下临时文件");
+    True(HasInk(machinedImage), "截图不得是一张白图");
+}
+
+/// <summary>PNG 的 IHDR 宽高。只读文件头，不依赖图像库。</summary>
+static (int Width, int Height) ReadPngSize(string path)
+{
+    var head = new byte[24];
+    using (var stream = File.OpenRead(path))
+        stream.ReadExactly(head);
+    True(head[1] == 'P' && head[2] == 'N' && head[3] == 'G', "截图必须是 PNG：" + path);
+    return (
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(head.AsSpan(16, 4)),
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(head.AsSpan(20, 4)));
+}
+
+/// <summary>图里有没有深色像素（边框与文字）。</summary>
+static bool HasInk(string path)
+{
+    var decoder = new System.Windows.Media.Imaging.PngBitmapDecoder(
+        new Uri(path), System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+    var frame = new System.Windows.Media.Imaging.FormatConvertedBitmap(
+        decoder.Frames[0], System.Windows.Media.PixelFormats.Bgra32, null, 0);
+    var stride = frame.PixelWidth * 4;
+    var pixels = new byte[stride * frame.PixelHeight];
+    frame.CopyPixels(pixels, stride, 0);
+    for (var index = 0; index < pixels.Length; index += 4)
+    {
+        if (pixels[index] < 80 && pixels[index + 1] < 80 && pixels[index + 2] < 80)
+            return true;
+    }
+
+    return false;
 }
 
 /// <summary>把 sheet1 读成「单元格引用 → 显示值」。内联字符串与数字都还原成文本。</summary>
@@ -4685,10 +4841,10 @@ static void TestPackageViewModelFlow(string root)
     var plateRow = viewModel.Parts.Single(row => row.PartName == "底板");
     Equal("1", plateRow.QuantityText, "打包表的数量列必须来自计划");
     Equal("有", plateRow.DrawingStateText, "找到同名工程图的行必须显示「有」");
-    Equal("机加件", plateRow.CategoryText, "与总装同级的零件必须显示为机加件");
+    Equal("机加件 ●", plateRow.CategoryText, "与总装同级的零件必须显示为机加件");
     var screwRow = viewModel.Parts.Single(row => row.PartName == "内六角螺钉");
-    Equal("外购件", screwRow.CategoryText, "子文件夹里的件必须显示为外购件");
-    Equal("无", screwRow.DrawingStateText, "外购件没有工程图时必须显示「无」");
+    Equal("外购件 ◆", screwRow.CategoryText, "子文件夹里的件必须显示为外购件");
+    Equal(string.Empty, screwRow.DrawingStateText, "V4.11：外购件不导图纸，工程图列留空");
     True(viewModel.CanConvert, "解析完成后打包按钮必须可用：" + viewModel.PackBlockedReason);
 
     viewModel.ConvertAsync().GetAwaiter().GetResult();
@@ -4706,21 +4862,21 @@ static void TestPackageViewModelFlow(string root)
     Equal(1, brandQueries.Count, "V4.10.4：打包时每种外购件查一次品牌，机加件不查");
     Equal("GB70 M8x20", brandQueries[0], "品牌按外购件规格查询");
 
-    foreach (var directoryName in new[]
-             {
-                 ConversionPathLayout.StepDirectoryName,
-                 ConversionPathLayout.DwgDirectoryName,
-                 ConversionPathLayout.PdfDirectoryName,
-                 ConversionPathLayout.BomDirectoryName,
-             })
-    {
-        True(Directory.Exists(Path.Combine(dir, directoryName)),
-            $"打包必须在总装配体同级建出 {directoryName} 目录，哪怕本轮没有东西放进去");
-    }
-
-    var bomDirectory = Path.Combine(dir, ConversionPathLayout.BomDirectoryName);
+    // V4.11：一个「前缀 零件采购」文件夹；BOM 与同名截图在最外层，三件套在「图纸」里。
+    var bomDirectory = Path.Combine(dir, "GHLSS 零件采购");
+    var drawingDirectory = Path.Combine(bomDirectory, "图纸");
+    True(Directory.Exists(drawingDirectory), "打包必须建出「前缀 零件采购/图纸」");
+    True(Directory.GetDirectories(dir).Select(Path.GetFileName).SequenceEqual(["GHLSS 零件采购", "标准件"]),
+        "打包不得再在总装配体旁边建 STP/DWG/PDF/BOM 四个目录："
+        + string.Join("、", Directory.GetDirectories(dir).Select(Path.GetFileName)));
+    True(jobs.All(job => string.Equals(Path.GetDirectoryName(job.OutputPath), drawingDirectory, StringComparison.OrdinalIgnoreCase)),
+        "STEP / DWG / PDF 三件套必须全部落进「图纸」");
+    True(jobs.Any(job => job.OutputPath == Path.Combine(drawingDirectory, "GHLSS-06-01 底板.STEP")),
+        "三件套按零件主名命名");
     True(File.Exists(Path.Combine(bomDirectory, "GHLSS 机加件清单.xlsx")), "必须生成机加件清单");
+    True(File.Exists(Path.Combine(bomDirectory, "GHLSS 机加件清单.png")), "机加件清单旁必须有同名截图");
     True(File.Exists(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx")), "必须生成外购件清单");
+    True(File.Exists(Path.Combine(bomDirectory, "GHLSS 外购件清单.png")), "外购件清单旁必须有同名截图");
     True(viewModel.LastOperationSucceeded, "全部作业成功时本轮打包必须判为成功");
 
     Equal("东明", viewModel.Parts.Single(row => row.PartName == "内六角螺钉").BrandText, "查到的品牌必须回填到打包表");
@@ -4751,6 +4907,41 @@ static void TestPackageViewModelFlow(string root)
     True(!offSheet.ContainsKey("H6") || offSheet["H6"].Length == 0, "关掉开关时外购件清单 H 列留空");
     True(viewModel.ResultText.Contains("未开启 AI 查品牌", StringComparison.Ordinal), "打包结论必须说明这一轮没查品牌：" + viewModel.ResultText);
     True(viewModel.LastOperationSucceeded, "关掉开关不影响打包成功");
+
+    // V4.11：点件别格。螺钉 外购件 → 参考：外购件清单空了，就不写，上一轮留下的旧清单与截图也要删掉。
+    var screwId = viewModel.Parts.Single(row => row.PartName == "内六角螺钉").Id;
+    Equal(PackagePartCategory.Reference, viewModel.CyclePartKind(screwId, out var cycleReason), "外购件点一下是参考：" + cycleReason);
+    Equal("参考 ○", viewModel.FindRow(screwId)!.CategoryText, "件别格必须立即换成新件别");
+    Equal("不打包", viewModel.FindRow(screwId)!.Status, "参考件的状态必须说明它不打包");
+    True(viewModel.CanConvert, "改完件别后本轮必须可以再打包：" + viewModel.PackBlockedReason);
+    viewModel.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    True(!File.Exists(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx")), "没有外购件时不得生成外购件清单，旧的要删掉");
+    True(!File.Exists(Path.Combine(bomDirectory, "GHLSS 外购件清单.png")), "旧的外购件清单截图也要删掉");
+    True(File.Exists(Path.Combine(bomDirectory, "GHLSS 机加件清单.xlsx")), "机加件清单照常生成");
+
+    // 同一份记账在属性整备里生效：换到属性整备，螺钉仍是参考、底板仍编号。
+    viewModel.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    Equal("参考 ○", viewModel.FindRow(screwId)!.CategoryText, "件别记账必须在两张表之间共用");
+    Equal("不编号", viewModel.FindRow(screwId)!.Status, "属性整备里参考件不编号");
+    var plateId = viewModel.Parts.Single(row => row.PartName == "底板").Id;
+    Equal(PackagePartCategory.Purchased, viewModel.CyclePartKind(plateId, out _), "属性整备里同样能点件别");
+    True(!viewModel.FindRow(plateId)!.WritesProperties, "改成外购件的零件不得写属性");
+    True(!viewModel.CanWrite, "只剩外购件和参考件时属性整备没有可写的零件：" + viewModel.RenameBlockedReason);
+    Equal(PackagePartCategory.Reference, viewModel.CyclePartKind(plateId, out _), "外购件再点一下是参考");
+    Equal(PackagePartCategory.Machined, viewModel.CyclePartKind(plateId, out _), "参考再点一下回到机加件");
+    True(viewModel.FindRow(plateId)!.WritesProperties, "改回机加件后恢复写属性");
+
+    // 重新解析同一个装配体不清件别记账；换装配体才清。
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    Equal(PackagePartCategory.Reference, viewModel.GetPartKind(screwId), "重新解析不得清掉件别记账");
+    viewModel.SetSourcePath(rootAsm);
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    Equal(PackagePartCategory.Purchased, viewModel.GetPartKind(screwId), "重新选择来源后件别回到路径缺省");
 }
 
 static void TestPackageOptions(string root)
@@ -4885,12 +5076,13 @@ static void TestPackageBrandLookup(string root)
     True(calls < purchased.Length, $"连续失败必须熔断，不得把 {purchased.Length} 种全查一遍（实际 {calls} 次）");
     True(viewModel.LastOperationSucceeded, "品牌查询全部失败时打包仍必须判为成功");
     True(
-        viewModel.Parts.Where(row => row.CategoryText == "外购件").All(row => row.BrandText == PurchasedBrandLookup.NotAvailable),
+        viewModel.Parts.Where(row => row.CategoryText == PartKinds.Cell(PackagePartCategory.Purchased))
+            .All(row => row.BrandText == PurchasedBrandLookup.NotAvailable),
         "查询失败的外购件品牌列必须写 N/A");
     True(
         viewModel.ResultText.Contains("查询失败：未知指令", StringComparison.Ordinal),
         "打包结论必须带出品牌查询的首个失败原因：" + viewModel.ResultText);
-    var sheet = ReadSheetCells(Path.Combine(dir, ConversionPathLayout.BomDirectoryName, "GHLSS 外购件清单.xlsx"));
+    var sheet = ReadSheetCells(Path.Combine(dir, "GHLSS 零件采购", "GHLSS 外购件清单.xlsx"));
     Equal(PurchasedBrandLookup.NotAvailable, sheet["H6"], "查询失败时外购件清单 H 列写 N/A");
 }
 
