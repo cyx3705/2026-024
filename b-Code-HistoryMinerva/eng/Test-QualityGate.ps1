@@ -269,11 +269,16 @@ else {
         'HistoryMinerva.Worker.deps.json',
         'HistoryMinerva.Worker.runtimeconfig.json'
     )
+    # Candidates come from the host pipeline (vulcan.dev.submit), which does not write
+    # historyvulcan.snapshot.json. Only the legacy local package script does, so the file is
+    # optional: validated when present, never required.
+    $snapshotPath = Join-Path $formalRoot 'historyvulcan.snapshot.json'
+    $hasSnapshot = Test-Path -LiteralPath $snapshotPath -PathType Leaf
     $expectedFormalFiles = @(
         $expectedRuntimeFiles
         'module.manifest.json'
-        'historyvulcan.snapshot.json'
         'SHA256SUMS'
+        if ($hasSnapshot) { 'historyvulcan.snapshot.json' }
     )
     $actualFormalFiles = @(Get-ChildItem -LiteralPath $formalRoot -File | ForEach-Object Name)
     Assert-SameSet 'z-Publish top-level file boundary' $expectedFormalFiles $actualFormalFiles
@@ -328,11 +333,16 @@ else {
             Add-Violation "z-Publish hash mismatch: $file"
         }
     }
-    $formalSnapshot = [IO.File]::ReadAllText((Join-Path $formalRoot 'historyvulcan.snapshot.json')) | ConvertFrom-Json
-    if ([string]$formalSnapshot.moduleVersion -ne [string]$formalManifest.version -or
-        ($null -ne $formalSnapshot.historyVulcanVersion -and
-         [string]$formalSnapshot.historyVulcanVersion -notmatch '^\d+\.\d+\.\d+$')) {
-        Add-Violation 'z-Publish snapshot metadata is invalid or differs from its own manifest'
+    if ([string]$formalManifest.name -ne 'HistoryMinerva' -or [string]$formalManifest.version -ne $sourceVersion) {
+        Add-Violation "z-Publish manifest identity $($formalManifest.name) $($formalManifest.version) differs from source HistoryMinerva $sourceVersion"
+    }
+    if ($hasSnapshot) {
+        $formalSnapshot = [IO.File]::ReadAllText($snapshotPath) | ConvertFrom-Json
+        if ([string]$formalSnapshot.moduleVersion -ne [string]$formalManifest.version -or
+            ($null -ne $formalSnapshot.historyVulcanVersion -and
+             [string]$formalSnapshot.historyVulcanVersion -notmatch '^\d+\.\d+\.\d+$')) {
+            Add-Violation 'z-Publish snapshot metadata is invalid or differs from its own manifest'
+        }
     }
 }
 
