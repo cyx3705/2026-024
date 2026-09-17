@@ -30,18 +30,19 @@ public sealed record ConversionPartPaths(
     string LegacySolidWorksPath);
 
 /// <summary>
-/// V4.10 整体打包的四个交付目录，与源装配体同级。
+/// V4.11 整体打包的交付目录：装配体旁边**一个**文件夹 <c>&lt;前缀&gt; 零件采购/</c>。
 ///
-/// 四个目录**平级**放在装配体旁边，与既有的 <c>XT/</c>、<c>SW/</c> 同一层，
-/// 而不是再收进一个「打包」根目录：交付时用户是逐个目录拖给不同的人
-/// （STP 给加工厂、DWG/PDF 给图纸审核、BOM 给采购），多一层壳只是多一次点击。
+/// V4.10 是与装配体平级的 STP / DWG / PDF / BOM 四个目录；现场实际交付时总是把它们
+/// 再手工归成一个包发出去（参照 2026-025 a14 的「抽滤模块试制零件采购」），于是改成直接出这个包：
+/// 两张 BOM 与同名截图放在包的最外层，机加件的 DWG / PDF / STEP 三件套放进 <c>图纸/</c>。
 /// </summary>
+/// <param name="RootDirectory">总装配体所在目录。</param>
+/// <param name="PackageDirectory">打包目录，BOM 与截图直接放在这里。</param>
+/// <param name="DrawingDirectory">打包目录下的 <c>图纸/</c>，机加件三件套的去处。</param>
 public sealed record PackageOutputDirectories(
     string RootDirectory,
-    string StepDirectory,
-    string DwgDirectory,
-    string PdfDirectory,
-    string BomDirectory);
+    string PackageDirectory,
+    string DrawingDirectory);
 
 /// <summary>
 /// 外界模式的输出布局与文件扩展名。它只解析路径，不创建或检查文件。
@@ -65,10 +66,9 @@ public static class ConversionPathLayout
     public const string StepExtension = ".STEP";
     public const string DwgExtension = ".DWG";
     public const string PdfExtension = ".PDF";
-    public const string StepDirectoryName = "STP";
-    public const string DwgDirectoryName = "DWG";
-    public const string PdfDirectoryName = "PDF";
-    public const string BomDirectoryName = "BOM";
+    /// <summary>V4.11 打包目录名的后缀：<c>&lt;前缀&gt; 零件采购</c>。</summary>
+    public const string PackageDirectorySuffix = " 零件采购";
+    public const string DrawingDirectoryName = "图纸";
     public const string ReferencePartsDirectoryName = "参考部件";
 
     /// <summary>源零件扩展名。SW 特征整备的源就是 <c>.SLDPRT</c> 本身。</summary>
@@ -107,17 +107,13 @@ public static class ConversionPathLayout
     }
 
     /// <summary>
-    /// V4.10：按源装配体所在目录解析四个打包目录。只算路径，不建目录、不看存在性。
+    /// V4.11：按源装配体所在目录与 BOM 前缀解析打包目录。只算路径，不建目录、不看存在性。
     /// </summary>
-    public static PackageOutputDirectories ResolvePackageDirectories(string assemblyDirectory)
+    public static PackageOutputDirectories ResolvePackageDirectories(string assemblyDirectory, string namePrefix)
     {
         var root = Path.GetFullPath(assemblyDirectory);
-        return new PackageOutputDirectories(
-            root,
-            Path.Combine(root, StepDirectoryName),
-            Path.Combine(root, DwgDirectoryName),
-            Path.Combine(root, PdfDirectoryName),
-            Path.Combine(root, BomDirectoryName));
+        var package = Path.Combine(root, namePrefix.Trim() + PackageDirectorySuffix);
+        return new PackageOutputDirectories(root, package, Path.Combine(package, DrawingDirectoryName));
     }
 
     /// <summary>

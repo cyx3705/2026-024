@@ -54,8 +54,8 @@ public sealed record MappingContentOption(
             IsAssemblySource: true),
         new(
             MappingContent.SolidWorksAssemblyPackage,
-            "SolidWorks .SLDASM → 整体打包（STP/DWG/PDF/BOM）",
-            "选择总装配体 .SLDASM，一次生成四个交付目录",
+            "SolidWorks .SLDASM → 整体打包（零件采购：BOM + 图纸）",
+            "选择总装配体 .SLDASM，在它旁边生成一个「前缀 零件采购」文件夹",
             ConversionSourceFormat.SolidWorks,
             IsAssemblySource: true),
     ];

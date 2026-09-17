@@ -503,7 +503,7 @@ public sealed partial class AssemblyViewModel
             return;
         }
 
-        var plan = PropertyPrepPlanner.Create(_probeResult, _drawingPrefix, _nameEdits);
+        var plan = PropertyPrepPlanner.Create(_probeResult, _drawingPrefix, _nameEdits, _kindEdits);
         _renamePlan = plan;
         RenderPropertyPrepRows(plan);
         OnPropertyChanged(nameof(CanWrite));
@@ -520,9 +520,11 @@ public sealed partial class AssemblyViewModel
     /// </summary>
     private void RenderPropertyPrepRows(AssemblyRenamePlan plan)
     {
-        var rows = new List<ConversionFileRow>(plan.Entries.Count + plan.Unnumbered.Count);
+        var rows = new List<ConversionFileRow>(
+            plan.Entries.Count + plan.Unnumbered.Count + plan.ExcludedEntries.Count);
         var reusedAll = true;
-        foreach (var entry in plan.Entries.Concat(plan.Unnumbered))
+        var excluded = plan.ExcludedEntries.Select(entry => entry.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var entry in plan.Entries.Concat(plan.Unnumbered).Concat(plan.ExcludedEntries))
         {
             var candidate = new ScanCandidate(entry.SourcePath, entry.SourcePath, entry.TargetPath, false);
             var row = FindRow(entry.Id);
@@ -546,8 +548,19 @@ public sealed partial class AssemblyViewModel
             // 判据与 Worker 侧 AssemblyRenamePlan.IsWritablePart 一致，两边各判一次。
             // 界面上让用户往装配体行里填材料，是在骗他——那一格永远不会落盘。
             row.WritesProperties = AssemblyRenamePlan.IsWritablePart(entry);
+            row.CategoryText = KindCell(entry.SourcePath);
 
-            if (!entry.AssignsDrawingNumber)
+            if (excluded.Contains(entry.Id))
+            {
+                // V4.11：外购件与参考件不编号。子文件夹里的件哪怕改成机加件也编不了号——
+                // 探查拿不到它们的装配层级，这时件别只影响打包，要说清楚。
+                var kind = PartKinds.Resolve(_kindEdits, entry.SourcePath, _sourceAssemblyPath);
+                row.Status = "不编号";
+                row.Detail = kind == PackagePartCategory.Machined
+                    ? "子文件夹里的件不参与编号，件别只影响打包"
+                    : $"{PartKinds.Label(kind)}，保持原名、不写属性";
+            }
+            else if (!entry.AssignsDrawingNumber)
             {
                 row.Status = "无图号";
                 row.Detail = "标准件/外购件内部，保持原名";
@@ -768,6 +781,7 @@ public sealed partial class AssemblyViewModel
             _nameEdits.Clear();
             foreach (var pair in remappedNames)
                 _nameEdits[pair.Key] = pair.Value;
+            RemapKindEdits(moved);
             _probeResult = reindexed;
             _sourceAssemblyPath = reindexed.SourceAssemblyPath;
             UpdateAssemblyOutputPaths();

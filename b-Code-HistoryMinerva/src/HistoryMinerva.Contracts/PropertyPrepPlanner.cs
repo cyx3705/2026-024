@@ -21,10 +21,15 @@ public static class PropertyPrepPlanner
     /// 用户在表里改过的零件名称，按源文件全路径记账。没记的以文件名里第一个空格之后的
     /// 那一段为准。名称同时决定目标文件名和「名称」属性槽——两者永远是同一个字符串。
     /// </param>
+    /// <param name="kinds">
+    /// V4.11：用户改写过的件别，按源文件全路径记账。被设成外购件或参考的同级件及其内部件
+    /// 不编号、不改名、不写属性，也不占序号——与子文件夹外购件同一个待遇。
+    /// </param>
     public static AssemblyRenamePlan Create(
         AssemblyProbeResult probe,
         string drawingPrefix,
-        IReadOnlyDictionary<string, string>? partNames = null)
+        IReadOnlyDictionary<string, string>? partNames = null,
+        IReadOnlyDictionary<string, PackagePartCategory>? kinds = null)
     {
         ArgumentNullException.ThrowIfNull(probe);
         var issues = new List<string>();
@@ -85,19 +90,16 @@ public static class PropertyPrepPlanner
         var names = partNames ?? EmptyNames;
         var planned = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var unnumbered = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
+        var excluded = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
+        var visit = new Visit(rootPath, documents, probe, planned, unnumbered, excluded, names, kinds, warnings);
         VisitAssembly(
             rootPath,
             rootNumber,
             parentPath: null,
             depth: 0,
             skipChildren: !rootNumber.IsAssembly,
-            rootPath,
-            documents,
-            probe,
-            planned,
-            unnumbered,
-            names,
-            warnings);
+            visit);
+        CollectPurchasedReadings(probe, rootPath, visit);
 
         var entries = planned.Values
             .Select(entry => entry.ToEntry())
@@ -125,8 +127,51 @@ public static class PropertyPrepPlanner
             }
         }
 
+        var excludedEntries = excluded
+            .Where(pair => !planned.ContainsKey(pair.Key) && !unnumbered.ContainsKey(pair.Key))
+            .Select(pair => pair.Value.ToEntry())
+            .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         warnings.AddRange(probe.Warnings);
-        return new AssemblyRenamePlan(rootPath, prefix, entries, skipped, issues, Distinct(warnings));
+        return new AssemblyRenamePlan(
+            rootPath, prefix, entries, skipped, issues, Distinct(warnings), excludedEntries);
+    }
+
+    /// <summary>
+    /// 子文件夹里的外购件。探查侧不把它们放进文档层级，所以编号那一遍看不见；
+    /// 这里只把它们列成不编号的行，让件别在属性整备里也看得见、改得动（改了只影响打包）。
+    /// </summary>
+    private static void CollectPurchasedReadings(AssemblyProbeResult probe, string rootPath, Visit visit)
+    {
+        if (probe.PurchasedParts is not { Count: > 0 } readings)
+            return;
+        foreach (var reading in readings)
+        {
+            if (reading.InstanceCount <= 0 || !Path.IsPathFullyQualified(reading.SourcePath))
+                continue;
+            var path = Path.GetFullPath(reading.SourcePath);
+            if (ConversionPathLayout.IsUnderReferencePartsDirectory(path))
+                continue;
+            Remember(visit.Excluded, path, number: null, rootPath, depth: 1, assignsDrawingNumber: false, visit.PartNames);
+        }
+    }
+
+    /// <summary>一次遍历里不变的上下文。参数太多时收成一个，免得每层递归抄一遍。</summary>
+    private sealed record Visit(
+        string RootPath,
+        IReadOnlyDictionary<string, AssemblyDocumentReading> Documents,
+        AssemblyProbeResult Probe,
+        Dictionary<string, MutableEntry> Planned,
+        Dictionary<string, MutableEntry> Unnumbered,
+        Dictionary<string, MutableEntry> Excluded,
+        IReadOnlyDictionary<string, string> PartNames,
+        IReadOnlyDictionary<string, PackagePartCategory>? Kinds,
+        List<string> Warnings)
+    {
+        /// <summary>同级件被用户设成外购件或参考。缺省判据（子文件夹、参考目录）由调用处先判。</summary>
+        public bool IsExcludedByKind(string path)
+            => PartKinds.Resolve(Kinds, path, RootPath) != PackagePartCategory.Machined;
     }
 
     private static AssemblyRenamePlan Empty(string source, string prefix, IReadOnlyList<string> issues)
@@ -146,14 +191,9 @@ public static class PropertyPrepPlanner
         string? parentPath,
         int depth,
         bool skipChildren,
-        string rootPath,
-        IReadOnlyDictionary<string, AssemblyDocumentReading> documents,
-        AssemblyProbeResult probe,
-        Dictionary<string, MutableEntry> planned,
-        Dictionary<string, MutableEntry> unnumbered,
-        IReadOnlyDictionary<string, string> partNames,
-        List<string> warnings)
+        Visit visit)
     {
+        var (rootPath, documents, probe, planned, unnumbered, excluded, partNames, _, warnings) = visit;
         Remember(planned, assemblyPath, number, parentPath, depth, assignsDrawingNumber: true, partNames);
         if (skipChildren || !documents.TryGetValue(assemblyPath, out var document))
             return;
@@ -162,6 +202,7 @@ public static class PropertyPrepPlanner
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var skippedPurchased = 0;
         var skippedReferenceParts = 0;
+        var skippedByKind = 0;
         foreach (var child in document.Children)
         {
             if (!Path.IsPathFullyQualified(child.SourcePath))
@@ -197,6 +238,15 @@ public static class PropertyPrepPlanner
                 continue;
             }
 
+            // V4.11：用户设成外购件或参考的同级件，和子文件夹外购件同一个待遇——
+            // 不编号、不占序号，它底下的件也一并不碰。只留一行给用户看、给用户点回来。
+            if (visit.IsExcludedByKind(childPath))
+            {
+                skippedByKind++;
+                Remember(excluded, childPath, number: null, assemblyPath, depth + 1, assignsDrawingNumber: false, partNames);
+                continue;
+            }
+
             if (planned.TryGetValue(childPath, out var already))
             {
                 already.AddParent(assemblyPath);
@@ -209,8 +259,7 @@ public static class PropertyPrepPlanner
                 var childNumber = number.Child(sequence++, asAssembly: false);
                 Remember(planned, childPath, childNumber, assemblyPath, depth + 1, assignsDrawingNumber: true, partNames);
                 if (child.IsSubAssembly)
-                    CollectUnnumberedDescendants(
-                        childPath, assemblyPath, depth + 1, rootPath, documents, planned, unnumbered, partNames);
+                    CollectUnnumberedDescendants(childPath, assemblyPath, depth + 1, visit);
                 continue;
             }
 
@@ -221,19 +270,15 @@ public static class PropertyPrepPlanner
                 assemblyPath,
                 depth + 1,
                 skipChildren: false,
-                rootPath,
-                documents,
-                probe,
-                planned,
-                unnumbered,
-                partNames,
-                warnings);
+                visit);
         }
 
         if (skippedPurchased > 0)
             warnings.Add($"已跳过 {skippedPurchased} 个外购件（子文件夹，与装配体不同级）。");
         if (skippedReferenceParts > 0)
             warnings.Add($"已跳过 {skippedReferenceParts} 个参考部件目录下的文件。");
+        if (skippedByKind > 0)
+            warnings.Add($"已按件别跳过 {skippedByKind} 个设为外购件或参考的文件。");
     }
 
     private static bool ShouldTreatAsPart(bool isSubAssembly, DrawingNumber parentNumber)
@@ -250,13 +295,9 @@ public static class PropertyPrepPlanner
         string assemblyPath,
         string parentPath,
         int depth,
-        string rootPath,
-        IReadOnlyDictionary<string, AssemblyDocumentReading> documents,
-        Dictionary<string, MutableEntry> planned,
-        Dictionary<string, MutableEntry> unnumbered,
-        IReadOnlyDictionary<string, string> partNames)
+        Visit visit)
     {
-        if (!documents.TryGetValue(assemblyPath, out var document))
+        if (!visit.Documents.TryGetValue(assemblyPath, out var document))
             return;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -265,17 +306,23 @@ public static class PropertyPrepPlanner
             if (!Path.IsPathFullyQualified(child.SourcePath))
                 continue;
             var childPath = Path.GetFullPath(child.SourcePath);
-            if (!seen.Add(childPath) || planned.ContainsKey(childPath))
+            if (!seen.Add(childPath) || visit.Planned.ContainsKey(childPath))
                 continue;
             if (ConversionPathLayout.IsUnderReferencePartsDirectory(childPath))
                 continue;
-            if (ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, rootPath))
+            if (ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, visit.RootPath))
                 continue;
+            // 未编号的内部件本来就不改名；件别在这里只影响打包，但行要换到「按件别排除」那一组，
+            // 它底下的件也就不再列出——外购或参考的组件，里面的件不是这一台设备的事。
+            if (visit.IsExcludedByKind(childPath))
+            {
+                Remember(visit.Excluded, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false, visit.PartNames);
+                continue;
+            }
 
-            Remember(unnumbered, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false, partNames);
+            Remember(visit.Unnumbered, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false, visit.PartNames);
             if (child.IsSubAssembly)
-                CollectUnnumberedDescendants(
-                    childPath, assemblyPath, depth + 1, rootPath, documents, planned, unnumbered, partNames);
+                CollectUnnumberedDescendants(childPath, assemblyPath, depth + 1, visit);
         }
     }
 

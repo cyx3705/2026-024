@@ -864,6 +864,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
         // 记账按源文件全路径，不清掉的话换回旧装配还会把旧值诈尸带出来。
         _propertyEdits.Clear();
         _nameEdits.Clear();
+        _kindEdits.Clear();
         XtDirectory = string.Empty;
         SolidWorksDirectory = string.Empty;
         AssemblyOutputPath = string.Empty;

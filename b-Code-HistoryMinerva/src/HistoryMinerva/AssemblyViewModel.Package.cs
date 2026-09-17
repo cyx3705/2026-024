@@ -5,12 +5,13 @@ using HistoryMinerva.Contracts;
 namespace HistoryMinerva;
 
 /// <summary>
-/// V4.10 整体打包。选一个总装配体，一次交出四个目录：
-/// <c>STP/</c>（机加件 STEP）、<c>DWG/</c> 与 <c>PDF/</c>（同名工程图）、<c>BOM/</c>（两张清单）。
+/// 整体打包。选一个总装配体，一次交出一个与它同级的 <c>&lt;前缀&gt; 零件采购/</c> 文件夹（V4.11）：
+/// 两张 BOM 与同名截图在最外层，机加件的 DWG / PDF / STEP 三件套在 <c>图纸/</c> 里。
 ///
 /// 流程与另外三种转换内容同构：先「解析装配体」（复用同一条只读探查），再点「打包」。
 /// 不做成一个按钮，是因为解析要打开 SolidWorks 读整棵装配树，几百个零件要几分钟——
-/// 那几分钟里用户看着表一行行长出来，才知道识别到的是不是他要的那一批件。
+/// 那几分钟里用户看着表一行行长出来，才知道识别到的是不是他要的那一批件；
+/// 件别不对的，在这张表里点一下改掉再打包（V4.11）。
 /// </summary>
 public sealed partial class AssemblyViewModel
 {
@@ -53,17 +54,17 @@ public sealed partial class AssemblyViewModel
             return;
         }
 
-        var plan = PackagePlanner.Create(_probeResult);
+        var plan = PackagePlanner.Create(_probeResult, _kindEdits);
         _packagePlan = plan;
         RenderPackageRows(plan);
         OnPropertyChanged(nameof(CanConvert));
     }
 
     /// <summary>
-    /// 把打包计划画成零件表。**只有零件**——子装配体不进表，也不进 BOM、不导 STEP。
+    /// 把打包计划画成零件表：机加件、外购件、参考件，以及自制子装配体（V4.11，供改件别）。
     ///
     /// 行按 <see cref="PackagePartEntry.Id"/> 原地复用，理由与属性整备那张表相同：
-    /// id 由源文件全路径定死，重新解析后同一个零件仍是同一行。
+    /// id 由源文件全路径定死，重新解析或改件别后同一个零件仍是同一行。
     /// </summary>
     private void RenderPackageRows(PackagePlan plan)
     {
@@ -77,16 +78,11 @@ public sealed partial class AssemblyViewModel
                 ? entry.DrawingNumber
                 : entry.Specification;
             row.PartName = entry.PartName;
-            row.QuantityText = entry.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            row.DrawingStateText = entry.HasDrawing ? "有" : "无";
-            row.CategoryText = entry.Category == PackagePartCategory.Machined ? "机加件" : "外购件";
+            row.CategoryText = PartKinds.Cell(entry.Category);
             row.BrandText = CachedBrandText(entry);
             row.RenamesFile = false;
             row.WritesProperties = false;
-            row.Status = ConversionFileRow.ReadyStatus;
-            row.Detail = entry.HasDrawing
-                ? Path.GetFileName(entry.DrawingPath!)
-                : "没有同名工程图";
+            (row.QuantityText, row.DrawingStateText, row.Status, row.Detail) = DescribePackageRow(entry);
             rows.Add(row);
         }
 
@@ -101,6 +97,25 @@ public sealed partial class AssemblyViewModel
             ? $"打包规划有 {plan.BlockingIssues.Count} 个问题：{issueText}"
             : $"打包规划完成：{plan.Machined.Count} 个机加件、{plan.Purchased.Count} 个外购件、"
                 + $"{plan.DrawingTargets.Count} 张工程图";
+    }
+
+    /// <summary>数量 / 工程图 / 状态 / 结果四格。参考件与自制组件不交付，四格说清楚它们为什么不在包里。</summary>
+    private static (string Quantity, string Drawing, string Status, string Detail) DescribePackageRow(
+        PackagePartEntry entry)
+    {
+        var quantity = entry.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return entry switch
+        {
+            { Category: PackagePartCategory.Reference } =>
+                (string.Empty, string.Empty, "不打包", "参考件，不进清单、不导出"),
+            { Category: PackagePartCategory.Machined, IsAssembly: true } =>
+                (quantity, string.Empty, "不打包", "自制组件，里面的件各自进清单"),
+            { Category: PackagePartCategory.Purchased } =>
+                (quantity, string.Empty, ConversionFileRow.ReadyStatus, "外购件清单"),
+            { HasDrawing: true } =>
+                (quantity, "有", ConversionFileRow.ReadyStatus, Path.GetFileName(entry.DrawingPath!)),
+            _ => (quantity, "无", ConversionFileRow.ReadyStatus, "没有同名工程图，只导 STEP"),
+        };
     }
 
     private async Task PackCoreAsync(CancellationToken cancellationToken)
@@ -120,20 +135,15 @@ public sealed partial class AssemblyViewModel
 
         // BOM 先于 CAD 导出写。它不需要 SolidWorks，也就没有理由陪着 CAD 导出一起失败——
         // 现场最常见的一幕正是「SolidWorks 起不来」，而采购要的清单本来就已经算好了。
-        var machinedCount = BomWorkbookWriter.WriteMachined(
-            plan, Path.Combine(plan.Directories.BomDirectory, plan.MachinedBomFileName));
-        var purchasedCount = BomWorkbookWriter.WritePurchased(
-            plan, Path.Combine(plan.Directories.BomDirectory, plan.PurchasedBomFileName), brands.ById);
-        QueueUiUpdate(() => StatusText =
-            $"BOM 已生成：{machinedCount} 个机加件、{purchasedCount} 个外购件");
-        _operationProgress?.Report(
-            $"BOM 已生成：{plan.MachinedBomFileName}（{machinedCount} 行）、"
-            + $"{plan.PurchasedBomFileName}（{purchasedCount} 行）");
+        var boms = WritePackageBoms(plan, brands);
+        QueueUiUpdate(() => StatusText = $"BOM 已生成：{boms}");
+        _operationProgress?.Report($"BOM 与截图已生成：{boms}");
 
         var jobs = BuildPackageJobs(plan);
+        var packageName = Path.GetFileName(plan.Directories.PackageDirectory);
         if (jobs.Count == 0)
         {
-            _lastResultText = "打包完成：只生成了两张 BOM，没有可导出的零件或工程图" + brands.Describe() + "。";
+            _lastResultText = $"打包完成：{packageName} 里只有清单（{boms}），没有要导出的机加件" + brands.Describe() + "。";
             _lastOperationSucceeded = true;
             QueueUiUpdate(() =>
             {
@@ -151,8 +161,11 @@ public sealed partial class AssemblyViewModel
             jobs,
             Overwrite: true);
 
+        var exported = jobs.Select(job => job.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var row in Parts)
         {
+            if (!exported.Contains(row.Id))
+                continue;
             row.Status = "排队";
             row.Detail = string.Empty;
         }
@@ -165,9 +178,8 @@ public sealed partial class AssemblyViewModel
 
         _lastOperationSucceeded = exitCode == 0;
         _lastResultText = exitCode == 0
-            ? $"打包完成：{plan.Directories.RootDirectory} 下的 STP／DWG／PDF／BOM 四个目录已就绪"
-                + $"（{stepCount} 个 STEP、{drawingCount} 张工程图、"
-                + $"{machinedCount} + {purchasedCount} 行 BOM）"
+            ? $"打包完成：{plan.Directories.PackageDirectory} 已就绪"
+                + $"（{boms}；图纸 {stepCount} 个 STEP、{drawingCount} 张工程图）"
                 + brands.Describe()
             : "打包结束，存在导出失败项：BOM 已生成，失败的零件或图纸见上方逐条报告"
                 + (string.IsNullOrEmpty(_firstWorkerFailure) ? string.Empty : "；首个原因：" + _firstWorkerFailure)
@@ -177,7 +189,7 @@ public sealed partial class AssemblyViewModel
             _conversionCompleted = true;
             foreach (var row in Parts)
             {
-                if (row.Status is not ("失败" or "已取消"))
+                if (exported.Contains(row.Id) && row.Status is not ("失败" or "已取消"))
                     row.Status = "完成";
             }
 
@@ -187,21 +199,71 @@ public sealed partial class AssemblyViewModel
     }
 
     /// <summary>
-    /// 机加件一个 STEP，有图纸的零件各一个 DWG 与一个 PDF。
+    /// 写两张 BOM 及同名截图。**空的那张不写**（用户确认）：一台没有外购件的设备，
+    /// 包里就只有机加件清单——与现场手工整理的包一致。
+    ///
+    /// 上一轮留下的同名清单要删掉：这一轮件别改过、外购件清空了，旧的外购件清单还躺在包里，
+    /// 采购照着它下单就是买错东西。
+    /// </summary>
+    /// <returns>给状态栏和结论用的一句描述。</returns>
+    private static string WritePackageBoms(PackagePlan plan, PurchasedBrandSummary brands)
+    {
+        var parts = new List<string>(2);
+        var directory = plan.Directories.PackageDirectory;
+        var machinedPath = Path.Combine(directory, plan.MachinedBomFileName);
+        var purchasedPath = Path.Combine(directory, plan.PurchasedBomFileName);
+
+        if (plan.Machined.Count > 0)
+        {
+            var count = BomWorkbookWriter.WriteMachined(plan, machinedPath);
+            BomSheetImageRenderer.Render(machinedPath, Path.Combine(directory, plan.MachinedBomImageFileName));
+            parts.Add($"{plan.MachinedBomFileName}（{count} 行）");
+        }
+        else
+        {
+            DeleteStale(machinedPath, Path.Combine(directory, plan.MachinedBomImageFileName));
+        }
+
+        if (plan.Purchased.Count > 0)
+        {
+            var count = BomWorkbookWriter.WritePurchased(plan, purchasedPath, brands.ById);
+            BomSheetImageRenderer.Render(purchasedPath, Path.Combine(directory, plan.PurchasedBomImageFileName));
+            parts.Add($"{plan.PurchasedBomFileName}（{count} 行）");
+        }
+        else
+        {
+            DeleteStale(purchasedPath, Path.Combine(directory, plan.PurchasedBomImageFileName));
+        }
+
+        return string.Join("、", parts);
+    }
+
+    private static void DeleteStale(params string[] paths)
+    {
+        foreach (var path in paths)
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// 机加件一个 STEP，有图纸的机加件各一个 DWG 与一个 PDF，三件套都放进 <c>图纸/</c>。
     ///
     /// 三个作业共用同一个 <see cref="PackagePartEntry.Id"/>：表里它们本来就是同一行，
-    /// 用三个 id 只会让进度事件找不到行。产物路径按文件主名放进各自目录，
+    /// 用三个 id 只会让进度事件找不到行。产物路径按文件主名放，
     /// 重名由 <c>WorkerRequestValidator</c> 拦下——同名零件互相覆盖会交付一个缺件的包。
     /// </summary>
     private static IReadOnlyList<PackageJob> BuildPackageJobs(PackagePlan plan)
     {
+        var drawings = plan.Directories.DrawingDirectory;
         var jobs = new List<PackageJob>(plan.StepTargets.Count + (plan.DrawingTargets.Count * 2));
         foreach (var entry in plan.StepTargets)
         {
             jobs.Add(new PackageJob(
                 entry.Id,
                 entry.SourcePath,
-                OutputPath(plan.Directories.StepDirectory, entry.SourcePath, ConversionPathLayout.StepExtension),
+                OutputPath(drawings, entry.SourcePath, ConversionPathLayout.StepExtension),
                 PackageArtifact.Step));
         }
 
@@ -211,12 +273,12 @@ public sealed partial class AssemblyViewModel
             jobs.Add(new PackageJob(
                 entry.Id,
                 drawingPath,
-                OutputPath(plan.Directories.DwgDirectory, drawingPath, ConversionPathLayout.DwgExtension),
+                OutputPath(drawings, drawingPath, ConversionPathLayout.DwgExtension),
                 PackageArtifact.Dwg));
             jobs.Add(new PackageJob(
                 entry.Id,
                 drawingPath,
-                OutputPath(plan.Directories.PdfDirectory, drawingPath, ConversionPathLayout.PdfExtension),
+                OutputPath(drawings, drawingPath, ConversionPathLayout.PdfExtension),
                 PackageArtifact.Pdf));
         }
 
@@ -227,20 +289,12 @@ public sealed partial class AssemblyViewModel
         => Path.Combine(directory, Path.GetFileNameWithoutExtension(sourcePath) + extension);
 
     /// <summary>
-    /// 四个目录一次建齐，**包括本轮不会往里放东西的那些**。
-    ///
-    /// 一台没有外购件、也没有工程图的设备照样该得到四个目录：空的 DWG 目录说的是
-    /// 「这一批没有图纸」，而缺一个目录说的是「打包是不是没跑完」——后者要用户自己去猜。
+    /// 打包目录与 <c>图纸/</c> 一次建齐，**哪怕本轮没有机加件**：
+    /// 空的图纸目录说的是「这一批没有要加工的件」，缺一个目录说的是「打包是不是没跑完」。
     /// </summary>
     private static void CreatePackageDirectories(PackageOutputDirectories directories)
     {
-        foreach (var directory in new[]
-                 {
-                     directories.StepDirectory,
-                     directories.DwgDirectory,
-                     directories.PdfDirectory,
-                     directories.BomDirectory,
-                 })
+        foreach (var directory in new[] { directories.PackageDirectory, directories.DrawingDirectory })
         {
             if (File.Exists(directory))
                 throw new IOException($"打包目录被同名文件占用：{directory}");
