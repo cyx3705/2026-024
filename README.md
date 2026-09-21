@@ -2,8 +2,6 @@
 
 > CAD 转换模块：Solid Edge 转 SolidWorks、属性整备改名与零件采购打包
 
-![OneHistory Logo](./Logo.png)
-
 ## 定位
 
 HistoryMinerva 是注册到 HistoryVulcan 的单一 CAD 转换模块，在 Aurora 中央页面 `Minerva` 上提供五种转换：
@@ -85,6 +83,9 @@ dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.UiSmoke\
 - 打包的 BOM 不经过 Worker，SolidWorks 起不来时清单照样能出；外购件品牌经 HistoryApollo 联网查询，查不到写 N/A。
 - 内部程序集、命名空间与 JSON 协议均为 `HistoryMinerva.*`，不保留 `mapping.*` / `swuse.*` 兼容别名。
 
----
+## 保留内容
+- 本模板项目介绍：此为最初的准备的项目模板
+    每个分支项目都会由他去继承
+- 作者：Pinavia - 2025
 
-作者：Pinavia
+![logo](./Logo.png)
