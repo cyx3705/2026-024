@@ -183,11 +183,12 @@ public sealed partial class AssemblyViewModel
     }
 
     /// <summary>
-    /// 底下那个选项框此刻该显示什么（V4.9 状态机）。
+    /// 底下那个选项框此刻该显示什么（V4.9 状态机，V4.12 换总状态的字）。
     ///
-    /// 统一且非空 → 就显示那个值；不统一 → <see cref="PartPropertyNames.NoWriteOption"/>；
-    /// 统一为空（谁都没填）→ 同样是它。也就是说「（不写）」在**框**上读作
-    /// 「这一列没有一个共同的值」，而不是「这一列不写」——不写是**单元格**上的事。
+    /// 统一且非空 → 就显示那个值；不统一 → 这一栏自己的名字（<see cref="PropertyBoxPlaceholder"/>，
+    /// 例如「材料」）；统一为空（谁都没填）→ 同样是它。V4.12 之前这一态写作「（不写）」，
+    /// 读起来像一个动作；框上的它本来就只是「这一列没有一个共同的值」——不写是**单元格**上的事。
+    /// V4.12 框也不再带左侧标签，总状态的字同时充当标签。
     ///
     /// 材料还要多一步：行里存的是材质名，框里显示的是候选标签（重名材质带库名以示区分）。
     /// </summary>
@@ -195,11 +196,20 @@ public sealed partial class AssemblyViewModel
     {
         var uniform = UniformProperty(field);
         if (string.IsNullOrEmpty(uniform))
-            return PartPropertyNames.NoWriteOption;
+            return PropertyBoxPlaceholder(field);
         return field == PartPropertyField.Material
             ? MaterialLabel(uniform, UniformMaterialDatabase())
             : uniform;
     }
+
+    /// <summary>V4.12 底下那个框的总状态：这一栏的名字。它是读数不是动作，选中它什么都不改。</summary>
+    internal static string PropertyBoxPlaceholder(PartPropertyField field) => field switch
+    {
+        PartPropertyField.Material => PartPropertyNames.Material,
+        PartPropertyField.SurfaceTreatment => PartPropertyNames.SurfaceTreatment,
+        PartPropertyField.HeatTreatment => PartPropertyNames.HeatTreatment,
+        _ => throw new ArgumentOutOfRangeException(nameof(field), field, null),
+    };
 
     /// <summary>统一材质对应的材料库；不统一或没有时是空串。</summary>
     private string UniformMaterialDatabase()
@@ -552,7 +562,7 @@ public sealed partial class AssemblyViewModel
 
             if (excluded.Contains(entry.Id))
             {
-                // V4.11：外购件与参考件不编号。子文件夹里的件哪怕改成机加件也编不了号——
+                // V4.11：外购件与排除件不编号。子文件夹里的件哪怕改成机加件也编不了号——
                 // 探查拿不到它们的装配层级，这时件别只影响打包，要说清楚。
                 var kind = PartKinds.Resolve(_kindEdits, entry.SourcePath, _sourceAssemblyPath);
                 row.Status = "不编号";

@@ -5,7 +5,7 @@ namespace HistoryMinerva.Contracts;
 ///
 /// **缺省**仍按本模块既有的唯一口径由路径推出（<see cref="PartKinds.Default"/>）：
 /// 与所选总装配体同级的是机加件，落在子文件夹或别处的是外购件，
-/// 落在 <c>参考部件</c> 目录下的是参考。V4.11 起用户可以在属性整备与打包两张表里
+/// 落在 <c>参考部件</c> 目录下的是排除。V4.11 起用户可以在属性整备与打包两张表里
 /// 逐行改写它（<see cref="PartKinds.Resolve"/>），两张表共用同一份改写记账——
 /// 同一个零件不会在改名管线里算机加件、在打包管线里算外购件。
 ///
@@ -16,7 +16,10 @@ public enum PackagePartCategory
     Machined,
     Purchased,
 
-    /// <summary>V4.11：参考件。不编号、不写属性、不进任一 BOM、不导出；子装配体连同其内部件一起排除。</summary>
+    /// <summary>
+    /// V4.11：排除件（V4.12 起界面叫「排除」，V4.11 叫「参考」；枚举名不改，按数值序列化）。
+    /// 不编号、不写属性、不进任一 BOM、不导出；子装配体连同其内部件一起排除。
+    /// </summary>
     Reference,
 }
 
@@ -64,7 +67,7 @@ public static class PartKinds
     public static bool IsFixed(string path) => ConversionPathLayout.IsUnderReferencePartsDirectory(path);
 
     /// <summary>
-    /// 点一下之后的件别：机加件 → 外购件 → 参考 → 机加件。
+    /// 点一下之后的件别：机加件 → 外购件 → 排除 → 机加件。
     ///
     /// 子文件夹里的装配体跳过「机加件」：探查不打开外购装配体，拿不到它的内部层级，
     /// 设成自制组件也展不开，只会让它和它里面的件一起从清单上消失。
@@ -94,16 +97,52 @@ public static class PartKinds
     {
         PackagePartCategory.Machined => "机加件",
         PackagePartCategory.Purchased => "外购件",
-        PackagePartCategory.Reference => "参考",
+        PackagePartCategory.Reference => "排除",
         _ => kind.ToString(),
     };
+
+    /// <summary>
+    /// V4.12 底下件别框的总状态：全表不是同一种件别时显示这两个字。
+    /// 它是读数不是动作，选中它什么都不改。
+    /// </summary>
+    public const string BoxPlaceholder = "件别";
+
+    /// <summary>件别框的候选：总状态在前，然后是三种件别。</summary>
+    public static IReadOnlyList<string> BoxOptions { get; } =
+    [
+        BoxPlaceholder,
+        Label(PackagePartCategory.Machined),
+        Label(PackagePartCategory.Purchased),
+        Label(PackagePartCategory.Reference),
+    ];
+
+    /// <summary>按文字认件别（框里选中的那一项）。总状态与认不出的文字返回 false。</summary>
+    public static bool TryParseLabel(string? text, out PackagePartCategory kind)
+    {
+        foreach (var candidate in new[]
+                 {
+                     PackagePartCategory.Machined,
+                     PackagePartCategory.Purchased,
+                     PackagePartCategory.Reference,
+                 })
+        {
+            if (string.Equals(text?.Trim(), Label(candidate), StringComparison.Ordinal))
+            {
+                kind = candidate;
+                return true;
+            }
+        }
+
+        kind = default;
+        return false;
+    }
 
     /// <summary>件别格的「文字 + 符号」，写法照 Janus「操作」格。</summary>
     public static string Cell(PackagePartCategory kind) => kind switch
     {
         PackagePartCategory.Machined => "机加件 ●",
         PackagePartCategory.Purchased => "外购件 ◆",
-        PackagePartCategory.Reference => "参考 ○",
+        PackagePartCategory.Reference => "排除 ○",
         _ => kind.ToString(),
     };
 

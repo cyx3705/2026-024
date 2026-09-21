@@ -420,6 +420,19 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             case "date":
                 message = $"「日期」将写入：{model.SetDateToday()}";
                 break;
+            case "kind":
+                // V4.12 统一设置件别。「件别」是框的总状态，与材料框的「材料」同一个意思：读数，不是动作。
+                if (!PartKinds.TryParseLabel(value, out var kind))
+                    return CommandResult.Ok(value.Length == 0 || value == PartKinds.BoxPlaceholder
+                        ? "件别保持每行各自的值；要改某一行，点那一行的件别格。"
+                        : $"未知件别「{value}」；支持 机加件、外购件、排除。");
+                if (model.SetAllPartKinds(kind, out var skipped, out var kindReason) is not { } kindChanged)
+                    return CommandResult.Ok(kindReason);
+                message = $"已把 {kindChanged} 行的件别统一为{PartKinds.Label(kind)}"
+                    + (skipped > 0 ? $"；{skipped} 行改不成（「{ConversionPathLayout.ReferencePartsDirectoryName}」目录下的件，或子文件夹里的装配体），保持原样" : string.Empty);
+                // 件别一变两张表都重算，刷整表并把底下各框对齐（同点件别格）。
+                await RefreshPropertyPrepTableAsync(command).ConfigureAwait(true);
+                return CommandResult.Ok(message);
             case "material":
             case "surface":
             case "heat":
@@ -428,10 +441,10 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 // 用户看不出是自己少了「解析装配体」这一步。
                 if (!model.PropertyEditsReady)
                     return CommandResult.Ok($"请先解析装配体，再统一「{DescribeField(target)}」。");
-                // 「（不写）」在**这个框**上是显示态，读作「这一列没有一个共同的值」，
-                // 不是一个动作：选中它什么都不该发生，每行仍按自己的值写（DEC-059）。
+                // 框的总状态（V4.12 起就是这一栏的名字，如「材料」；旧写法「（不写）」也认）是显示态，
+                // 读作「这一列没有一个共同的值」，不是一个动作：选中它什么都不该发生，每行仍按自己的值写（DEC-059）。
                 // 要把某一行清空，点那一行的单元格——不写是单元格上的事。
-                if (IsNoWrite(value))
+                if (IsNoWrite(value) || value == AssemblyViewModel.PropertyBoxPlaceholder(target))
                     return CommandResult.Ok(
                         $"「{DescribeField(target)}」保持每行各自的值；要清空某一行，点那一行的单元格。");
                 if (!TryResolveSelection(target, value, out var resolved, out var database, out var reason))
@@ -440,7 +453,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 message = $"已把「{DescribeField(target)}」统一到 {changed} 个零件：{resolved}";
                 break;
             default:
-                return CommandResult.Fail("未知属性槽；支持 designer、date、material、surface、heat");
+                return CommandResult.Fail("未知属性槽；支持 designer、date、kind、material、surface、heat");
         }
 
         await RefreshPartsTableAsync(command).ConfigureAwait(true);
@@ -533,7 +546,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     }
 
     /// <summary>
-    /// V4.11：点件别格，机加件 → 外购件 → 参考 轮换。手感照 Janus「操作」格——点了就改，不弹窗。
+    /// V4.11：点件别格，机加件 → 外购件 → 排除 轮换。手感照 Janus「操作」格——点了就改，不弹窗。
     ///
     /// 件别一变，属性整备的编号和打包的清单都要重算，所以刷的是整张表而不只是这一格；
     /// 属性整备下写属性的行也可能变了，底下那排框的统一态要跟着对齐。
@@ -556,7 +569,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
            || string.Equals(value, PartPropertyNames.NoWriteOption, StringComparison.Ordinal);
 
     /// <summary>
-    /// 把底下那一排框对齐到表格的现状：图号前缀，以及三个属性槽的统一态。
+    /// 把底下那一排框对齐到表格的现状：件别（V4.12）、图号前缀，以及三个属性槽的统一态。
+    /// 整体打包下只有件别框。
     ///
     /// **这是 V4.9 状态机的另一半**。表格是权威，框是它的读数：解析完读回一批材料，
     /// 框就该显示那个共同值；用户改一格让这一列不再统一，框就该退回「（不写）」。
@@ -568,11 +582,26 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     private async Task SyncPropertyPanelAsync(CommandContext command)
     {
         var bus = _context?.Bus;
-        if (bus is null || _viewModel is not { IsRenameMode: true } model)
+        if (bus is null || _viewModel is not { } model)
+            return;
+
+        if (model.IsPackMode)
+        {
+            _ = await bus.ExecuteAsync(
+                "aurora.ui.panelset panel=" + PackagePanelNode
+                    + " control=batch-kind"
+                    + " value=" + CommandParser.QuoteArg(model.KindBoxText()),
+                command.Source,
+                command.Cancellation).ConfigureAwait(true);
+            return;
+        }
+
+        if (!model.IsRenameMode)
             return;
 
         foreach (var (control, value) in new[]
                  {
+                     ("batch-kind", model.KindBoxText()),
                      ("prefix", model.DrawingPrefix),
                      ("batch-material", model.PropertyBoxText(PartPropertyField.Material)),
                      ("batch-surface", model.PropertyBoxText(PartPropertyField.SurfaceTreatment)),
@@ -591,15 +620,20 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     /// <summary>属性整备那一排框所在的面板 id。回写要按它定位。</summary>
     private const string PropertyPanelNode = "sw-property-options";
 
+    /// <summary>整体打包底下那排控件所在的面板 id（V4.12 件别框）。</summary>
+    private const string PackagePanelNode = "sw-package-options";
+
     /// <summary>
     /// 三个属性槽在 SolidWorks 里都不是自由文本，界面上也就只让选不让填。
     ///
-    /// 首项恒为 <see cref="PartPropertyNames.NoWriteOption"/>：选项框只能在候选之间轮换，
-    /// 没有「清空」这个动作，少了这一项用户点错一次就再也退不回不写了。
+    /// 首项恒为 <paramref name="neutral"/>。单元格弹窗里它是 <see cref="PartPropertyNames.NoWriteOption"/>——
+    /// 选项只能在候选之间轮换，没有「清空」这个动作，少了这一项用户点错一次就再也退不回不写了。
+    /// 底下的框（V4.12）里它是这一栏的名字，读作总状态，见 <see cref="AssemblyViewModel.PropertyBoxText"/>。
     /// </summary>
     private static IReadOnlyList<string> SelectionOptions(
         PartPropertyField field,
-        AssemblyViewModel? model = null)
+        AssemblyViewModel? model = null,
+        string neutral = PartPropertyNames.NoWriteOption)
     {
         var values = field switch
         {
@@ -613,7 +647,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         var extras = field == PartPropertyField.Material && model is not null
             ? model.ExtraMaterialNames()
             : [];
-        return new[] { PartPropertyNames.NoWriteOption }
+        return new[] { neutral }
             .Concat(values)
             .Concat(extras)
             .Distinct(StringComparer.Ordinal)
@@ -769,11 +803,14 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         };
     }
 
-    /// <summary>候选取数的行格式：Aurora 的 <c>optionsSource</c> 固定读 <c>value</c> 列。</summary>
+    /// <summary>
+    /// 底下那三个框的候选。候选取数的行格式：Aurora 的 <c>optionsSource</c> 固定读 <c>value</c> 列。
+    /// 首项是框的总状态（这一栏的名字），不是单元格弹窗里的「（不写）」。
+    /// </summary>
     private static IReadOnlyList<IReadOnlyDictionary<string, string>> OptionRows(
         PartPropertyField field,
         AssemblyViewModel? model)
-        => SelectionOptions(field, model)
+        => SelectionOptions(field, model, AssemblyViewModel.PropertyBoxPlaceholder(field))
             .Select(option => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>
             {
                 ["value"] = option,
@@ -870,12 +907,12 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 { "case": "SolidWorks .SLDASM → 属性整备（改名）", "type": "stack", "gap": "tight", "children": [
                   { "type": "panel", "id": "sw-property-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.property.today", "text": "一键设置日期" }, { "kind": "button", "action": "minerva.conversion.run", "text": "写入" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
                   { "type": "table", "id": "sw-property-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号", "width": "150" }, { "key": "name", "title": "名称", "width": "*", "cellAction": "minerva.cell.name" }, { "key": "category", "title": "件别", "width": "90", "cellAction": "minerva.cell.kind" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "material", "title": "材料", "width": "110", "cellAction": "minerva.cell.material" }, { "key": "surface", "title": "表面处理", "width": "110", "cellAction": "minerva.cell.surface" }, { "key": "heat", "title": "热处理", "width": "110", "cellAction": "minerva.cell.heat" }] },
-                  { "type": "panel", "id": "sw-property-options", "text": "图号前缀", "rows": [{ "mode": "flex", "widgets": [{ "kind": "textbox", "id": "prefix", "label": "图号前缀", "commitAction": "minerva.options.prefix", "flex": true, "minWidth": 160 }, { "kind": "textbox", "id": "designer", "label": "设计", "commitAction": "minerva.property.designer", "flex": true, "minWidth": 120 }] }, { "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-material", "label": "材料", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "materials" } }, "commitAction": "minerva.property.material" }, { "kind": "textbox", "id": "batch-surface", "label": "表面处理", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "surfaces" } }, "commitAction": "minerva.property.surface" }, { "kind": "textbox", "id": "batch-heat", "label": "热处理", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "heats" } }, "commitAction": "minerva.property.heat" }] }] }
+                  { "type": "panel", "id": "sw-property-options", "text": "图号前缀", "rows": [{ "mode": "flex", "widgets": [{ "kind": "textbox", "id": "batch-kind", "label": "", "mode": "select", "options": ["件别", "机加件", "外购件", "排除"], "commitAction": "minerva.property.kind", "minWidth": 96 }, { "kind": "textbox", "id": "prefix", "label": "图号前缀", "commitAction": "minerva.options.prefix", "flex": true, "minWidth": 160 }, { "kind": "textbox", "id": "designer", "label": "设计", "commitAction": "minerva.property.designer", "flex": true, "minWidth": 120 }] }, { "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-material", "label": "", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "materials" } }, "commitAction": "minerva.property.material" }, { "kind": "textbox", "id": "batch-surface", "label": "", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "surfaces" } }, "commitAction": "minerva.property.surface" }, { "kind": "textbox", "id": "batch-heat", "label": "", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "heats" } }, "commitAction": "minerva.property.heat" }] }] }
                 ] },
                 { "case": "SolidWorks .SLDASM → 整体打包（零件采购：BOM + 图纸）", "type": "stack", "gap": "tight", "children": [
                   { "type": "panel", "id": "sw-package-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "打包" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
                   { "type": "table", "id": "sw-package-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号 / 规格", "width": "170" }, { "key": "name", "title": "名称", "width": "*" }, { "key": "quantity", "title": "数量", "width": "60" }, { "key": "category", "title": "件别", "width": "90", "cellAction": "minerva.cell.kind" }, { "key": "brand", "title": "品牌", "width": "110" }, { "key": "hasdrawing", "title": "工程图", "width": "70" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "detail", "title": "结果", "width": "2*" }] },
-                  { "type": "panel", "id": "sw-package-options", "text": "打包选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "switch", "id": "package-brand-ai", "label": "AI 查品牌（DeepSeek 联网搜索，按次计费）", "value": "__BRAND_AI__", "action": "minerva.options.brandai" }] }] }
+                  { "type": "panel", "id": "sw-package-options", "text": "打包选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-kind", "label": "", "mode": "select", "options": ["件别", "机加件", "外购件", "排除"], "commitAction": "minerva.property.kind" }, { "kind": "switch", "id": "package-brand-ai", "label": "AI 查品牌（DeepSeek 联网搜索，按次计费）", "value": "__BRAND_AI__", "action": "minerva.options.brandai" }] }] }
                 ] }
               ] }
             ] }
@@ -900,10 +937,11 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             { "id": "minerva.options.brandai", "title": "AI 查品牌", "command": "minerva.ui.options", "args": { "option": "brandai", "value": "{value}" }, "summary": "整体打包时是否用 DeepSeek 联网搜索外购件品牌（按次计费）；关着时品牌列与外购件清单 H 列留空" },
             { "id": "minerva.property.designer", "title": "设置设计", "command": "minerva.ui.property", "args": { "field": "designer", "value": "{value}" }, "summary": "把「设计」属性一次刷满全部零件" },
             { "id": "minerva.property.today", "title": "一键设置日期", "command": "minerva.ui.property", "args": { "field": "date" }, "summary": "把「日期」属性设为系统当日" },
+            { "id": "minerva.property.kind", "title": "统一设置件别", "command": "minerva.ui.property", "args": { "field": "kind", "value": "{value}" }, "summary": "把表里每一行的件别统一为 机加件 / 外购件 / 排除；「参考部件」目录下的件与子文件夹里的装配体改不成的保持原样" },
             { "id": "minerva.property.material", "title": "一键设置材料", "command": "minerva.ui.property", "args": { "field": "material", "value": "{value}" }, "summary": "把「材料」一次刷满全部零件" },
             { "id": "minerva.property.surface", "title": "一键设置表面处理", "command": "minerva.ui.property", "args": { "field": "surface", "value": "{value}" }, "summary": "把「表面处理」一次刷满全部零件" },
             { "id": "minerva.property.heat", "title": "一键设置热处理", "command": "minerva.ui.property", "args": { "field": "heat", "value": "{value}" }, "summary": "把「热处理」一次刷满全部零件" },
-            { "id": "minerva.cell.kind", "title": "切换件别", "command": "minerva.ui.cell", "args": { "field": "kind", "id": "{id}" }, "summary": "点一下切换这一行的件别：机加件 → 外购件 → 参考" },
+            { "id": "minerva.cell.kind", "title": "切换件别", "command": "minerva.ui.cell", "args": { "field": "kind", "id": "{id}" }, "summary": "点一下切换这一行的件别：机加件 → 外购件 → 排除" },
             { "id": "minerva.cell.name", "title": "修改名称", "command": "minerva.ui.cell", "args": { "field": "name", "id": "{id}" }, "summary": "修改这一行的名称；文件名是图号加空格加名称" },
             { "id": "minerva.cell.material", "title": "修改材料", "command": "minerva.ui.cell", "args": { "field": "material", "id": "{id}" }, "summary": "修改这一行零件的「材料」" },
             { "id": "minerva.cell.surface", "title": "修改表面处理", "command": "minerva.ui.cell", "args": { "field": "surface", "id": "{id}" }, "summary": "修改这一行零件的「表面处理」" },
