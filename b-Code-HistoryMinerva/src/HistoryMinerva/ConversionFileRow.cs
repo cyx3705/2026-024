@@ -237,7 +237,7 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 「件别」列：机加件 / 外购件 / 参考，带一个状态符号（写法照 Janus「操作」格）。
+    /// 「件别」列：机加件 / 外购件 / 排除，带一个状态符号（写法照 Janus「操作」格）。
     /// 它同时决定这一行进哪一张 BOM、要不要编号和导出。V4.11 起属性整备与打包两张表都显示它，
     /// 点一下换到下一种（<c>PartKinds.Next</c>）。
     /// </summary>

@@ -3203,9 +3203,13 @@ static void TestUiModuleRegistration(string root)
                 "「设计」文本框必须与图号前缀同处一行");
             foreach (var batchBox in new[] { "batch-material", "batch-surface", "batch-heat" })
             {
-                True(pageJson.Contains($"\"id\": \"{batchBox}\"", StringComparison.Ordinal),
-                    $"属性整备必须提供 {batchBox} 一键批量框");
+                True(pageJson.Contains($"\"id\": \"{batchBox}\", \"label\": \"\", \"mode\": \"select\"", StringComparison.Ordinal),
+                    $"V4.12：属性整备的 {batchBox} 一键批量框是不带标签的多态框");
             }
+            True(pageJson.Contains("\"rows\": [{ \"mode\": \"flex\", \"widgets\": [{ \"kind\": \"textbox\", \"id\": \"batch-kind\", \"label\": \"\", \"mode\": \"select\", \"options\": [\"件别\", \"机加件\", \"外购件\", \"排除\"], \"commitAction\": \"minerva.property.kind\"", StringComparison.Ordinal),
+                "V4.12：统一设置件别框必须在属性整备底部面板第一行最前面");
+            True(pageJson.Contains("\"id\": \"sw-package-options\", \"text\": \"打包选项\", \"rows\": [{ \"mode\": \"even\", \"widgets\": [{ \"kind\": \"textbox\", \"id\": \"batch-kind\"", StringComparison.Ordinal),
+                "V4.12：整体打包底部面板必须有统一设置件别框");
             True(pageJson.Contains("\"type\": \"switch\"", StringComparison.Ordinal),
                 "Minerva 页面必须使用 Aurora switch 分支");
             True(pageJson.Contains("\"kind\": \"sourcePicker\"", StringComparison.Ordinal),
@@ -4916,7 +4920,7 @@ static void TestPackageViewModelFlow(string root)
     // V4.11：点件别格。螺钉 外购件 → 参考：外购件清单空了，就不写，上一轮留下的旧清单与截图也要删掉。
     var screwId = viewModel.Parts.Single(row => row.PartName == "内六角螺钉").Id;
     Equal(PackagePartCategory.Reference, viewModel.CyclePartKind(screwId, out var cycleReason), "外购件点一下是参考：" + cycleReason);
-    Equal("参考 ○", viewModel.FindRow(screwId)!.CategoryText, "件别格必须立即换成新件别");
+    Equal("排除 ○", viewModel.FindRow(screwId)!.CategoryText, "件别格必须立即换成新件别");
     Equal("不打包", viewModel.FindRow(screwId)!.Status, "参考件的状态必须说明它不打包");
     True(viewModel.CanConvert, "改完件别后本轮必须可以再打包：" + viewModel.PackBlockedReason);
     viewModel.ConvertAsync().GetAwaiter().GetResult();
@@ -4929,7 +4933,7 @@ static void TestPackageViewModelFlow(string root)
     viewModel.SelectedMappingContent = MappingContentOption.Available
         .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPropertyPrep);
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    Equal("参考 ○", viewModel.FindRow(screwId)!.CategoryText, "件别记账必须在两张表之间共用");
+    Equal("排除 ○", viewModel.FindRow(screwId)!.CategoryText, "件别记账必须在两张表之间共用");
     Equal("不编号", viewModel.FindRow(screwId)!.Status, "属性整备里参考件不编号");
     var plateId = viewModel.Parts.Single(row => row.PartName == "底板").Id;
     Equal(PackagePartCategory.Purchased, viewModel.CyclePartKind(plateId, out _), "属性整备里同样能点件别");
@@ -4947,6 +4951,37 @@ static void TestPackageViewModelFlow(string root)
     viewModel.ProbeAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     Equal(PackagePartCategory.Purchased, viewModel.GetPartKind(screwId), "重新选择来源后件别回到路径缺省");
+
+    // V4.12：底下的件别框与统一设置件别。框是表的读数：不统一时显示总状态「件别」。
+    Equal("排除", PartKinds.Label(PackagePartCategory.Reference), "V4.12：参考件改叫排除");
+    Equal(PartKinds.BoxPlaceholder, viewModel.KindBoxText(), "机加件与外购件混排时件别框显示「件别」");
+    True(viewModel.SetAllPartKinds(PackagePartCategory.Purchased, out _, out _) > 0, "统一设成外购件必须至少改动一行");
+    Equal("外购件", viewModel.KindBoxText(), "统一之后件别框显示那个共同件别");
+    True(viewModel.Parts.All(row => viewModel.GetPartKind(row.Id) == PackagePartCategory.Purchased),
+        "统一设置件别必须作用到表里每一行");
+    Equal(0, viewModel.SetAllPartKinds(PackagePartCategory.Purchased, out _, out _), "已经统一的件别再设一次不改任何行");
+    viewModel.SetAllPartKinds(PackagePartCategory.Reference, out _, out _);
+    Equal("排除", viewModel.KindBoxText(), "统一设成排除");
+    True(!viewModel.CanWrite, "全部排除时属性整备没有可写的零件");
+    viewModel.SetAllPartKinds(PackagePartCategory.Machined, out var machinedSkipped, out var machinedReason);
+    Equal(PackagePartCategory.Machined, viewModel.GetPartKind(screwId),
+        $"子文件夹里的零件可以统一成机加件（跳过 {machinedSkipped} 行）{machinedReason}");
+    Equal(PackagePartCategory.Machined, viewModel.GetPartKind(plateId), "同级零件统一成机加件");
+    Equal(PartKinds.BoxPlaceholder, PartKinds.BoxOptions[0], "件别框首项是总状态");
+    True(!PartKinds.TryParseLabel(PartKinds.BoxPlaceholder, out _), "总状态「件别」不是一种件别，选中它不得改任何行");
+
+    // V4.12：材料等三个框的总状态不再是「（不写）」，而是这一栏自己的名字。
+    foreach (var (field, name) in new[]
+             {
+                 (PartPropertyField.Material, "材料"),
+                 (PartPropertyField.SurfaceTreatment, "表面处理"),
+                 (PartPropertyField.HeatTreatment, "热处理"),
+             })
+    {
+        Equal(name, AssemblyViewModel.PropertyBoxPlaceholder(field), $"{name}框的总状态是它自己的名字");
+        True(viewModel.PropertyBoxText(field) != PartPropertyNames.NoWriteOption,
+            $"{name}框不得再显示「（不写）」");
+    }
 }
 
 static void TestPackageOptions(string root)

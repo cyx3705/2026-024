@@ -61,7 +61,7 @@ public sealed partial class AssemblyViewModel
     }
 
     /// <summary>
-    /// 把打包计划画成零件表：机加件、外购件、参考件，以及自制子装配体（V4.11，供改件别）。
+    /// 把打包计划画成零件表：机加件、外购件、排除件，以及自制子装配体（V4.11，供改件别）。
     ///
     /// 行按 <see cref="PackagePartEntry.Id"/> 原地复用，理由与属性整备那张表相同：
     /// id 由源文件全路径定死，重新解析或改件别后同一个零件仍是同一行。
@@ -99,7 +99,7 @@ public sealed partial class AssemblyViewModel
                 + $"{plan.DrawingTargets.Count} 张工程图";
     }
 
-    /// <summary>数量 / 工程图 / 状态 / 结果四格。参考件与自制组件不交付，四格说清楚它们为什么不在包里。</summary>
+    /// <summary>数量 / 工程图 / 状态 / 结果四格。排除件与自制组件不交付，四格说清楚它们为什么不在包里。</summary>
     private static (string Quantity, string Drawing, string Status, string Detail) DescribePackageRow(
         PackagePartEntry entry)
     {
@@ -107,7 +107,7 @@ public sealed partial class AssemblyViewModel
         return entry switch
         {
             { Category: PackagePartCategory.Reference } =>
-                (string.Empty, string.Empty, "不打包", "参考件，不进清单、不导出"),
+                (string.Empty, string.Empty, "不打包", "排除，不进清单、不导出"),
             { Category: PackagePartCategory.Machined, IsAssembly: true } =>
                 (quantity, string.Empty, "不打包", "自制组件，里面的件各自进清单"),
             { Category: PackagePartCategory.Purchased } =>
