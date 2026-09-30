@@ -23,10 +23,6 @@
       <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HintPath>
       <Private>true</Private>
     </Reference>
-    <Reference Include="HistoryVulcan.Services">
-      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
     <Reference Include="HistoryAurora">
       <HintPath>$(HistoryAuroraRuntimeRoot)\HistoryAurora.dll</HintPath>
       <Private>true</Private>
@@ -47,7 +43,6 @@
   <Target Name="RefreshHistoryVulcanUiTestRuntime" AfterTargets="Build">
     <ItemGroup>
       <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll" />
-      <HistoryVulcanUiTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll" />
       <HistoryVulcanUiTestRuntime Include="$(HistoryAuroraRuntimeRoot)\HistoryAurora.dll" />
       <HistoryVulcanUiTestRuntime Include="$(HistoryAuroraRuntimeRoot)\AvalonDock.dll" />
       <HistoryVulcanUiTestRuntime Include="$(HistoryAuroraRuntimeRoot)\AvalonDock.Themes.VS2013.dll" />

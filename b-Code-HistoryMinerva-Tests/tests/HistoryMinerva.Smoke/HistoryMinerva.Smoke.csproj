@@ -13,10 +13,6 @@
       <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HintPath>
       <Private>true</Private>
     </Reference>
-    <Reference Include="HistoryVulcan.Services">
-      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
   </ItemGroup>
   <PropertyGroup>
     <HistoryMinervaModuleRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..\b-Code-HistoryMinerva'))</HistoryMinervaModuleRoot>
@@ -24,12 +20,13 @@
   </PropertyGroup>
   <ItemGroup>
     <AssemblyMetadata Include="HistoryMinervaWorkerPath" Value="$(HistoryMinervaWorkerPath)" />
+    <!-- 宿主 5.9.0 统一契约：装载冒烟调同一份宿主的 HistoryVulcan.Cli.exe 的 probe 开关。 -->
+    <AssemblyMetadata Include="HistoryVulcanHostRoot" Value="$([System.IO.Path]::GetFullPath('$(HistoryVulcanHostRoot)'))" />
     <AssemblyMetadata Include="HistoryMinervaRepositoryRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..'))" />
   </ItemGroup>
   <Target Name="RefreshHistoryVulcanTestRuntime" AfterTargets="Build">
     <ItemGroup>
       <HistoryVulcanTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll" />
-      <HistoryVulcanTestRuntime Include="$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(HistoryVulcanTestRuntime)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="false" />
   </Target>
