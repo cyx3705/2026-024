@@ -44,9 +44,12 @@ public sealed class PlanCommands : IModuleContextAware
     private static readonly ParameterSpec PathParameter = new()
     {
         Name = "path",
-        Description = "SolidWorks 总装配体 .SLDASM 的绝对路径",
+        Description = "SolidWorks 总装配体 .SLDASM 的绝对路径；含空格时整段加引号",
         Required = true,
     };
+
+    /// <summary>示例里的装配路径带空格（现场文件名就是这样），经宿主 QuoteArg 编码，照抄能跑。</summary>
+    private const string SamplePath = @"D:\设备\GHLSS-06-00 总装.SLDASM";
 
     public void Attach(IModuleContext context)
     {
@@ -64,8 +67,7 @@ public sealed class PlanCommands : IModuleContextAware
                 Domain = HistoryMinervaIdentity.CommandRoot,
                 CommandClass = "plan",
                 Summary = "只读解析装配体并返回整体打包计划（机加件/外购件两张表、数量、待导产物）",
-                Example = HistoryMinervaIdentity.CommandRoot
-                          + @".plan.package path=D:\设备\GHLSS-06-00 总装.SLDASM",
+                Example = HistoryMinervaIdentity.CommandRoot + ".plan.package path=" + CommandParser.QuoteArg(SamplePath),
                 Readonly = true,
                 Parameters = [PathParameter],
                 Handler = PlanPackageAsync,
@@ -76,8 +78,7 @@ public sealed class PlanCommands : IModuleContextAware
                 Domain = HistoryMinervaIdentity.CommandRoot,
                 CommandClass = "plan",
                 Summary = "只读解析装配体并返回属性整备改名计划（不改任何文件）",
-                Example = HistoryMinervaIdentity.CommandRoot
-                          + @".plan.rename path=D:\设备\GHLSS-06-00 总装.SLDASM prefix=ZS-LHL",
+                Example = HistoryMinervaIdentity.CommandRoot + ".plan.rename path=" + CommandParser.QuoteArg(SamplePath) + " prefix=ZS-LHL",
                 Readonly = true,
                 Parameters =
                 [

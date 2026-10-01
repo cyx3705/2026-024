@@ -11,7 +11,7 @@
     "title": "HistoryMinerva CAD 转换模块",
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active",
-    "version": "4.14.0",
+    "version": "4.14.1",
     "branch": "main"
   },
   "historyVulcanHost": {
@@ -21,7 +21,6 @@
   "paths": {
     "activeRoots": [
       "b-Office/current",
-      "b-Office/package",
       "b-Code",
       "b-Code-HistoryMinerva",
       "b-Code-HistoryMinerva-Tests"
@@ -40,7 +39,6 @@
   },
   "documents": {
     "center": "b-Office/文档中心.md",
-    "package": "b-Office/package/模块API.md",
     "structure": "b-Office/文档中心.md",
     "overview": "b-Office/current/项目概览.md",
     "technicalContract": "b-Office/current/技术合同.md",
