@@ -23,10 +23,6 @@ $historyVulcanManifestPath = Join-Path $historyVulcanPackageRoot 'manifest.json'
 $historyVulcanCorePath = Join-Path $historyVulcanPackageRoot 'host\HistoryVulcan.Core.dll'
 $moduleProject = Join-Path $moduleRoot 'src\HistoryMinerva\HistoryMinerva.csproj'
 $moduleManifestPath = Join-Path $moduleRoot 'module.manifest.json'
-$packageDocuments = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'b-Office\package') -Filter '*.md' -File)
-if ($packageDocuments.Count -eq 0) {
-    throw 'b-Office/package must contain at least one Markdown document'
-}
 $versionPropsPath = Join-Path $moduleRoot 'build\HistoryMinerva.Version.props'
 
 foreach ($required in @($historyVulcanManifestPath, $historyVulcanCorePath, $moduleProject, $moduleManifestPath, $versionPropsPath)) {
@@ -147,11 +143,7 @@ $snapshotJson = $snapshot | ConvertTo-Json -Depth 4
     $snapshotJson + [Environment]::NewLine,
     [System.Text.UTF8Encoding]::new($false))
 
-$docsRoot = Join-Path $OutputRoot 'docs'
-$null = New-Item -ItemType Directory -Force -Path $docsRoot
-foreach ($document in $packageDocuments) {
-    Copy-Item -LiteralPath $document.FullName -Destination (Join-Path $docsRoot $document.Name)
-}
+# 宿主 6.1.0（DEC-072）起包里不带 docs/：说明书只来自指令注册时的自描述。
 
 # Git stores package JSON/XML with LF. Normalize before hashing so a clean checkout
 # preserves exactly the bytes declared by SHA256SUMS.
@@ -184,7 +176,7 @@ $expectedPackageFiles = @($runtimeFiles + @(
     'module.manifest.json',
     'historyvulcan.snapshot.json',
     'SHA256SUMS'
-) + @($packageDocuments | ForEach-Object { "docs/$($_.Name)" }) | Sort-Object)
+) | Sort-Object)
 $actualPackageFiles = @(Get-ChildItem -LiteralPath $OutputRoot -File -Recurse | ForEach-Object {
     $_.FullName.Substring($outputPrefix.Length).Replace('\', '/')
 } | Sort-Object)

@@ -34,7 +34,7 @@ HistoryMinerva 是注册到 HistoryVulcan 的单一 CAD 转换模块，在 Auror
 | 总线面 | `minerva.ui.content` / `source` / `options` | 页面状态：转换内容、来源、选项 |
 | MCP | `minerva.worker.status` / `path` / `capabilities` / `show` / `hide` | Worker 就绪查询 |
 
-跨模块与 AI 消费优先走无状态的 `plan.*`。完整能力总表见 [模块 API](./b-Office/package/模块API.md)。
+跨模块与 AI 消费优先走无状态的 `plan.*`。完整命令目录与参数是注册时的自描述：`diana.docs.read domain=minerva`（宿主 6.1.0 起没有消费文档）。
 
 ## 入口
 
@@ -47,7 +47,6 @@ HistoryMinerva 是注册到 HistoryVulcan 的单一 CAD 转换模块，在 Auror
 | [技术合同](./b-Office/current/技术合同.md) | 现行需求与架构 |
 | [有效决策](./b-Office/current/有效决策.md) | 仍然有效的关键决策 |
 | [验证合同](./b-Office/current/验证合同.md) | 验证层级、命令与证据 |
-| [模块 API](./b-Office/package/模块API.md) | 跨模块消费合同 |
 
 ## 目录
 
@@ -56,7 +55,7 @@ HistoryMinerva 是注册到 HistoryVulcan 的单一 CAD 转换模块，在 Auror
 | `b-Code-HistoryMinerva/` | 生产模块：前端、Worker、Contracts 与 `eng/` 门禁脚本，见 [README](./b-Code-HistoryMinerva/README.md) |
 | `b-Code-HistoryMinerva-Tests/` | Smoke、UiSmoke 与三个 CAD 真机门禁，见 [README](./b-Code-HistoryMinerva-Tests/README.md) |
 | `b-Code/` | 项目合同检查 |
-| `b-Office/` | 项目文档：`current/` 现行合同、`package/` 消费合同、`history/` 只读归档 |
+| `b-Office/` | 项目文档：`current/` 现行合同、`history/` 只读归档 |
 | `z-Publish/` | 正式快照与 `history/` 归档，由宿主管线写入 |
 
 ## 构建与验证

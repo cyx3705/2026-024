@@ -116,8 +116,8 @@ if ([string]$projectManifest.project.id -ne '2026-024' -or [string]$projectManif
 if ([string]$projectManifest.project.version -ne $sourceVersion) {
     Add-Violation "project.manifest.json version $($projectManifest.project.version) != $sourceVersion"
 }
-if ([string]$projectManifest.project.branch -ne '2026-024-HistoryMinerva') {
-    Add-Violation 'project.manifest.json branch must be 2026-024-HistoryMinerva'
+if ([string]$projectManifest.project.branch -ne 'main') {
+    Add-Violation 'project.manifest.json branch must be main (分仓后各仓默认分支)'
 }
 if ([version][string]$projectManifest.historyVulcanHost.version -lt [version]$requiredVulcan) {
     Add-Violation 'project.manifest.json HistoryVulcan projection is below the required minimum'
@@ -136,24 +136,16 @@ if (-not [bool]$sourceManifest.ui -or [string]$sourceManifest.mcpExposure -ne 'r
 
 $technicalPath = Join-Path $root ([string]$projectManifest.documents.technicalContract)
 $verificationPath = Join-Path $root ([string]$projectManifest.documents.verification)
-$apiPath = Join-Path $root ([string]$projectManifest.documents.package)
 $technicalText = [IO.File]::ReadAllText($technicalPath)
 $verificationText = [IO.File]::ReadAllText($verificationPath)
-$apiText = [IO.File]::ReadAllText($apiPath)
 if ($technicalText -notmatch "(?m)^# HistoryMinerva $([regex]::Escape($sourceVersion)) .+$") {
     Add-Violation "Technical contract title does not project version $sourceVersion"
 }
 if ($verificationText -notmatch "(?m)^# HistoryMinerva $([regex]::Escape($sourceVersion)) .+$") {
     Add-Violation "Verification contract title does not project version $sourceVersion"
 }
-if ($apiText -notmatch "HistoryMinerva ``$([regex]::Escape($sourceVersion))``") {
-    Add-Violation "Module API does not project source version $sourceVersion"
-}
-if ($apiText -notmatch "HistoryVulcan[^\r\n]*``$([regex]::Escape($requiredVulcan))``") {
-    Add-Violation "Module API does not project HistoryVulcan $requiredVulcan"
-}
 
-# Command documentation is compared with both explicit registration sites.
+# 命令目录从显式登记处抽取（宿主 6.1.0 起没有 模块API.md 可比对，说明书即注册自描述，DEC-074）。
 $identitySource = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva.Contracts\HistoryMinervaIdentity.cs'))
 $commandRootMatch = [regex]::Match($identitySource, 'CommandRoot\s*=\s*"(?<root>[a-z][a-z0-9]*)"')
 if (-not $commandRootMatch.Success) {
@@ -194,25 +186,6 @@ $planCommands = @(
         Sort-Object -Unique
 )
 $sourceCommands = @($backendCommands + $uiCommands + $pageCommands + $planCommands | Sort-Object -Unique)
-$apiCommands = @(
-    foreach ($line in ($apiText -split "`r?`n")) {
-        if ($line -notmatch '^\|\s*(?:\*\*)?B-\d+') { continue }
-
-        $parent = $null
-        foreach ($match in [regex]::Matches($line, '`(?<token>minerva(?:\.[a-z0-9]+)+|\.[a-z][a-z0-9]*)`')) {
-            $token = $match.Groups['token'].Value
-            if ($token.StartsWith('minerva.', [StringComparison]::Ordinal)) {
-                $parent = $token.Substring(0, $token.LastIndexOf('.'))
-                $token
-                continue
-            }
-
-            if ($null -ne $parent) {
-                $parent + $token
-            }
-        }
-    }
-) | Sort-Object -Unique
 if ($backendCommands.Count -ne 5 -or $uiCommands.Count -ne 3) {
     Add-Violation "Expected 5 backend and 3 frontend commands; found $($backendCommands.Count) and $($uiCommands.Count)"
 }
@@ -227,7 +200,6 @@ if ($uiSource -match '_context\?\.Log\.Info\([^\r\n]*StatusText' -or
 if ($commandHandlerSource -notmatch 'CommandResult\.Fail\("Minerva .*已取消') {
     Add-Violation 'Minerva command handlers must expose cancellation through CommandResult.Fail'
 }
-Assert-SameSet 'Module API command catalog' $sourceCommands $apiCommands
 # REQ-003：页面由 Aurora 按 minerva.ui.describe 统一创建。模块**不得**注册
 # minerva.ui.pane，也不得返回 WPF UIElement。这里原本要求的正是被禁掉的那条命令，
 # 是 Aurora 描述式改造之前留下的检查，方向已经反了。
@@ -292,20 +264,6 @@ else {
         }
         if ($dep -notin $expectedRuntimeFiles) {
             Add-Violation "z-Publish dep is not a package payload: $dep"
-        }
-    }
-
-    $docsRoot = Join-Path $formalRoot 'docs'
-    if (Test-Path -LiteralPath $docsRoot) {
-        if (-not (Test-Path -LiteralPath $docsRoot -PathType Container)) {
-            Add-Violation 'z-Publish/docs must be a directory of Markdown'
-        }
-        else {
-            foreach ($item in @(Get-ChildItem -LiteralPath $docsRoot -Recurse -File)) {
-                if ([IO.Path]::GetExtension($item.Name) -ne '.md') {
-                    Add-Violation "z-Publish/docs may contain only Markdown: $($item.Name)"
-                }
-            }
         }
     }
 
