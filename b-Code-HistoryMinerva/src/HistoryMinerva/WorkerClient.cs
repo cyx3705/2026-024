@@ -28,7 +28,7 @@ public sealed class WorkerClient
     private static readonly JsonSerializerOptions JsonOptions = WorkerProtocol.CreateJsonOptions();
 
     public WorkerClient(MappingRuntimePaths? runtimePaths = null)
-        => _runtimePaths = runtimePaths ?? MappingRuntimePaths.CreateAppShellFallback();
+        => _runtimePaths = runtimePaths ?? MappingRuntimePaths.Unattached();
 
     public string WorkerPath => WorkerLocator.Locate(_runtimePaths);
 

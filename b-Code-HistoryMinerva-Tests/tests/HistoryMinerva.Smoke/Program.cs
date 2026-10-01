@@ -8,8 +8,6 @@ using HistoryMinerva.Worker;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
-using HistoryVulcan.Core.Storage;
-using HistoryVulcan.Services.Modules;
 using System.Text.Json;
 using System.Windows.Threading;
 
@@ -643,7 +641,7 @@ static void TestPlanCommandSurface(string root)
         0, 0, 0, 1,
     ];
 
-    static (CommandBus Bus, CommandRegistry Registry) BuildPlanBus(
+    static (TestCommandBus Bus, TestRegistrar Registry) BuildPlanBus(
         Func<MappingRuntimePaths, IAssemblyProbe> probeFactory)
     {
         var context = new RecordingModuleContext(
@@ -659,11 +657,7 @@ static void TestVulcanModuleHostSurface(string root)
     var moduleAssembly = LocateRepoFile(Path.Combine(
         "b-Code-HistoryMinerva", "src", "HistoryMinerva", "bin", "Release",
         "net8.0-windows", "HistoryMinerva.dll"));
-    var registry = new CommandRegistry();
-    var log = new RecordingShellLog();
-    var bus = new CommandBus(registry, log);
-    var runtimeRoot = Path.Combine(root, "runtime-modules");
-    var package = Path.Combine(runtimeRoot, "HistoryMinerva");
+    var package = Path.Combine(root, "probe-package", "HistoryMinerva");
     Directory.CreateDirectory(package);
     File.Copy(moduleAssembly, Path.Combine(package, "HistoryMinerva.dll"), overwrite: true);
     foreach (var fileName in new[] { "HistoryMinerva.xml", "HistoryMinerva.Contracts.dll" })
@@ -674,35 +668,64 @@ static void TestVulcanModuleHostSurface(string root)
         .Where(file => Path.GetFileName(file) != "SHA256SUMS")
         .Select(file => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file)))
             + "  " + Path.GetFileName(file)));
-    using var host = new ModuleHost(new RuntimeModuleDiscoverySource(runtimeRoot), log)
-    {
-        // Minerva's single assembly carries both WorkerCommands and the Aurora pane;
-        // the host must load the UI-marked package for either context to attach.
-        EnableUiModules = true,
-        EnableFileWatching = false,
-    };
-    // HistoryVulcan 5.4: Attach takes only the registry and bus; settings and data roots stay module-owned.
-    host.Attach(registry, bus);
-    host.Start();
 
-    var commandNames = registry.All().Select(command => command.Name).ToArray();
+    // 宿主 5.9.0 统一契约：交给已发布宿主的 `HistoryVulcan.Cli.exe --probe` 装载，按 JSON 读结果，
+    // 不再引用宿主实现程序集构造 ModuleHost。UI 标记的包在 probe 里照常装载。
+    var listed = ProbeHost(package, "vulcan.command.list domain=minerva");
+    var module = listed.GetProperty("data").GetProperty("module");
+    True(module.GetProperty("attached").GetBoolean(),
+        "the real Vulcan host must attach Minerva: " + module.GetProperty("attachFailures").GetRawText()
+        + " " + listed.GetProperty("diagnostics").GetRawText());
+    var rows = listed.GetProperty("data").GetProperty("result").GetProperty("data").EnumerateArray().ToArray();
+    var commandNames = rows.Select(row => row.GetProperty("commandName").GetString()!).ToArray();
     Equal(5, commandNames.Count(name => name.StartsWith("minerva.worker.", StringComparison.OrdinalIgnoreCase)),
-        "the real Vulcan ModuleHost must register all five Minerva worker commands");
+        "the real Vulcan host must register all five Minerva worker commands");
     // V4.9 起是 probe / run / cancel 三条：删图号并回写入，strip 退役（DEC-057）。
     Equal(3, commandNames.Count(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)),
-        "ModuleHost must register conversion commands during Attach, before ShellUi exists");
+        "the host must register conversion commands during Attach, before ShellUi exists");
     True(!commandNames.Any(name => name.StartsWith("HistoryMinerva.", StringComparison.OrdinalIgnoreCase)),
-        "the real Vulcan ModuleHost must not synthesize the legacy HistoryMinerva command surface");
+        "the real Vulcan host must not synthesize the legacy HistoryMinerva command surface");
 
-    foreach (var name in commandNames.Where(name => name.StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)))
+    foreach (var row in rows.Where(row => row.GetProperty("commandName").GetString()!
+                 .StartsWith("minerva.conversion.", StringComparison.OrdinalIgnoreCase)))
     {
-        True(registry.TryGet(name, out var conversion) && conversion.RequiresUiThread,
-            $"{name} must be registered on the host bus as a UI-thread command");
+        True(row.GetProperty("requiresUiThread").GetBoolean(),
+            $"{row.GetProperty("commandName").GetString()} must be registered on the host bus as a UI-thread command");
     }
 
-    var result = bus.ExecuteAsync("minerva.worker.status", "Smoke").GetAwaiter().GetResult();
-    True(result.Success && result.Message.Contains(HistoryMinervaIdentity.Name, StringComparison.Ordinal),
+    var status = ProbeHost(package, "minerva.worker.status").GetProperty("data").GetProperty("result");
+    True(status.GetProperty("success").GetBoolean()
+         && status.GetProperty("message").GetString()!.Contains(HistoryMinervaIdentity.Name, StringComparison.Ordinal),
         "the real Vulcan command bus must execute minerva.worker.status");
+}
+
+// 调已发布宿主的 `HistoryVulcan.Cli.exe --probe <包> --cli <指令> --format json`；宿主根目录由 csproj 写进本程序集。
+static System.Text.Json.JsonElement ProbeHost(string package, string command)
+{
+    var hostRoot = typeof(RecordingEnvironment).Assembly
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
+        .Cast<System.Reflection.AssemblyMetadataAttribute>()
+        .FirstOrDefault(item => item.Key == "HistoryVulcanHostRoot")?.Value;
+    True(!string.IsNullOrEmpty(hostRoot), "HistoryVulcanHostRoot must be written into the smoke assembly at build time");
+    var cli = Path.Combine(hostRoot!, "HistoryVulcan.Cli.exe");
+    True(File.Exists(cli), $"host command line not found: {cli} (--probe needs host 5.9.0)");
+
+    var start = new System.Diagnostics.ProcessStartInfo(cli)
+    {
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+        StandardOutputEncoding = System.Text.Encoding.UTF8,
+    };
+    foreach (var argument in new[] { "--probe", package, "--format", "json", "--cli" }.Concat(command.Split(' ')))
+        start.ArgumentList.Add(argument);
+    using var process = System.Diagnostics.Process.Start(start)!;
+    var output = process.StandardOutput.ReadToEnd();
+    var error = process.StandardError.ReadToEnd();
+    process.WaitForExit();
+    True(output.TrimStart().StartsWith('{'), $"--probe did not print JSON (exit {process.ExitCode}): {output}{error}");
+    using var document = System.Text.Json.JsonDocument.Parse(output);
+    return document.RootElement.Clone();
 }
 
 static void TestCustomOutputDirectories(string root)
@@ -782,15 +805,13 @@ static void TestConversionCommandBusOutcomes(string root)
     using (var invalidViewModel = CreateViewModel(
                static (_, _, _) => throw new InvalidOperationException("不应启动 Worker")))
     {
-        var (bus, log) = CreateProbeBus(invalidViewModel);
+        var (bus, _) = CreateProbeBus(invalidViewModel);
         var result = bus.ExecuteAsync("minerva.conversion.probe", "Smoke").GetAwaiter().GetResult();
         True(!result.Success, "未选择来源的探查必须通过命令总线返回失败");
         True(result.Data is null,
             "失败的解析不得带回 Data——消费方按 Data 有没有来判断这一轮拿没拿到事实");
-        True(log.Entries.Any(entry =>
-                entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)
-                && entry.Level == ShellLogLevel.Error),
-            "未选择来源的失败必须进入 cmd:result:minerva:conversion");
+        // 失败结果怎么进控制台（cmd:result:<域>:<类>、Error 级）是宿主总线的事，宿主测试守着；
+        // 宿主 6.0.0 起模块测试看不到宿主总线，这里只核对模块交给总线的结果。
     }
 
     using (var failedViewModel = CreateViewModel((request, progress, _) =>
@@ -804,21 +825,15 @@ static void TestConversionCommandBusOutcomes(string root)
            }))
     {
         UseAssemblySource(failedViewModel, sourceAssembly);
-        var (bus, log) = CreateProbeBus(failedViewModel);
+        var (bus, progress) = CreateProbeBus(failedViewModel);
         var result = bus.ExecuteAsync("minerva.conversion.probe", "Smoke").GetAwaiter().GetResult();
         True(!result.Success && result.Message.Contains("模拟 Worker 失败", StringComparison.Ordinal),
             "Worker 异常不得被吞成成功结果");
+        // 进度交给总线给的 CommandContext.Progress；宿主再把它写成 cmd:progress:minerva:conversion。
         True(SpinWait.SpinUntil(
-                () => log.Snapshot().Any(entry =>
-                    entry.Category.Equals("cmd:progress:minerva:conversion", StringComparison.OrdinalIgnoreCase)
-                    && entry.Message.Contains("总线进度样本", StringComparison.Ordinal)),
+                () => progress.Lines.Any(line => line.Contains("总线进度样本", StringComparison.Ordinal)),
                 TimeSpan.FromSeconds(3)),
-            "Worker 进度必须进入 cmd:progress:minerva:conversion");
-        True(log.Entries.Any(entry =>
-                entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)
-                && entry.Level == ShellLogLevel.Error
-                && entry.Message.Contains("模拟 Worker 失败", StringComparison.Ordinal)),
-            "Worker 异常必须作为失败结果进入 Vulcan 控制台");
+            "Worker 进度必须交给总线的进度通道");
     }
 
     var started = new ManualResetEventSlim();
@@ -830,18 +845,14 @@ static void TestConversionCommandBusOutcomes(string root)
            }))
     {
         UseAssemblySource(canceledViewModel, sourceAssembly);
-        var (bus, log) = CreateProbeBus(canceledViewModel);
+        var (bus, _) = CreateProbeBus(canceledViewModel);
         var run = bus.ExecuteAsync("minerva.conversion.probe", "Smoke");
         True(started.Wait(TimeSpan.FromSeconds(3)) && canceledViewModel.Cancel(),
             "命令总线取消样本必须进入运行态并接受取消");
         var result = run.GetAwaiter().GetResult();
+        // 失败结果进控制台是宿主总线的事（宿主 6.0.0 起模块测试看不到），这里核对交给总线的失败结果。
         True(!result.Success && result.Message.Contains("取消", StringComparison.Ordinal),
             "取消必须通过命令总线返回明确失败结果");
-        True(log.Entries.Any(entry =>
-                entry.Category.Equals("cmd:result:minerva:conversion", StringComparison.OrdinalIgnoreCase)
-                && entry.Level == ShellLogLevel.Error
-                && entry.Message.Contains("取消", StringComparison.Ordinal)),
-            "取消结果必须进入 Vulcan 控制台");
     }
 
     static AssemblyViewModel CreateViewModel(
@@ -852,9 +863,9 @@ static void TestConversionCommandBusOutcomes(string root)
             static _ => { },
             Dispatcher.CurrentDispatcher);
 
-    static (CommandBus Bus, RecordingShellLog Log) CreateProbeBus(AssemblyViewModel viewModel)
+    static (TestCommandBus Bus, ProgressLines Progress) CreateProbeBus(AssemblyViewModel viewModel)
     {
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(new CommandDescriptor
         {
             Name = "minerva.conversion.probe",
@@ -865,8 +876,8 @@ static void TestConversionCommandBusOutcomes(string root)
                 ? ConversionCommandHandlers.ProbeAsync(viewModel, context)
                 : Task.FromResult(CommandResult.Fail(viewModel.StatusText)),
         });
-        var log = new RecordingShellLog();
-        return (new CommandBus(registry, log), log);
+        var progress = new ProgressLines();
+        return (new TestCommandBus(registry) { Progress = progress }, progress);
     }
 }
 
@@ -3338,17 +3349,18 @@ static void TestUiModuleRegistration(string root)
     if (uiFailure is not null)
         throw new InvalidOperationException("Mapping UI 模块 Smoke 失败。", uiFailure);
 
-    var runtimePaths = new MappingRuntimePaths(dataRoot, moduleRoot);
-    Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, HistoryMinervaIdentity.RequestsDirectoryName),
+    var moduleData = Path.Combine(dataRoot, "ModuleData", HistoryMinervaIdentity.Name);
+    var packageSlot = Path.Combine(moduleRoot, HistoryMinervaIdentity.Name);
+    var runtimePaths = new MappingRuntimePaths(moduleData, packageSlot);
+    Equal(Path.Combine(moduleData, HistoryMinervaIdentity.RequestsDirectoryName),
         runtimePaths.RequestsDirectory,
-        "Worker 请求必须迁入 HistoryVulcan 数据根");
-    Equal(Path.Combine(dataRoot, HistoryMinervaIdentity.DataDirectoryName, HistoryMinervaIdentity.ProbesDirectoryName),
+        "Worker 请求必须落在宿主给的数据目录");
+    Equal(Path.Combine(moduleData, HistoryMinervaIdentity.ProbesDirectoryName),
         runtimePaths.ProbesDirectory,
-        "探查结果必须迁入 HistoryVulcan 数据根");
-    True(runtimePaths.WorkerCandidates().Contains(
-            Path.Combine(moduleRoot, HistoryMinervaIdentity.Name, HistoryMinervaIdentity.WorkerFileName),
-            StringComparer.OrdinalIgnoreCase),
-        "Worker 定位必须包含 HistoryVulcan HistoryMinerva 部署槽");
+        "探查结果必须落在宿主给的数据目录");
+    Equal(Path.Combine(packageSlot, HistoryMinervaIdentity.WorkerFileName),
+        runtimePaths.WorkerCandidates()[0],
+        "装在宿主里时 Worker 首先从宿主给的包目录找（程序集从内存流装载，Location 为空）");
     True(runtimePaths.WorkerCandidates().Any(path =>
         {
             var normalized = path.Replace('/', Path.DirectorySeparatorChar);
@@ -5150,55 +5162,52 @@ sealed class RecordingModuleContext : IModuleContext
 {
     public RecordingModuleContext(string dataDirectory, string moduleDirectory)
     {
-        Log = new RecordingShellLog();
-        Bus = new CommandBus(Registry, Log);
+        Bus = new TestCommandBus(Registry);
+        Environment = new RecordingEnvironment(Path.GetFullPath(dataDirectory));
     }
 
-    public CommandRegistry Registry { get; } = new();
-    public CommandBus Bus { get; }
-    public RecordingShellLog Log { get; }
+    /// <summary>宿主统一契约：模块从上下文取数据目录。</summary>
+    public IModuleEnvironment Environment { get; }
 
-    public void RegisterCommands(Action<CommandRegistry> configure)
+    /// <summary>宿主 6.0.0 起模块只见登记口与窄总线；测试用本仓的替身（ModuleTestHost.cs）。</summary>
+    public TestRegistrar Registry { get; } = new();
+    public TestCommandBus Bus { get; }
+    public TestLog Log { get; } = new();
+
+    ICommandBus IModuleContext.Bus => Bus;
+    IModuleLog IModuleContext.Log => Log;
+
+    public void RegisterCommands(Action<ICommandRegistrar> configure)
         => configure(Registry);
 }
 
-sealed class RecordingSettingsService(string moduleDirectory) : ISettingsService
+sealed class RecordingEnvironment(string dataDirectory) : IModuleEnvironment
 {
-    private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase)
+    public string ModuleName => HistoryMinervaIdentity.Name;
+
+    public string DataDirectory
     {
-        ["module.dir"] = Path.GetFullPath(moduleDirectory),
-    };
+        get
+        {
+            Directory.CreateDirectory(dataDirectory);
+            return dataDirectory;
+        }
+    }
 
-    public string? Get(string key) => _values.GetValueOrDefault(key);
+    // 测试进程里 Worker 构建在测试程序旁边，当作包目录。
+    public string PackageDirectory => AppContext.BaseDirectory;
 
-    public int GetInt(string key, int fallback)
-        => int.TryParse(Get(key), out var value) ? value : fallback;
+    public HostRunMode RunMode => HostRunMode.Probe;
 
-    public void Set(string key, string value) => _values[key] = value;
-
-    public IReadOnlyList<KeyValuePair<string, string>> All() => _values.ToArray();
+    public string HostVersion => "6.0.0";
 }
 
-sealed class RecordingShellLog : IShellLog
+/// <summary>收下总线交给处理器的进度行。</summary>
+sealed class ProgressLines : IProgress<string>
 {
-    private readonly object _gate = new();
-    private readonly List<ShellLogEntry> _entries = [];
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _lines = new();
 
-    public IReadOnlyList<ShellLogEntry> Entries => Snapshot();
+    public IReadOnlyList<string> Lines => _lines.ToArray();
 
-    public event EventHandler<ShellLogEntry>? EntryAdded;
-
-    public void Log(ShellLogLevel level, string category, string message)
-    {
-        var entry = new ShellLogEntry(DateTime.Now, level, category, message);
-        lock (_gate)
-            _entries.Add(entry);
-        EntryAdded?.Invoke(this, entry);
-    }
-
-    public IReadOnlyList<ShellLogEntry> Snapshot()
-    {
-        lock (_gate)
-            return _entries.ToArray();
-    }
+    public void Report(string value) => _lines.Enqueue(value);
 }

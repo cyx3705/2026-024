@@ -10,14 +10,14 @@ namespace HistoryMinerva;
 public partial class AssemblyView : UserControl, IDisposable
 {
     private readonly AssemblyViewModel _viewModel;
-    private readonly CommandBus? _commandBus;
+    private readonly ICommandBus? _commandBus;
 
     public AssemblyView()
-        : this(MappingRuntimePaths.CreateAppShellFallback(), null)
+        : this(MappingRuntimePaths.Unattached(), null)
     {
     }
 
-    internal AssemblyView(MappingRuntimePaths runtimePaths, CommandBus? commandBus)
+    internal AssemblyView(MappingRuntimePaths runtimePaths, ICommandBus? commandBus)
     {
         _viewModel = new AssemblyViewModel(runtimePaths);
         _commandBus = commandBus;
@@ -103,13 +103,13 @@ public partial class AssemblyView : UserControl, IDisposable
     private async void OnConvertClick(object sender, RoutedEventArgs e)
     {
         if (_commandBus is not null)
-            await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.run", HistoryMinervaIdentity.Name + ":UI");
+            await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.run", "UI");
     }
 
     private async void OnCancelClick(object sender, RoutedEventArgs e)
     {
         if (_commandBus is not null)
-            await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.cancel", HistoryMinervaIdentity.Name + ":UI");
+            await _commandBus.ExecuteAsync(HistoryMinervaIdentity.CommandRoot + ".conversion.cancel", "UI");
     }
 
     private void OnAssemblyTreeOpenClick(object sender, RoutedEventArgs e)

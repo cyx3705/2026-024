@@ -11,12 +11,12 @@
     "title": "HistoryMinerva CAD 转换模块",
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active",
-    "version": "4.12.1",
+    "version": "4.14.0",
     "branch": "main"
   },
   "historyVulcanHost": {
     "packageRoot": "../2026-023-HistoryVulcan/z-Publish",
-    "version": "5.1.2"
+    "version": "6.0.0"
   },
   "paths": {
     "activeRoots": [
@@ -60,7 +60,7 @@
   },
   "externalDependencies": [
     ".NET 8 SDK and Windows Desktop Runtime",
-    "HistoryVulcan.Core 5.1.2 or newer host snapshot (minimum compatible host version)",
+    "HistoryVulcan.Core 6.0.0 or newer host snapshot (minimum compatible host version)",
     "HistoryAurora 1.0.0 Release runtime (UI Smoke theme fixture only)",
     "HistoryApollo 0.2.0 or newer, optional: purchased-part brand lookup over the command bus (apollo.chat.ask web=true)",
     "Solid Edge 2020 COM automation",
@@ -75,5 +75,67 @@
     "**/node_modules/**",
     "**/.vs/**",
     "artifacts/**"
-  ]
+  ],
+  "publish": {
+    "versionProps": "b-Code-HistoryMinerva\\build\\HistoryMinerva.Version.props",
+    "versionProperty": "HistoryMinervaVersion",
+    "sourceManifest": "b-Code-HistoryMinerva\\module.manifest.json",
+    "package": {
+      "project": "b-Code-HistoryMinerva\\src\\HistoryMinerva\\HistoryMinerva.csproj",
+      "files": [
+        "HistoryMinerva.dll",
+        "HistoryMinerva.xml",
+        "HistoryMinerva.Contracts.dll",
+        "HistoryMinerva.Worker.exe",
+        "HistoryMinerva.Worker.dll",
+        "HistoryMinerva.Worker.deps.json",
+        "HistoryMinerva.Worker.runtimeconfig.json",
+        "module.manifest.json"
+      ]
+    },
+    "validation": [
+      {
+        "tool": "dotnet.exe",
+        "configurations": [
+          "Release"
+        ],
+        "arguments": [
+          "run",
+          "--project",
+          "b-Code-HistoryMinerva-Tests\\tests\\HistoryMinerva.Smoke\\HistoryMinerva.Smoke.csproj",
+          "-c",
+          "{configuration}",
+          "-p:NuGetAudit=false",
+          "-p:BaseOutputPath={isolatedOutputRoot}"
+        ],
+        "description": "Run module Smoke",
+        "isolatedOutputRoot": "b-Code-HistoryMinerva-Tests\\tests\\HistoryMinerva.Smoke\\isolated"
+      },
+      {
+        "tool": "dotnet.exe",
+        "configurations": [
+          "Release"
+        ],
+        "arguments": [
+          "run",
+          "--project",
+          "b-Code-HistoryMinerva-Tests\\tests\\HistoryMinerva.UiSmoke\\HistoryMinerva.UiSmoke.csproj",
+          "-c",
+          "{configuration}",
+          "-p:NuGetAudit=false",
+          "-p:BaseOutputPath={isolatedOutputRoot}",
+          "--",
+          "--width",
+          "320",
+          "--height",
+          "680",
+          "--dark",
+          "--capture",
+          "{capturePath}"
+        ],
+        "description": "Run module UI Smoke",
+        "isolatedOutputRoot": "b-Code-HistoryMinerva-Tests\\tests\\HistoryMinerva.UiSmoke\\isolated"
+      }
+    ]
+  }
 }

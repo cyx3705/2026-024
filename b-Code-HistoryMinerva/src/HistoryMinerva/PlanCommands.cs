@@ -28,7 +28,7 @@ namespace HistoryMinerva;
 /// </summary>
 public sealed class PlanCommands : IModuleContextAware
 {
-    private MappingRuntimePaths _runtimePaths = MappingRuntimePaths.CreateHistoryVulcanDefault();
+    private MappingRuntimePaths _runtimePaths = MappingRuntimePaths.Unattached();
     private readonly Func<MappingRuntimePaths, IAssemblyProbe> _probeFactory;
     private bool _attached;
 
@@ -54,7 +54,7 @@ public sealed class PlanCommands : IModuleContextAware
         if (_attached)
             throw new InvalidOperationException("HistoryMinerva plan command context has already been attached.");
 
-        _runtimePaths = MappingRuntimePaths.CreateHistoryVulcanDefault();
+        _runtimePaths = MappingRuntimePaths.FromEnvironment(context.Environment);
         _attached = true;
         context.RegisterCommands(registry =>
         {

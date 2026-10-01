@@ -2,28 +2,32 @@ using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using HistoryMinerva.Contracts;
+using HistoryVulcan.Core.Modules;
 
 namespace HistoryMinerva;
 
+/// <summary>
+/// Minerva 的运行期路径：数据目录与包目录都由宿主给（宿主 6.0.0 <c>IModuleEnvironment</c>），模块不推宿主运行区布局。
+/// </summary>
 public sealed class MappingRuntimePaths
 {
     private const int MinimumNumberedProjects = 2;
     private static readonly Regex NumberedProjectName =
         new(@"^\d{4}-\d{3}-.+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    public MappingRuntimePaths(string hostDataDirectory, string? configuredModuleDirectory = null)
+    public MappingRuntimePaths(string moduleDataDirectory, string? packageDirectory = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(hostDataDirectory);
-        HostDataDirectory = Path.GetFullPath(hostDataDirectory);
-        ModuleDataDirectory = Path.Combine(HostDataDirectory, HistoryMinervaIdentity.DataDirectoryName);
-        ModuleDirectory = string.IsNullOrWhiteSpace(configuredModuleDirectory)
-            ? Path.Combine(HostDataDirectory, "Modules", HistoryMinervaIdentity.Name)
-            : Path.Combine(Path.GetFullPath(configuredModuleDirectory), HistoryMinervaIdentity.Name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(moduleDataDirectory);
+        ModuleDataDirectory = Path.GetFullPath(moduleDataDirectory);
+        PackageDirectory = string.IsNullOrWhiteSpace(packageDirectory) ? null : Path.GetFullPath(packageDirectory);
     }
 
-    public string HostDataDirectory { get; }
+    /// <summary>可写数据目录（宿主给的 <c>ModuleData\HistoryMinerva</c>）。</summary>
     public string ModuleDataDirectory { get; }
-    public string ModuleDirectory { get; }
+
+    /// <summary>本模块的包槽位；未接入宿主时为空。Worker 随包发布在这里。</summary>
+    public string? PackageDirectory { get; }
+
     public string RequestsDirectory => Path.Combine(ModuleDataDirectory, HistoryMinervaIdentity.RequestsDirectoryName);
     public string ProbesDirectory => Path.Combine(ModuleDataDirectory, HistoryMinervaIdentity.ProbesDirectoryName);
 
@@ -41,11 +45,14 @@ public sealed class MappingRuntimePaths
     public IReadOnlyList<string> WorkerCandidates()
     {
         var candidates = new List<string>();
+        // 装在宿主里：宿主从内存流装程序集，Assembly.Location 为空，Worker 只能从包目录找。
+        if (PackageDirectory is not null)
+            candidates.Add(Path.Combine(PackageDirectory, HistoryMinervaIdentity.WorkerFileName));
+        // 开发与测试：程序集从磁盘装载，Worker 构建在旁边。
         var assemblyLocation = Assembly.GetExecutingAssembly().Location;
         if (!string.IsNullOrWhiteSpace(assemblyLocation))
             candidates.Add(Path.Combine(Path.GetDirectoryName(assemblyLocation)!, HistoryMinervaIdentity.WorkerFileName));
         candidates.Add(Path.Combine(AppContext.BaseDirectory, HistoryMinervaIdentity.WorkerFileName));
-        candidates.Add(Path.Combine(ModuleDirectory, HistoryMinervaIdentity.WorkerFileName));
         candidates.AddRange(FindPublishedPackageWorkers());
         return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
@@ -80,8 +87,7 @@ public sealed class MappingRuntimePaths
                 foreach (var candidate in EnumeratePackageWorkers(directory.FullName))
                     yield return candidate;
 
-                if (!LooksLikeLibraryRoot(directory.FullName)
-                    && !Directory.Exists(Path.Combine(directory.FullName, "HistoryVesta.git")))
+                if (!LooksLikeLibraryRoot(directory.FullName))
                     continue;
 
                 IEnumerable<string> projects;
@@ -108,10 +114,6 @@ public sealed class MappingRuntimePaths
     private static IEnumerable<string> EnumeratePackageWorkers(string root)
     {
         var worker = HistoryMinervaIdentity.WorkerFileName;
-        var legacyRoot = Path.Combine(root, $"z-{HistoryMinervaIdentity.Name}");
-        if (Directory.Exists(legacyRoot))
-            yield return Path.Combine(legacyRoot, worker);
-
         var publishRoot = Path.Combine(root, "z-Publish");
         if (!Directory.Exists(publishRoot))
             yield break;
@@ -162,13 +164,14 @@ public sealed class MappingRuntimePaths
         return false;
     }
 
-    public static MappingRuntimePaths CreateAppShellFallback()
-        => new(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "AppShell"));
+    /// <summary>未接入宿主时（界面设计器、无参构造）用的临时数据目录；接入后由 <see cref="FromEnvironment"/> 取代。</summary>
+    public static MappingRuntimePaths Unattached()
+        => new(Path.Combine(Path.GetTempPath(), HistoryMinervaIdentity.Name));
 
-    public static MappingRuntimePaths CreateHistoryVulcanDefault()
-        => new(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "HistoryVulcan"));
+    /// <summary>接入宿主后的路径：数据目录与包目录都取宿主给的值。</summary>
+    public static MappingRuntimePaths FromEnvironment(IModuleEnvironment environment)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        return new MappingRuntimePaths(environment.DataDirectory, environment.PackageDirectory);
+    }
 }

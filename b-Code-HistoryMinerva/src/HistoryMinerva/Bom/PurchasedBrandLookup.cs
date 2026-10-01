@@ -165,7 +165,7 @@ internal static class PurchasedBrandLookup
     }
 
     /// <summary>经宿主命令总线查询。</summary>
-    public static Func<PackagePartEntry, CancellationToken, Task<BrandAnswer>> OverBus(CommandBus bus)
+    public static Func<PackagePartEntry, CancellationToken, Task<BrandAnswer>> OverBus(ICommandBus bus)
     {
         ArgumentNullException.ThrowIfNull(bus);
         return async (entry, cancellationToken) => Read(

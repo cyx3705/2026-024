@@ -321,7 +321,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public AssemblyViewModel()
-        : this(MappingRuntimePaths.CreateAppShellFallback())
+        : this(MappingRuntimePaths.Unattached())
     {
     }
 
@@ -369,7 +369,7 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
                 new WorkerClient(runtimePaths).RunPackageAsync(request, progress, cancellationToken));
         _validateEnvironment = validateEnvironment ?? throw new ArgumentNullException(nameof(validateEnvironment));
         _uiDispatcher = uiDispatcher ?? throw new ArgumentNullException(nameof(uiDispatcher));
-        _runtimePaths = runtimePaths ?? MappingRuntimePaths.CreateAppShellFallback();
+        _runtimePaths = runtimePaths ?? MappingRuntimePaths.Unattached();
     }
 
     public void SetSourceFile(string path)

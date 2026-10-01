@@ -6,11 +6,11 @@ namespace HistoryMinerva;
 public partial class HistoryMinervaWorkspaceView : UserControl, IDisposable
 {
     public HistoryMinervaWorkspaceView()
-        : this(MappingRuntimePaths.CreateAppShellFallback(), null)
+        : this(MappingRuntimePaths.Unattached(), null)
     {
     }
 
-    internal HistoryMinervaWorkspaceView(MappingRuntimePaths runtimePaths, CommandBus? commandBus)
+    internal HistoryMinervaWorkspaceView(MappingRuntimePaths runtimePaths, ICommandBus? commandBus)
     {
         InitializeComponent();
         UnifiedPage = new AssemblyView(runtimePaths, commandBus);

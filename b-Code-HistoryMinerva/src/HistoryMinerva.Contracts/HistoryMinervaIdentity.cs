@@ -24,9 +24,6 @@ public static class HistoryMinervaIdentity
     /// <summary>合并后单个 Worker 可执行文件名。</summary>
     public const string WorkerFileName = Name + ".Worker.exe";
 
-    /// <summary>宿主数据根与本机数据根下的模块数据目录名。</summary>
-    public const string DataDirectoryName = Name;
-
     /// <summary>模块数据目录下的 Worker 请求目录名。</summary>
     public const string RequestsDirectoryName = "requests";
 

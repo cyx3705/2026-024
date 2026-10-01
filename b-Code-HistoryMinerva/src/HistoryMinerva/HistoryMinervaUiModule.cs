@@ -31,7 +31,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             throw new InvalidOperationException("Minerva UI 宿主上下文已注入。");
 
         _context = context;
-        _runtimePaths = MappingRuntimePaths.CreateHistoryVulcanDefault();
+        _runtimePaths = MappingRuntimePaths.FromEnvironment(context.Environment);
 
         // Must register during Attach. Vulcan FinalizeMetas runs before CreateUi
         // injects ShellUi, so gating on _shellUi drops conversion commands after
@@ -521,7 +521,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     /// 预填当前值，用户改的是那一段而不是从空白重打一遍。
     /// 取消时命令仍然成功——失败指令会让宿主抢控制台并重排停靠（REQ-002）。
     /// </summary>
-    private async Task<CommandResult> EditNameAsync(CommandBus bus, CommandContext command, string rowId)
+    private async Task<CommandResult> EditNameAsync(ICommandBus bus, CommandContext command, string rowId)
     {
         var model = GetViewModel();
         if (!model.RenamesFile(rowId))
