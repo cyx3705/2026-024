@@ -77,6 +77,7 @@ $runtimeFiles = @(
     'HistoryMinerva.dll',
     'HistoryMinerva.xml',
     'HistoryMinerva.Contracts.dll',
+    'HistoryMinerva.Contracts.xml',
     'HistoryMinerva.Worker.exe',
     'HistoryMinerva.Worker.dll',
     'HistoryMinerva.Worker.deps.json',
@@ -209,7 +210,7 @@ $publishRoot = Join-Path $projectRoot 'z-Publish'
 $historyRoot = Join-Path $publishRoot 'history'
 New-Item -ItemType Directory -Force -Path $historyRoot, $candidateRoot | Out-Null
 $legacyNames = @(
-    'HistoryMinerva.dll', 'HistoryMinerva.xml', 'HistoryMinerva.Contracts.dll',
+    'HistoryMinerva.dll', 'HistoryMinerva.xml', 'HistoryMinerva.Contracts.dll', 'HistoryMinerva.Contracts.xml',
     'HistoryMinerva.Worker.exe', 'HistoryMinerva.Worker.dll',
     'HistoryMinerva.Worker.deps.json', 'HistoryMinerva.Worker.runtimeconfig.json',
     'module.manifest.json', 'historyvulcan.snapshot.json', 'SHA256SUMS', 'docs'

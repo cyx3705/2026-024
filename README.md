@@ -28,7 +28,7 @@ HistoryMinerva 是注册到 HistoryVulcan 的单一 CAD 转换模块，在 Auror
 
 | 面 | 入口 | 用途 |
 | --- | --- | --- |
-| 代码面 | `HistoryMinerva.Contracts.dll` | 图号、改名计划、打包计划、路径布局、Worker 协议等纯函数与 DTO |
+| 代码面 | `HistoryMinerva.Contracts.dll`（附 `.xml` 注释） | 图号、改名计划、打包计划、路径布局、Worker 协议等纯函数与 DTO |
 | 总线面 | `minerva.plan.package` / `rename` | 无状态入口：给装配体路径，拿回完整打包计划 / 改名计划 |
 | 总线面 | `minerva.conversion.probe` / `run` / `cancel` | 解析装配体、执行当前转换、取消 |
 | 总线面 | `minerva.ui.content` / `source` / `options` | 页面状态：转换内容、来源、选项 |
@@ -42,11 +42,7 @@ HistoryMinerva 是注册到 HistoryVulcan 的单一 CAD 转换模块，在 Auror
 | --- | --- |
 | [`AGENTS.md`](./AGENTS.md) | AI 工作合同：读取顺序、真值判定、边界 |
 | [`project.manifest.json`](./project.manifest.json) | 项目身份、活动目录、文档与命令 |
-| [文档中心](./b-Office/文档中心.md) | 文档索引与读取顺序 |
-| [项目概览](./b-Office/current/项目概览.md) | 目标、范围与状态 |
-| [技术合同](./b-Office/current/技术合同.md) | 现行需求与架构 |
-| [有效决策](./b-Office/current/有效决策.md) | 仍然有效的关键决策 |
-| [验证合同](./b-Office/current/验证合同.md) | 验证层级、命令与证据 |
+| [现行约定](./b-Office/current/现行约定.md) | 唯一的长期文档：真相在哪、产品取舍、真机才知道的、已知缺口、工程约定 |
 
 ## 目录
 
@@ -55,7 +51,7 @@ HistoryMinerva 是注册到 HistoryVulcan 的单一 CAD 转换模块，在 Auror
 | `b-Code-HistoryMinerva/` | 生产模块：前端、Worker、Contracts 与 `eng/` 门禁脚本，见 [README](./b-Code-HistoryMinerva/README.md) |
 | `b-Code-HistoryMinerva-Tests/` | Smoke、UiSmoke 与三个 CAD 真机门禁，见 [README](./b-Code-HistoryMinerva-Tests/README.md) |
 | `b-Code/` | 项目合同检查 |
-| `b-Office/` | 项目文档：`current/` 现行合同、`history/` 只读归档 |
+| `b-Office/` | `current/现行约定.md`，仅此一份 |
 | `z-Publish/` | 正式快照与 `history/` 归档，由宿主管线写入 |
 
 ## 构建与验证

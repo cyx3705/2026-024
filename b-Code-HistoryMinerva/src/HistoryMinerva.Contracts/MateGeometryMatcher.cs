@@ -18,6 +18,7 @@ public sealed record MateCandidate(
     double[] Direction,
     object? Entity = null);
 
+/// <summary>配合几何在目标装配侧的匹配结论：唯一命中、找不到、或多于一个候选。</summary>
 public enum MateMatchStatus
 {
     Matched,
@@ -25,6 +26,7 @@ public enum MateMatchStatus
     Ambiguous,
 }
 
+/// <summary>一次配合几何匹配的结果：状态、命中的候选，以及参与比较的候选键（找不到或有歧义时写进报告）。</summary>
 public sealed record MateMatch(
     MateMatchStatus Status,
     MateCandidate? Candidate,

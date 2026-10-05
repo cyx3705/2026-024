@@ -5,7 +5,6 @@ namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// V2.0：对导入后的哑实体执行 FeatureWorks 自动特征识别，再对识别出的每个草图执行完全定义。
-/// 设计依据与实测数据见 docs/05-V2.0-特征识别与草图完全定义.md。
 /// </summary>
 internal sealed class FeatureRecognizer : IDisposable
 {

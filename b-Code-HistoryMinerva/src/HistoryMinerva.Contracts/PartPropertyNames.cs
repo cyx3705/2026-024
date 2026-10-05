@@ -23,7 +23,7 @@ public static class PartPropertyNames
 
     /// <summary>
     /// 名称。V4.8 追加，值是文件名里图号之后的那一段**原零件名称**，与
-    /// <see cref="DrawingNumber.FormatFileName"/> 拼出来的名字取自同一个来源。
+    /// <see cref="DrawingNumber.FormatFileName(DrawingNumber, string, string)"/> 拼出来的名字取自同一个来源。
     ///
     /// 这一槽没有界面入口，也不该有：名称就是改名时用的那个名称，让用户在旁边再填一遍
     /// 只会制造「文件名叫阀体、属性里写着阀盖」的两份真话。因此它随改名一起写，

@@ -1,5 +1,6 @@
 namespace HistoryMinerva.Contracts;
 
+/// <summary>产物种类。按数值序列化，新值只能追加在末尾。</summary>
 public enum ConversionArtifactKind
 {
     Xt,
@@ -11,6 +12,7 @@ public enum ConversionArtifactKind
     Pdf,
 }
 
+/// <summary>跳过某一步时复用的是哪种已有产物（界面显示为「复用 XT」「复用 SW」）。</summary>
 public enum ReuseKind
 {
     ExistingXt,
@@ -18,11 +20,13 @@ public enum ReuseKind
     ExistingSolidWorksAssembly,
 }
 
+/// <summary>外界模式的输出目录：来源目录与其下的 <c>XT/</c>、<c>SW/</c>。</summary>
 public sealed record ExternalOutputDirectories(
     string RootDirectory,
     string XtDirectory,
     string SolidWorksDirectory);
 
+/// <summary>一个零件的产物路径：现行布局的 XT / SW 路径，以及旧平铺布局（仅 Solid Edge 源）的对应路径，用于识别可复用的旧产物。</summary>
 public sealed record ConversionPartPaths(
     string XtPath,
     string SolidWorksPath,

@@ -18,6 +18,7 @@ public enum SolidWorksMateAlign
     Closest = 2,
 }
 
+/// <summary>源装配关系翻译成什么：一条 SolidWorks 配合、一次固定组件、或不翻译（抑制 / 不支持）。判「接地」一律问它，不对接口名字面量比较。</summary>
 public enum MatePlanKind
 {
     /// <summary>翻译成一条 SolidWorks 配合。</summary>
@@ -30,6 +31,7 @@ public enum MatePlanKind
     Unsupported,
 }
 
+/// <summary>一条源关系的翻译计划：种类、SolidWorks 配合类型与对齐、距离，以及不翻译时的原因。</summary>
 public sealed record MatePlan(
     MatePlanKind Kind,
     SolidWorksMateType MateType = SolidWorksMateType.Coincident,

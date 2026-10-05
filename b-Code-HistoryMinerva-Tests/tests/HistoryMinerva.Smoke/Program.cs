@@ -16,6 +16,7 @@ Directory.CreateDirectory(root);
 try
 {
     TestSharedContractsAndVersion();
+    TestContractsDocumentation();
     TestCommandSurface(root);
     TestPlanCommandSurface(root);
     // ModuleHost LoadFrom 第二份 HistoryMinerva.dll 之后，WPF 带版本的 pack URI 会找不到 BAML。
@@ -125,6 +126,29 @@ static void TestCadProcessOwnershipResolution()
         300,
         CadProcessOwnership.ResolveOwnedProcessId(new HashSet<int>(), [200, 300], 300),
         "窗口句柄必须能消解多个新增 PID 的歧义");
+}
+
+/// <summary>
+/// 代码面的说明书是 <c>HistoryMinerva.Contracts.xml</c>（随包分发），不是手写文档：
+/// 别的模块引用 Contracts 时在 IDE 里看到的就是它。每个公开类型都必须有 summary——
+/// 加一个类型不写注释，这条就失败。属性逐个补不强求，类型级说清楚它是什么、谁用它就够。
+/// </summary>
+static void TestContractsDocumentation()
+{
+    var assembly = typeof(ConversionJob).Assembly;
+    var xmlPath = Path.ChangeExtension(assembly.Location, ".xml");
+    True(File.Exists(xmlPath), "Contracts 必须生成 XML 文档并随程序集输出: " + xmlPath);
+    var documented = System.Xml.Linq.XDocument.Load(xmlPath)
+        .Descendants("member")
+        .Where(member => member.Element("summary") is { } summary && !string.IsNullOrWhiteSpace(summary.Value))
+        .Select(member => (string?)member.Attribute("name"))
+        .ToHashSet(StringComparer.Ordinal);
+    var missing = assembly.GetExportedTypes()
+        .Select(type => "T:" + type.FullName!.Replace('+', '.'))
+        .Where(id => !documented.Contains(id))
+        .OrderBy(id => id, StringComparer.Ordinal)
+        .ToList();
+    True(missing.Count == 0, "Contracts 公开类型缺 summary: " + string.Join(", ", missing));
 }
 
 static void TestSharedContractsAndVersion()
@@ -2466,7 +2490,7 @@ static void TestPropertyPrepPropertyWrite(string root)
     // 不是界面上看到的 Label。这一栏 Label 与 PropName 都是「类型选择」；
     // 曾经按界面标题猜成「类型」，模板槽因此一直是空的，整备"成功"但图框没值。
     Equal("类型选择", PartPropertyNames.Category, "类型槽的真名是「类型选择」，不得改回「类型」");
-    Equal(8, PartPropertyNames.All.Count, "属性槽是八个，增删必须同步技术合同 REQ-008");
+    Equal(8, PartPropertyNames.All.Count, "属性槽是八个，增删必须同步属性标签模板 .prtprp 与 PartPropertyNames");
 
     // V4.8「名称」：没有界面入口，随改名一起写，值是文件名里图号之后的那一段原零件名称。
     // 让用户在旁边再填一遍只会制造「文件名叫阀体、属性里写着阀盖」的两份真话。

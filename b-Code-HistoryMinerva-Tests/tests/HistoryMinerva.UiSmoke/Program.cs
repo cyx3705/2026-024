@@ -37,7 +37,7 @@ internal static class Program
     private static readonly TimeSpan Watchdog = TimeSpan.FromMinutes(3);
 
     /// <summary>
-    /// 布局矩阵。**这是验证合同 VERIFY-UI 的可执行副本**，不再依赖人记得跑几遍。
+    /// 布局矩阵。**布局验收只有这一份**，由工具自己遍历，不再依赖人记得跑几遍。
     /// 三档宽度覆盖窄/中/宽，深浅主题各至少一次，另加一个运行态。
     /// </summary>
     private static readonly UiCase[] Matrix =

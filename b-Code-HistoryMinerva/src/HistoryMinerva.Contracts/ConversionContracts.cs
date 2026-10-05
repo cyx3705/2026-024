@@ -1,5 +1,6 @@
 namespace HistoryMinerva.Contracts;
 
+/// <summary>输出布局：<c>Ohs</c> 按 OneHistory 项目目录（<c>ProjectLayout</c>）分源 / XT / SW；<c>External</c> 是外界模式，产物写在来源目录旁的 <c>XT/</c>、<c>SW/</c>。页面只用 External。</summary>
 public enum ConversionMode
 {
     Ohs,
@@ -22,6 +23,7 @@ public enum ConversionSourceFormat
     SolidWorks,
 }
 
+/// <summary>Worker 事件所处的阶段。枚举按数值序列化，新值只能追加在末尾。</summary>
 public enum ConversionStage
 {
     Queued,
@@ -45,6 +47,7 @@ public enum ConversionStage
     PackageExport,
 }
 
+/// <summary>失败的归类，供界面与报告给出可行动的原因；<c>None</c> 表示没有错误。按数值序列化，新值只能追加在末尾。</summary>
 public enum ConversionErrorClass
 {
     None,
@@ -96,6 +99,7 @@ public enum ConversionErrorClass
     PackageExportFailed,
 }
 
+/// <summary>FeatureWorks 识别超时的缺省值与上限；请求里 0 或负数按缺省处理，超过上限按上限处理。</summary>
 public static class FeatureRecognitionPolicy
 {
     public const int DefaultTimeoutSeconds = 180;
@@ -105,6 +109,7 @@ public static class FeatureRecognitionPolicy
         => value <= 0 ? DefaultTimeoutSeconds : Math.Min(value, MaximumTimeoutSeconds);
 }
 
+/// <summary>一个零件的转换作业：源零件，以及它的 XT 中转件与 SolidWorks 产物落点。</summary>
 /// <param name="XtPath">
 /// Parasolid 中转件。Solid Edge 与 SolidWorks 特征整备都先落到此路径，再导入 SolidWorks。
 /// </param>
@@ -114,6 +119,7 @@ public sealed record ConversionJob(
     string XtPath,
     string SolidWorksPath);
 
+/// <summary>零件批量转换请求（Worker 动词 <c>--request</c>）：一批 <see cref="ConversionJob"/> 加转换选项。末尾字段都有缺省值，旧请求 JSON 仍可读。</summary>
 public sealed record BatchRequest(
     string BatchId,
     ConversionMode Mode,
@@ -177,6 +183,7 @@ public sealed record FeatureOutcome(
     // 这是**部分识别**——特征树可用，只是有一块几何没认出来，不再整体丢弃。
     int ResidualImportedBodyCount = 0);
 
+/// <summary>Worker 逐条上报的进度、结果或错误事件；界面据此更新零件行，命令经 <c>CommandContext.Progress</c> 转进控制台。</summary>
 public sealed record WorkerEvent(
     string BatchId,
     string? JobId,
@@ -301,6 +308,7 @@ public sealed record AssemblyNode(
     IReadOnlyList<AssemblyChild> Children,
     IReadOnlyList<string> Dependencies);
 
+/// <summary>装配探查请求（<c>--probe-assembly</c>）：只读打开源装配，结果写到 <c>ResultPath</c>。</summary>
 public sealed record AssemblyProbeRequest(
     string BatchId,
     string SourceAssemblyPath,
@@ -308,6 +316,7 @@ public sealed record AssemblyProbeRequest(
     // V4.3：源格式。SolidWorks 时读 .SLDASM，产出与 Solid Edge 完全同形的探查结果。
     ConversionSourceFormat SourceFormat = ConversionSourceFormat.SolidEdge);
 
+/// <summary>装配探查结果：展平后的实例、唯一零件、子装配文档、零件属性现值与外购件。Solid Edge 与 SolidWorks 两种源产出同形结果；末尾字段缺省 <c>null</c> 表示「没有采集」。</summary>
 public sealed record AssemblyProbeResult(
     string SourceAssemblyPath,
     IReadOnlyList<AssemblyOccurrence> Occurrences,
@@ -326,6 +335,7 @@ public sealed record AssemblyProbeResult(
     // 没有采集（Solid Edge 源）——不是「这台设备没有外购件」。
     IReadOnlyList<PurchasedPartReading>? PurchasedParts = null);
 
+/// <summary>装配转换请求（<c>--assembly</c>）：零件作业、实例矩阵、子装配节点与配合关系，Worker 据此按源层级重建 SolidWorks 装配。</summary>
 public sealed record AssemblyBatchRequest(
     string BatchId,
     ConversionMode Mode,

@@ -134,17 +134,6 @@ if (-not [bool]$sourceManifest.ui -or [string]$sourceManifest.mcpExposure -ne 'r
     Add-Violation 'Source module manifest must declare ui=true and mcpExposure=readonly'
 }
 
-$technicalPath = Join-Path $root ([string]$projectManifest.documents.technicalContract)
-$verificationPath = Join-Path $root ([string]$projectManifest.documents.verification)
-$technicalText = [IO.File]::ReadAllText($technicalPath)
-$verificationText = [IO.File]::ReadAllText($verificationPath)
-if ($technicalText -notmatch "(?m)^# HistoryMinerva $([regex]::Escape($sourceVersion)) .+$") {
-    Add-Violation "Technical contract title does not project version $sourceVersion"
-}
-if ($verificationText -notmatch "(?m)^# HistoryMinerva $([regex]::Escape($sourceVersion)) .+$") {
-    Add-Violation "Verification contract title does not project version $sourceVersion"
-}
-
 # 命令目录从显式登记处抽取（宿主 6.1.0 起没有 模块API.md 可比对，说明书即注册自描述，DEC-074）。
 $identitySource = [IO.File]::ReadAllText((Join-Path $sourceRoot 'src\HistoryMinerva.Contracts\HistoryMinervaIdentity.cs'))
 $commandRootMatch = [regex]::Match($identitySource, 'CommandRoot\s*=\s*"(?<root>[a-z][a-z0-9]*)"')
@@ -236,6 +225,7 @@ else {
         'HistoryMinerva.dll',
         'HistoryMinerva.xml',
         'HistoryMinerva.Contracts.dll',
+        'HistoryMinerva.Contracts.xml',
         'HistoryMinerva.Worker.exe',
         'HistoryMinerva.Worker.dll',
         'HistoryMinerva.Worker.deps.json',

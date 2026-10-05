@@ -11,7 +11,7 @@
     "title": "HistoryMinerva CAD 转换模块",
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active",
-    "version": "4.14.1",
+    "version": "4.14.2",
     "branch": "main"
   },
   "historyVulcanHost": {
@@ -33,20 +33,12 @@
       "b-Code-HistoryMinerva-Tests/**/obj",
       "z-Publish"
     ],
-    "archiveRoots": ["b-Office/history", "z-Publish/history"],
+    "archiveRoots": ["z-Publish/history"],
     "releaseRoots": ["z-Publish"],
     "allowedRootDirectoryPrefixes": ["a-", "b-", "z-"]
   },
   "documents": {
-    "center": "b-Office/文档中心.md",
-    "structure": "b-Office/文档中心.md",
-    "overview": "b-Office/current/项目概览.md",
-    "technicalContract": "b-Office/current/技术合同.md",
-    "decisions": "b-Office/current/有效决策.md",
-    "verification": "b-Office/current/验证合同.md",
-    "roadmap": "b-Office/history/45-V4.3.0-SW自整备转换管线.md",
-    "architectureDiagram": "b-Office/current/HistoryMinerva转换架构.drawio",
-    "historyBoundary": "b-Office/history/历史资料说明.md"
+    "conventions": "b-Office/current/现行约定.md"
   },
   "commands": {
     "setup": "dotnet restore .\\HistoryMinerva.sln --locked-mode -p:NuGetAudit=false",
@@ -66,7 +58,6 @@
     "SolidWorks FeatureWorks"
   ],
   "contextExclusions": [
-    "b-Office/history/**",
     "z-Publish/**",
     "**/bin/**",
     "**/obj/**",
@@ -84,6 +75,7 @@
         "HistoryMinerva.dll",
         "HistoryMinerva.xml",
         "HistoryMinerva.Contracts.dll",
+        "HistoryMinerva.Contracts.xml",
         "HistoryMinerva.Worker.exe",
         "HistoryMinerva.Worker.dll",
         "HistoryMinerva.Worker.deps.json",
