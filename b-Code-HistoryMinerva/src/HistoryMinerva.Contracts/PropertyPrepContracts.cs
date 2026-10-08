@@ -193,6 +193,17 @@ public sealed record AssemblyRenamePlan(
         => Path.IsPathFullyQualified(left)
            && Path.IsPathFullyQualified(right)
            && string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 这一轮会被改走的源文件（全路径）。重排号时号码在同名件之间互换，
+    /// 某个目标名此刻正被另一个条目的源文件占着——那不算冲突：Worker 先把这些源挪到临时名，
+    /// 再逐个落到目标名上。规划与 Worker 校验都靠它区分「互换」和「真被计划外的文件占着」。
+    /// </summary>
+    public static HashSet<string> VacatedSources(IEnumerable<RenameEntry> entries)
+        => entries
+            .Where(entry => !SamePath(entry.SourcePath, entry.TargetPath))
+            .Select(entry => Path.GetFullPath(entry.SourcePath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>

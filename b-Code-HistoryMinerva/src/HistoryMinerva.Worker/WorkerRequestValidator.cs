@@ -164,6 +164,8 @@ internal static class WorkerRequestValidator
 
         var sources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // V4.15.1：目标名被这一轮也要改走的源文件占着（重排号互换）不算冲突，改名器会先挪临时名。
+        var vacated = AssemblyRenamePlan.VacatedSources(request.Entries);
         foreach (var entry in request.Entries)
         {
             if (string.IsNullOrWhiteSpace(entry.Id))
@@ -193,7 +195,7 @@ internal static class WorkerRequestValidator
                 throw new InvalidDataException($"挪进外购件文件夹的文件不写属性：{source}");
             if (!string.Equals(Path.GetExtension(source), Path.GetExtension(target), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"改名不得改扩展名：{source}");
-            if (!AssemblyRenamePlan.SamePath(source, target) && File.Exists(target))
+            if (!AssemblyRenamePlan.SamePath(source, target) && File.Exists(target) && !vacated.Contains(target))
                 throw new IOException($"目标文件已存在：{target}");
             foreach (var parent in entry.ParentSourcePaths)
                 ValidateSolidWorksDocument(parent, mustExist: true);

@@ -57,6 +57,7 @@ try
     TestMateTypeMapping();
     TestSolidWorksSelfPipelineContracts();
     TestPropertyPrepDrawingNumbers(root);
+    TestPropertyPrepSwappedNumbers(root);
     TestPropertyPrepViewModel(root);
     TestPropertyPrepPropertyWrite(root);
     TestPropertyPrepProbedProperties(root);
@@ -2242,6 +2243,59 @@ static void TestPropertyPrepDrawingNumbers(string root)
     Equal("ZS-LHL-01-01 传动轴.SLDPRT", Path.GetFileName(Target(renamedKeep, numberedShaft)),
         "空前缀下改名称：只换名称，原图号不动");
     True(renamedKeep.CanRename, "改了名称就有文件要改名");
+}
+
+/// <summary>
+/// V4.15.1 现场事故：重排号时号码在同名件之间互换（-02 板 → -01 板，原来的 -01 板 → -02 板），
+/// 规划与 Worker 都只看「目标名在磁盘上有没有」，整台设备一个都改不了。
+/// 被这一轮自己也要改走的文件占着不算冲突；被计划外的文件占着照样拦。
+/// </summary>
+static void TestPropertyPrepSwappedNumbers(string root)
+{
+    var dir = Path.Combine(root, "property-prep-swap");
+    Directory.CreateDirectory(dir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "ZS-00 总装.SLDASM");
+    var first = Path.Combine(dir, "ZS-01 板.SLDPRT");
+    var second = Path.Combine(dir, "ZS-02 板.SLDPRT");
+    var stranger = Path.Combine(dir, "ZS-03 轴.SLDPRT");
+    var shaft = Path.Combine(dir, "轴.SLDPRT");
+    foreach (var path in new[] { rootAsm, first, second, stranger, shaft })
+        File.WriteAllText(path, "cad");
+
+    // 装配树里 -02 排在前面，于是两块板的号对调；轴排第三，要改成 -03 轴，但那个名字被计划外的文件占着。
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        [
+            new AssemblyOccurrence("ZS-02 板-1", null, second, false, false, false, identity, null),
+            new AssemblyOccurrence("ZS-01 板-1", null, first, false, false, false, identity, null),
+            new AssemblyOccurrence("轴-1", null, shaft, false, false, false, identity, null),
+        ],
+        [second, first, shaft],
+        0, 0, 3, 0, [],
+        [
+            new AssemblyDocumentReading(rootAsm,
+            [
+                new AssemblyChild("ZS-02 板-1", second, false, false, identity),
+                new AssemblyChild("ZS-01 板-1", first, false, false, identity),
+                new AssemblyChild("轴-1", shaft, false, false, identity),
+            ], []),
+        ]);
+
+    var plan = PropertyPrepPlanner.Create(probe, "ZS");
+    Equal("ZS-01 板.SLDPRT", Path.GetFileName(Target(plan, second)), "排在前面的板拿 -01");
+    Equal("ZS-02 板.SLDPRT", Path.GetFileName(Target(plan, first)), "原来的 -01 板让出号码改成 -02");
+    Equal("ZS-03 轴.SLDPRT", Path.GetFileName(Target(plan, shaft)), "轴排第三拿 -03");
+    True(plan.BlockingIssues.All(issue => !issue.Contains("ZS-01 板") && !issue.Contains("ZS-02 板")),
+        "号码互换不得报目标已存在：" + string.Join("；", plan.BlockingIssues));
+    True(plan.BlockingIssues.Any(issue => issue.Contains("目标文件已存在") && issue.Contains("ZS-03 轴")),
+        "被计划外文件占着的目标照样要拦");
+
+    // Worker 校验同一口径：互换放行，计划外占用拦下。
+    var swapOnly = plan.WorkerEntries.Where(entry => entry.SourcePath != shaft).ToArray();
+    WorkerRequestValidator.Validate(new AssemblyRenameRequest("swap", rootAsm, "ZS", swapOnly, WriteProperties: false));
+    Throws<IOException>(() => WorkerRequestValidator.Validate(
+        new AssemblyRenameRequest("swap", rootAsm, "ZS", plan.WorkerEntries, WriteProperties: false)));
 }
 
 static string Target(AssemblyRenamePlan plan, string source)

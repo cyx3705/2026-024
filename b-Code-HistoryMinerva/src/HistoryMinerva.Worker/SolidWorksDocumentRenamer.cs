@@ -93,12 +93,25 @@ internal static class SolidWorksDocumentRenamer
             }
 
             var failed = 0;
+            var stuck = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var staged = StageSwappedSources(interop, pending, currentPaths, stuck, reporter, cancellationToken);
+            failed += stuck.Count;
             foreach (var entry in pending)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (stuck.Contains(entry.Id))
+                    continue;
                 try
                 {
-                    RenameOne(interop, entry, currentPaths);
+                    try
+                    {
+                        RenameOne(interop, entry, currentPaths);
+                    }
+                    catch when (staged.Contains(entry.Id))
+                    {
+                        RestoreStaged(interop, entry, currentPaths);
+                        throw;
+                    }
                     reporter.Report(
                         entry.Id,
                         ConversionStage.Completed,
@@ -350,20 +363,129 @@ internal static class SolidWorksDocumentRenamer
         }
     }
 
-    private static void RenameOne(
+    /// <summary>
+    /// V4.15.1：重排号时号码会在同名件之间互换（-19 安装板 → -17 安装板，原来的 -17 安装板 → -16），
+    /// 甚至成环。逐个直接改，第一个就撞上「目标文件已存在」。所以先把「源文件名正是别人目标」的那些
+    /// 挪到同目录的临时名（引用一并改过去），腾出名字，第二遍再统一落到目标名。
+    ///
+    /// 挪临时名失败的条目记进 <paramref name="stuck"/>，第二遍跳过它；占着它名字的那条会照常报
+    /// 「目标文件已存在」，不会悄悄盖掉。返回成功挪到临时名的条目 id。
+    /// </summary>
+    private static HashSet<string> StageSwappedSources(
+        SolidWorksInteropBridge interop,
+        IReadOnlyList<RenameEntry> pending,
+        Dictionary<string, string> currentPaths,
+        HashSet<string> stuck,
+        WorkerReporter reporter,
+        CancellationToken cancellationToken)
+    {
+        var staged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var wanted = pending
+            .Select(entry => Path.GetFullPath(entry.TargetPath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var swapping = pending
+            .Where(entry => wanted.Contains(Path.GetFullPath(entry.SourcePath)))
+            .ToArray();
+        if (swapping.Length == 0)
+            return staged;
+
+        reporter.Report(
+            null,
+            ConversionStage.PropertyPrep,
+            $"{swapping.Length} 个文件的号码与别的文件互换，先挪到临时名腾出名字。");
+        foreach (var entry in swapping)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                MoveWithReferences(interop, entry, currentPaths, TemporaryPath(entry.SourcePath));
+                staged.Add(entry.Id);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                stuck.Add(entry.Id);
+                reporter.Report(
+                    entry.Id,
+                    ConversionStage.Failed,
+                    $"号码互换前挪临时名失败：{ex.Message}",
+                    true,
+                    ex.HResult,
+                    errorClass: ex is ClassifiedConversionException classified
+                        ? classified.ErrorClass
+                        : ConversionErrorClass.RenameFailed);
+            }
+        }
+
+        return staged;
+    }
+
+    /// <summary>同目录、同扩展名的临时名：SolidWorks 认扩展名，换目录又会动到引用的搜索路径。</summary>
+    private static string TemporaryPath(string source)
+    {
+        var full = Path.GetFullPath(source);
+        var directory = Path.GetDirectoryName(full)!;
+        var stem = Path.GetFileNameWithoutExtension(full);
+        var extension = Path.GetExtension(full);
+        while (true)
+        {
+            var tag = Guid.NewGuid().ToString("N")[..8];
+            var candidate = Path.Combine(directory, $"{stem}~minerva-{tag}{extension}");
+            if (!File.Exists(candidate))
+                return candidate;
+        }
+    }
+
+    /// <summary>
+    /// 落位失败的互换件还停在临时名上：原名空着就挪回原名，免得文件夹里留一个临时名。
+    /// 原名已被别人占了（对方落位成功）就只能留在临时名，并在报错里写明它现在叫什么。
+    /// </summary>
+    private static void RestoreStaged(
         SolidWorksInteropBridge interop,
         RenameEntry entry,
         Dictionary<string, string> currentPaths)
     {
         var source = Path.GetFullPath(entry.SourcePath);
-        var target = Path.GetFullPath(entry.TargetPath);
+        var current = currentPaths[source];
+        if (AssemblyRenamePlan.SamePath(current, source))
+            return;
+        try
+        {
+            MoveWithReferences(interop, entry, currentPaths, source);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new ClassifiedConversionException(
+                ConversionErrorClass.RenameFailed,
+                $"落位失败、原名也回不去，文件现在叫 {Path.GetFileName(current)}：{ex.Message}");
+        }
+    }
+
+    private static void RenameOne(
+        SolidWorksInteropBridge interop,
+        RenameEntry entry,
+        Dictionary<string, string> currentPaths)
+        => MoveWithReferences(interop, entry, currentPaths, entry.TargetPath);
+
+    /// <summary>
+    /// 把条目的文件从它「现在」的位置（可能是临时名）挪到 <paramref name="destination"/>，
+    /// 并把每个父装配里的引用从现在的位置改过去；任何一步失败就把文件挪回原处。
+    /// </summary>
+    private static void MoveWithReferences(
+        SolidWorksInteropBridge interop,
+        RenameEntry entry,
+        Dictionary<string, string> currentPaths,
+        string destination)
+    {
+        var key = Path.GetFullPath(entry.SourcePath);
+        var source = currentPaths.TryGetValue(key, out var current) ? current : key;
+        var target = Path.GetFullPath(destination);
         if (!File.Exists(source))
             throw new ClassifiedConversionException(ConversionErrorClass.InputMissing, $"源文件不存在：{source}");
         if (File.Exists(target))
             throw new ClassifiedConversionException(ConversionErrorClass.OutputExists, $"目标文件已存在：{target}");
 
         File.Move(source, target);
-        currentPaths[source] = target;
+        currentPaths[key] = target;
         try
         {
             foreach (var parentSource in entry.ParentSourcePaths)
@@ -390,7 +512,7 @@ internal static class SolidWorksDocumentRenamer
         {
             if (File.Exists(target) && !File.Exists(source))
                 File.Move(target, source);
-            currentPaths[source] = source;
+            currentPaths[key] = source;
             throw;
         }
     }

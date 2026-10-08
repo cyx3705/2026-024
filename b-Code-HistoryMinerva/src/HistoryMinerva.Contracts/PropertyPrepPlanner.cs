@@ -118,6 +118,21 @@ public static class PropertyPrepPlanner
             .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        var excludedEntries = excluded
+            .Where(pair => !planned.ContainsKey(pair.Key) && !unnumbered.ContainsKey(pair.Key))
+            .Select(pair => pair.Value.ToEntry())
+            .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var relocatedEntries = relocated.Values
+            .Select(entry => entry.ToEntry())
+            .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        // V4.15.1：重排号时号码会在同名件之间互换（-19 安装板 → -17 安装板，原来的 -17 安装板 → -16）。
+        // 目标名此刻被占着，但占着它的文件这一轮自己也要改走，Worker 会先把它挪到临时名再落位，
+        // 所以不算冲突。只有被计划外的文件占着才拦。
+        var vacated = AssemblyRenamePlan.VacatedSources(
+            entries.Concat(excludedEntries).Concat(relocatedEntries));
         CheckCollisions(entries, issues);
         foreach (var entry in entries)
         {
@@ -128,21 +143,13 @@ public static class PropertyPrepPlanner
             if (!string.Equals(targetDirectory, sourceDirectory, StringComparison.OrdinalIgnoreCase))
                 issues.Add($"改名不得换目录：{entry.SourcePath}");
             if (!AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath)
-                && File.Exists(entry.TargetPath))
+                && File.Exists(entry.TargetPath)
+                && !vacated.Contains(Path.GetFullPath(entry.TargetPath)))
             {
                 issues.Add($"目标文件已存在：{entry.TargetPath}");
             }
         }
 
-        var excludedEntries = excluded
-            .Where(pair => !planned.ContainsKey(pair.Key) && !unnumbered.ContainsKey(pair.Key))
-            .Select(pair => pair.Value.ToEntry())
-            .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var relocatedEntries = relocated.Values
-            .Select(entry => entry.ToEntry())
-            .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
         CheckRelocations(excludedEntries.Concat(relocatedEntries), issues);
 
         warnings.AddRange(probe.Warnings);
