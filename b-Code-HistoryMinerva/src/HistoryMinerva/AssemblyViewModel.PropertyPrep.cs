@@ -131,9 +131,9 @@ public sealed partial class AssemblyViewModel
     /// <summary>
     /// 图号前缀。
     ///
-    /// **空串是正常状态，不是「还没填」**：它表示这一轮把图号改成空，也就是删图号
-    /// （DEC-057）。因此它与材料那三栏同构——底下一个框，改它就是整表一起改，
-    /// 只不过它改的是图号而不是某个属性槽。
+    /// **空串＝本轮不动图号**（V4.15）：每个文件保留原来的图号段，「图号」槽也不写；
+    /// 只有名称、材料这些用户改过的东西会落盘。填了前缀才按层级整表重新编号。
+    /// V4.9～V4.14 曾把空串当成删图号，用户没填前缀就点写入，原图号全被顶掉。
     /// </summary>
     public string DrawingPrefix
     {
@@ -383,7 +383,7 @@ public sealed partial class AssemblyViewModel
     /// 三个可点列现在能不能落到零件上。改名计划还没建起来（还没解析装配体）时是 false，
     /// 命令据此给出「请先解析装配体」而不是空口报「刷了 0 个零件」。
     ///
-    /// V4.9 起不再要求前缀非空：前缀为空是删图号，那一轮照样写属性。
+    /// 不要求前缀非空：前缀为空是保留原图号，那一轮照样写属性。
     /// </summary>
     public bool PropertyEditsReady => IsRenameMode && _renamePlan is not null;
 
@@ -501,8 +501,7 @@ public sealed partial class AssemblyViewModel
     /// <summary>
     /// 按当前前缀与名称记账重建改名计划，并把它画进零件表。
     ///
-    /// V4.9 只有这一份计划：前缀为空时它算出来的目标文件名就是「只有名称」，
-    /// 那正是删图号要的结果（DEC-057）。
+    /// 只有这一份计划：前缀为空时它沿用每个文件原有的图号段（V4.15）。
     /// </summary>
     private void ApplyRenamePreview()
     {
@@ -565,10 +564,19 @@ public sealed partial class AssemblyViewModel
                 // V4.11：外购件与排除件不编号。子文件夹里的件哪怕改成机加件也编不了号——
                 // 探查拿不到它们的装配层级，这时件别只影响打包，要说清楚。
                 var kind = PartKinds.Resolve(_kindEdits, entry.SourcePath, _sourceAssemblyPath);
-                row.Status = "不编号";
-                row.Detail = kind == PackagePartCategory.Machined
-                    ? "子文件夹里的件不参与编号，件别只影响打包"
-                    : $"{PartKinds.Label(kind)}，保持原名、不写属性";
+                if (!AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath))
+                {
+                    // V4.15：同级件改成外购件，写入时连同只属于它的内部件一起挪进「外购件」文件夹。
+                    row.Status = "待移入";
+                    row.Detail = $"外购件，写入时移入「{ConversionPathLayout.PurchasedPartsDirectoryName}」文件夹，保持原名、不写属性";
+                }
+                else
+                {
+                    row.Status = "不编号";
+                    row.Detail = kind == PackagePartCategory.Machined
+                        ? "子文件夹里的件不参与编号，件别只影响打包"
+                        : $"{PartKinds.Label(kind)}，保持原名、不写属性";
+                }
             }
             else if (!entry.AssignsDrawingNumber)
             {
@@ -605,16 +613,19 @@ public sealed partial class AssemblyViewModel
         WarningSummary = string.Join("；", plan.Warnings.Concat(
             string.IsNullOrWhiteSpace(issueText) ? [] : new[] { issueText }));
         var pending = plan.Entries.Count(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath));
-        var removing = plan.DrawingPrefix.Length == 0;
+        var relocating = plan.Relocations.Count;
+        var keeping = plan.DrawingPrefix.Length == 0;
+        var head = keeping ? "未填图号前缀，保留原图号" : "图号规划完成";
+        var tail = relocating > 0
+            ? $"；{relocating} 个外购件文件待移入「{ConversionPathLayout.PurchasedPartsDirectoryName}」"
+            : string.Empty;
         StatusText = plan.BlockingIssues.Count > 0
             ? $"图号规划有 {plan.BlockingIssues.Count} 个问题"
             : pending > 0
-                ? removing
-                    ? $"删图号规划完成：{pending} 个文件待改名"
-                    : $"图号规划完成：{pending} 个文件待改名"
-                : removing
-                    ? "这些文件已经没有图号，无需改名"
-                    : "图号与名称都已与规则一致，无需改名";
+                ? $"{head}：{pending} 个文件待改名{tail}"
+                : keeping
+                    ? $"{head}，无需改名{tail}"
+                    : $"图号与名称都已与规则一致，无需改名{tail}";
     }
 
     private async Task RenameCoreAsync(CancellationToken cancellationToken)
@@ -640,9 +651,12 @@ public sealed partial class AssemblyViewModel
         _validateEnvironment(ConversionSourceFormat.SolidWorks);
         var renameCount = plan.Entries.Count(
             entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath));
+        var relocateCount = plan.Relocations.Count;
+        var keepNumbers = plan.DrawingPrefix.Length == 0;
         // 整份清单都要过去：Worker 自己挑出要改名的，属性则写在名字已经对的零件上。
         // 只送 pending 的话，第二次写入会因为「没有要改名的文件」而一个属性都写不进去。
-        var entries = plan.Entries.Select(AttachProperties).ToArray();
+        // V4.15：要挪进「外购件」的文件也在这一份里，同一轮改名、同一轮更新父装配引用。
+        var entries = plan.WorkerEntries.Select(entry => AttachProperties(entry, keepNumbers)).ToArray();
         var propertyCount = entries.Count(entry => AssemblyRenamePlan.IsWritablePart(entry)
                                                    && entry.Properties is { IsEmpty: false });
         // 按 Id 直接取行，不在几百行上逐条线性扫（那是 O(行 × 条目)，全在 UI 线程上）。
@@ -656,7 +670,7 @@ public sealed partial class AssemblyViewModel
             row.Detail = Path.GetFileName(entry.TargetPath);
         }
 
-        var workload = DescribeWriteWorkload(renameCount, propertyCount, plan.DrawingPrefix.Length == 0);
+        var workload = DescribeWriteWorkload(renameCount, relocateCount, propertyCount);
         QueueUiUpdate(() => StatusText = $"正在写入：{workload}");
         var request = new AssemblyRenameRequest(
             Guid.NewGuid().ToString("N"),
@@ -697,11 +711,13 @@ public sealed partial class AssemblyViewModel
         });
     }
 
-    private static string DescribeWriteWorkload(int renameCount, int propertyCount, bool removingNumbers)
+    private static string DescribeWriteWorkload(int renameCount, int relocateCount, int propertyCount)
     {
-        var parts = new List<string>(2);
+        var parts = new List<string>(3);
         if (renameCount > 0)
-            parts.Add(removingNumbers ? $"{renameCount} 个文件删图号" : $"{renameCount} 个文件改名");
+            parts.Add($"{renameCount} 个文件改名");
+        if (relocateCount > 0)
+            parts.Add($"{relocateCount} 个外购件移入「{ConversionPathLayout.PurchasedPartsDirectoryName}」");
         if (propertyCount > 0)
             parts.Add($"{propertyCount} 个零件写属性");
         return parts.Count == 0 ? "没有需要处理的文件" : string.Join("、", parts);
@@ -711,7 +727,9 @@ public sealed partial class AssemblyViewModel
     /// 给一个改名条目挂上要写的八个槽。装配体和未编号内部件原样返回，不带属性载荷——
     /// 判据与 Worker 侧一致，两边各判一次，界面漏判时 Worker 仍然不会去动装配体。
     /// </summary>
-    private RenameEntry AttachProperties(RenameEntry entry)
+    /// <param name="entry">计划里的一条；挪进外购件文件夹的条目不是可写零件，原样返回。</param>
+    /// <param name="keepDrawingNumber">本轮没填前缀：「图号」槽不写，零件上的原图号原样保留（V4.15）。</param>
+    private RenameEntry AttachProperties(RenameEntry entry, bool keepDrawingNumber)
     {
         if (!AssemblyRenamePlan.IsWritablePart(entry))
             return entry;
@@ -731,7 +749,8 @@ public sealed partial class AssemblyViewModel
                 edit.HeatTreatment ?? string.Empty,
                 edit.MaterialDatabase ?? string.Empty,
                 // 「名称」跟着改名一起走：值就是文件名里图号之后的那一段。
-                entry.PartName),
+                entry.PartName,
+                keepDrawingNumber),
         };
     }
 
@@ -906,7 +925,7 @@ public sealed partial class AssemblyViewModel
         _nameEdits.Clear();
         var inferred = DrawingNumber.InferPrefix(Path.GetFileName(result.SourceAssemblyPath));
         // 认不出来就**不动用户填的那个**。认不出只说明这个装配还没编过号，
-        // 而清空是一个有后果的动作（前缀为空＝删图号）——不能由"我没看懂"来触发。
+        // 用户填过的前缀不该由"我没看懂"来清掉。
         if (inferred.Length == 0 || string.Equals(_drawingPrefix, inferred, StringComparison.Ordinal))
             return;
         // 直接落字段：这条路后面紧跟着 ApplyRenamePreview，走属性会让计划白建一遍。

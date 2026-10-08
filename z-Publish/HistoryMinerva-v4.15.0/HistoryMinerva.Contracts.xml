@@ -1,0 +1,1616 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>HistoryMinerva.Contracts</name>
+    </assembly>
+    <members>
+        <member name="T:HistoryMinerva.Contracts.ConversionMode">
+            <summary>输出布局：<c>Ohs</c> 按 OneHistory 项目目录（<c>ProjectLayout</c>）分源 / XT / SW；<c>External</c> 是外界模式，产物写在来源目录旁的 <c>XT/</c>、<c>SW/</c>。页面只用 External。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.ConversionSourceFormat">
+             <summary>
+             源 CAD 格式。决定读装配、取零件的那一段走哪条实现，之后的
+             特征识别、草图完全定义、嵌套装配生成与配合重建对两种源完全相同。
+            
+             枚举按数值序列化，新值只能追加在末尾；缺省值 <see cref="F:HistoryMinerva.Contracts.ConversionSourceFormat.SolidEdge"/> = 0
+             保证旧 JSON 请求（没有这个字段）仍按 V3.x 的 Solid Edge 语义执行。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.ConversionSourceFormat.SolidEdge">
+            <summary>Solid Edge `.par` / `.asm`：导出 Parasolid 后导入 SolidWorks。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.ConversionSourceFormat.SolidWorks">
+            <summary>SolidWorks `.SLDPRT` / `.SLDASM`：先严格导出 Parasolid `.x_t`，再导入识别。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.ConversionStage">
+            <summary>Worker 事件所处的阶段。枚举按数值序列化，新值只能追加在末尾。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.ConversionErrorClass">
+            <summary>失败的归类，供界面与报告给出可行动的原因；<c>None</c> 表示没有错误。按数值序列化，新值只能追加在末尾。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.FeatureRecognitionPolicy">
+            <summary>FeatureWorks 识别超时的缺省值与上限；请求里 0 或负数按缺省处理，超过上限按上限处理。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.ConversionJob">
+            <summary>一个零件的转换作业：源零件，以及它的 XT 中转件与 SolidWorks 产物落点。</summary>
+            <param name="XtPath">
+            Parasolid 中转件。Solid Edge 与 SolidWorks 特征整备都先落到此路径，再导入 SolidWorks。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionJob.#ctor(System.String,System.String,System.String,System.String)">
+            <summary>一个零件的转换作业：源零件，以及它的 XT 中转件与 SolidWorks 产物落点。</summary>
+            <param name="XtPath">
+            Parasolid 中转件。Solid Edge 与 SolidWorks 特征整备都先落到此路径，再导入 SolidWorks。
+            </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.ConversionJob.XtPath">
+            <summary>
+            Parasolid 中转件。Solid Edge 与 SolidWorks 特征整备都先落到此路径，再导入 SolidWorks。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.BatchRequest">
+            <summary>零件批量转换请求（Worker 动词 <c>--request</c>）：一批 <see cref="T:HistoryMinerva.Contracts.ConversionJob"/> 加转换选项。末尾字段都有缺省值，旧请求 JSON 仍可读。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.BatchRequest.#ctor(System.String,HistoryMinerva.Contracts.ConversionMode,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.ConversionJob},System.Boolean,System.Boolean,System.Boolean,System.Int32,System.Boolean,HistoryMinerva.Contracts.ConversionSourceFormat)">
+            <summary>零件批量转换请求（Worker 动词 <c>--request</c>）：一批 <see cref="T:HistoryMinerva.Contracts.ConversionJob"/> 加转换选项。末尾字段都有缺省值，旧请求 JSON 仍可读。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PartImportRequest">
+            <summary>
+            V3.5.2：父 Worker 向单零件导入子 Worker 发送的内部请求。
+            每个请求只允许一个已经导出 XT 的零件，以隔离 FeatureWorks 的 COM 生命周期。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartImportRequest.#ctor(System.String,HistoryMinerva.Contracts.ConversionMode,HistoryMinerva.Contracts.ConversionJob,System.Boolean,System.Boolean,System.Boolean,System.Int32,System.Boolean,System.Boolean,HistoryMinerva.Contracts.ConversionSourceFormat)">
+            <summary>
+            V3.5.2：父 Worker 向单零件导入子 Worker 发送的内部请求。
+            每个请求只允许一个已经导出 XT 的零件，以隔离 FeatureWorks 的 COM 生命周期。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.FeatureOutcome">
+            <summary>V2.0 单个零件的特征识别与草图定义结果，随 Completed 事件回传。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.FeatureOutcome.#ctor(System.Int32,System.Boolean,System.Int32,System.Int32,System.Collections.Generic.IReadOnlyList{System.String},System.Boolean,System.Int64,System.String,System.Boolean,System.Boolean,System.Boolean,System.Boolean,System.Int32,System.Int32)">
+            <summary>V2.0 单个零件的特征识别与草图定义结果，随 Completed 事件回传。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.WorkerEvent">
+            <summary>Worker 逐条上报的进度、结果或错误事件；界面据此更新零件行，命令经 <c>CommandContext.Progress</c> 转进控制台。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.WorkerEvent.#ctor(System.String,System.String,HistoryMinerva.Contracts.ConversionStage,System.String,System.Boolean,System.Nullable{System.Int32},System.Nullable{System.Int32},System.Nullable{System.Int32},HistoryMinerva.Contracts.ConversionErrorClass,HistoryMinerva.Contracts.FeatureOutcome,HistoryMinerva.Contracts.AssemblyOutcome,System.Nullable{HistoryMinerva.Contracts.ConversionArtifactKind},System.Nullable{HistoryMinerva.Contracts.ReuseKind},HistoryMinerva.Contracts.MateOutcome)">
+            <summary>Worker 逐条上报的进度、结果或错误事件；界面据此更新零件行，命令经 <c>CommandContext.Progress</c> 转进控制台。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyOccurrence">
+            <summary>装配树中的一个实例。Solid Edge GetMatrix 已返回顶层世界矩阵。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyOccurrence.#ctor(System.String,System.String,System.String,System.Boolean,System.Boolean,System.Boolean,System.Double[],System.String)">
+            <summary>装配树中的一个实例。Solid Edge GetMatrix 已返回顶层世界矩阵。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyChild">
+             <summary>
+             V3.3：某个装配文档里的一个直接子项。
+            
+             <paramref name="LocalTransform"/> 的元素布局与 <see cref="P:HistoryMinerva.Contracts.AssemblyOccurrence.WorldTransform"/>
+             完全一致（16 元素行主序，旋转 0,1,2/4,5,6/8,9,10，平移 12..14，米），
+             差别只在参考系：它相对**本装配自己的原点**，不是顶层世界系。
+             顶层节点的局部矩阵恰好等于世界矩阵，因为顶层的参考系就是世界系。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyChild.#ctor(System.String,System.String,System.Boolean,System.Boolean,System.Double[],System.String)">
+             <summary>
+             V3.3：某个装配文档里的一个直接子项。
+            
+             <paramref name="LocalTransform"/> 的元素布局与 <see cref="P:HistoryMinerva.Contracts.AssemblyOccurrence.WorldTransform"/>
+             完全一致（16 元素行主序，旋转 0,1,2/4,5,6/8,9,10，平移 12..14，米），
+             差别只在参考系：它相对**本装配自己的原点**，不是顶层世界系。
+             顶层节点的局部矩阵恰好等于世界矩阵，因为顶层的参考系就是世界系。
+             </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyDocumentReading">
+             <summary>
+             V3.3：一个装配文档的一级读数。每个唯一 <c>.asm</c> 一条，含顶层。
+            
+             由 Worker 把该 <c>.asm</c> 作为**独立顶层文档**打开后读出——这样读到的矩阵天然就是
+             该文档坐标系下的局部矩阵，不需要用父级世界矩阵求逆换算。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyDocumentReading.#ctor(System.String,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyChild},System.Collections.Generic.IReadOnlyList{System.String},System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyRelation})">
+             <summary>
+             V3.3：一个装配文档的一级读数。每个唯一 <c>.asm</c> 一条，含顶层。
+            
+             由 Worker 把该 <c>.asm</c> 作为**独立顶层文档**打开后读出——这样读到的矩阵天然就是
+             该文档坐标系下的局部矩阵，不需要用父级世界矩阵求逆换算。
+             </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.RelationGeometry">
+             <summary>
+             V3.5：<c>GetGeometryN</c> 的产物。
+            
+             参考系是**所属装配文档自身的坐标系**——因为该 <c>.asm</c> 是作为独立顶层文档打开的，
+             它的"世界系"就是它自己（25 号文档 §3.2）。因此这些值可以直接用来在对应的
+             <c>.SLDASM</c> 里定位实体，不需要任何换算。
+             </summary>
+             <param name="GeometryType">1 = 平面（面上一点 + 法向）；2 = 轴（轴上一点 + 方向）。</param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.RelationGeometry.#ctor(System.Int32,System.Double[],System.Double[])">
+             <summary>
+             V3.5：<c>GetGeometryN</c> 的产物。
+            
+             参考系是**所属装配文档自身的坐标系**——因为该 <c>.asm</c> 是作为独立顶层文档打开的，
+             它的"世界系"就是它自己（25 号文档 §3.2）。因此这些值可以直接用来在对应的
+             <c>.SLDASM</c> 里定位实体，不需要任何换算。
+             </summary>
+             <param name="GeometryType">1 = 平面（面上一点 + 法向）；2 = 轴（轴上一点 + 方向）。</param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.RelationGeometry.GeometryType">
+            <summary>1 = 平面（面上一点 + 法向）；2 = 轴（轴上一点 + 方向）。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyRelation">
+             <summary>
+             V3.5：一条 Solid Edge 装配关系。字段照抄 19 号报告的实测清单，不发明。
+            
+             <paramref name="Offset"/> / <paramref name="ParallelOffset"/> 存在条件可读性：
+             Axial 关系在 <c>ParallelOffset == false</c> 时读 <c>Offset</c> 会抛 0x80004005。
+             采集侧必须先读开关再读值，读不到时留默认值并在 <paramref name="Diagnostic"/> 说明。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyRelation.#ctor(System.String,System.Int32,System.String,System.String,System.String,HistoryMinerva.Contracts.RelationGeometry,HistoryMinerva.Contracts.RelationGeometry,System.Double,System.Boolean,System.Boolean,System.Boolean,System.String)">
+             <summary>
+             V3.5：一条 Solid Edge 装配关系。字段照抄 19 号报告的实测清单，不发明。
+            
+             <paramref name="Offset"/> / <paramref name="ParallelOffset"/> 存在条件可读性：
+             Axial 关系在 <c>ParallelOffset == false</c> 时读 <c>Offset</c> 会抛 0x80004005。
+             采集侧必须先读开关再读值，读不到时留默认值并在 <paramref name="Diagnostic"/> 说明。
+             </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.MateOutcome">
+            <summary>V3.5：配合重建结果，随 Completed 事件回传。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MateOutcome.#ctor(System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Double,System.Collections.Generic.IReadOnlyList{System.String},System.Int32)">
+            <summary>V3.5：配合重建结果，随 Completed 事件回传。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.MateOutcome.IsSelfConsistent">
+            <summary>§6.1 判据 3：每条关系都必须有确定去向，不允许凭空消失。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyNode">
+            <summary>
+            V3.3：一个待生成的 <c>.SLDASM</c> 及其直接子项。
+            列表由 <c>AssemblyGraphBuilder</c> 按拓扑序产出：被依赖者在前，顶层在最后。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyNode.#ctor(System.String,System.String,System.Boolean,System.Int32,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyChild},System.Collections.Generic.IReadOnlyList{System.String})">
+            <summary>
+            V3.3：一个待生成的 <c>.SLDASM</c> 及其直接子项。
+            列表由 <c>AssemblyGraphBuilder</c> 按拓扑序产出：被依赖者在前，顶层在最后。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyProbeRequest">
+            <summary>装配探查请求（<c>--probe-assembly</c>）：只读打开源装配，结果写到 <c>ResultPath</c>。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyProbeRequest.#ctor(System.String,System.String,System.String,HistoryMinerva.Contracts.ConversionSourceFormat)">
+            <summary>装配探查请求（<c>--probe-assembly</c>）：只读打开源装配，结果写到 <c>ResultPath</c>。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyProbeResult">
+            <summary>装配探查结果：展平后的实例、唯一零件、子装配文档、零件属性现值与外购件。Solid Edge 与 SolidWorks 两种源产出同形结果；末尾字段缺省 <c>null</c> 表示「没有采集」。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyProbeResult.#ctor(System.String,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyOccurrence},System.Collections.Generic.IReadOnlyList{System.String},System.Int32,System.Int32,System.Int32,System.Int32,System.Collections.Generic.IReadOnlyList{System.String},System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyDocumentReading},System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.PartPropertyReading},System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.PurchasedPartReading})">
+            <summary>装配探查结果：展平后的实例、唯一零件、子装配文档、零件属性现值与外购件。Solid Edge 与 SolidWorks 两种源产出同形结果；末尾字段缺省 <c>null</c> 表示「没有采集」。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyBatchRequest">
+            <summary>装配转换请求（<c>--assembly</c>）：零件作业、实例矩阵、子装配节点与配合关系，Worker 据此按源层级重建 SolidWorks 装配。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyBatchRequest.#ctor(System.String,HistoryMinerva.Contracts.ConversionMode,System.String,System.String,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.ConversionJob},System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyOccurrence},System.Boolean,System.Boolean,System.Boolean,System.Boolean,System.Boolean,System.Int32,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyNode},System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.AssemblyRelation},HistoryMinerva.Contracts.ConversionSourceFormat)">
+            <summary>装配转换请求（<c>--assembly</c>）：零件作业、实例矩阵、子装配节点与配合关系，Worker 据此按源层级重建 SolidWorks 装配。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyOutcome">
+             <summary>
+             装配转换结果。
+            
+             V3.3 起 <paramref name="ComponentTotal"/> / <paramref name="ComponentInserted"/> 的语义变了：
+             从"全部叶零件"变为"**全部装配节点的直接子项之和**"。嵌套装配里同一个叶零件只被它的直接父级计一次。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyOutcome.#ctor(System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Double,System.Int64,System.String,System.Int32,System.Int32,System.Int32,HistoryMinerva.Contracts.MateOutcome,System.Int32,System.Int32)">
+             <summary>
+             装配转换结果。
+            
+             V3.3 起 <paramref name="ComponentTotal"/> / <paramref name="ComponentInserted"/> 的语义变了：
+             从"全部叶零件"变为"**全部装配节点的直接子项之和**"。嵌套装配里同一个叶零件只被它的直接父级计一次。
+             </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.ConversionArtifactKind">
+            <summary>产物种类。按数值序列化，新值只能追加在末尾。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.ReuseKind">
+            <summary>跳过某一步时复用的是哪种已有产物（界面显示为「复用 XT」「复用 SW」）。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.ExternalOutputDirectories">
+            <summary>外界模式的输出目录：来源目录与其下的 <c>XT/</c>、<c>SW/</c>。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ExternalOutputDirectories.#ctor(System.String,System.String,System.String)">
+            <summary>外界模式的输出目录：来源目录与其下的 <c>XT/</c>、<c>SW/</c>。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.ConversionPartPaths">
+            <summary>一个零件的产物路径：现行布局的 XT / SW 路径，以及旧平铺布局（仅 Solid Edge 源）的对应路径，用于识别可复用的旧产物。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPartPaths.#ctor(System.String,System.String,System.String,System.String)">
+            <summary>一个零件的产物路径：现行布局的 XT / SW 路径，以及旧平铺布局（仅 Solid Edge 源）的对应路径，用于识别可复用的旧产物。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PackageOutputDirectories">
+             <summary>
+             V4.11 整体打包的交付目录：装配体旁边**一个**文件夹 <c>&lt;前缀&gt; 零件采购/</c>。
+            
+             V4.10 是与装配体平级的 STP / DWG / PDF / BOM 四个目录；现场实际交付时总是把它们
+             再手工归成一个包发出去（参照 2026-025 a14 的「抽滤模块试制零件采购」），于是改成直接出这个包：
+             两张 BOM 与同名截图放在包的最外层，机加件的 DWG / PDF / STEP 三件套放进 <c>图纸/</c>。
+             </summary>
+             <param name="RootDirectory">总装配体所在目录。</param>
+             <param name="PackageDirectory">打包目录，BOM 与截图直接放在这里。</param>
+             <param name="DrawingDirectory">打包目录下的 <c>图纸/</c>，机加件三件套的去处。</param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackageOutputDirectories.#ctor(System.String,System.String,System.String)">
+             <summary>
+             V4.11 整体打包的交付目录：装配体旁边**一个**文件夹 <c>&lt;前缀&gt; 零件采购/</c>。
+            
+             V4.10 是与装配体平级的 STP / DWG / PDF / BOM 四个目录；现场实际交付时总是把它们
+             再手工归成一个包发出去（参照 2026-025 a14 的「抽滤模块试制零件采购」），于是改成直接出这个包：
+             两张 BOM 与同名截图放在包的最外层，机加件的 DWG / PDF / STEP 三件套放进 <c>图纸/</c>。
+             </summary>
+             <param name="RootDirectory">总装配体所在目录。</param>
+             <param name="PackageDirectory">打包目录，BOM 与截图直接放在这里。</param>
+             <param name="DrawingDirectory">打包目录下的 <c>图纸/</c>，机加件三件套的去处。</param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackageOutputDirectories.RootDirectory">
+            <summary>总装配体所在目录。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackageOutputDirectories.PackageDirectory">
+            <summary>打包目录，BOM 与截图直接放在这里。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackageOutputDirectories.DrawingDirectory">
+            <summary>打包目录下的 <c>图纸/</c>，机加件三件套的去处。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.ConversionPathLayout">
+            <summary>
+            外界模式的输出布局与文件扩展名。它只解析路径，不创建或检查文件。
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.ConversionPathLayout.SolidWorksDrawingExtension">
+            <summary>
+            V4.10：工程图。整体打包按「与零件同名、同目录」这一条唯一规则找它，
+            不递归、不跨目录——递归找同名图会把别的项目的重名图纸打进这一次交付。
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.ConversionPathLayout.PackageDirectorySuffix">
+            <summary>V4.11 打包目录名的后缀：<c>&lt;前缀&gt; 零件采购</c>。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.ConversionPathLayout.PurchasedPartsDirectoryName">
+            <summary>
+            V4.15：属性整备写入时，被改成外购件的同级件统一挪进总装目录下的这个子文件夹。
+            挪进去之后它按路径缺省就是外购件（落在子文件夹里），不靠记账也认得出来。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.ResolvePurchasedRelocation(System.String,System.String)">
+            <summary>同级外购件挪进 <see cref="F:HistoryMinerva.Contracts.ConversionPathLayout.PurchasedPartsDirectoryName"/> 之后的路径：文件名不变，只换目录。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.IsPurchasedRelocation(System.String,System.String,System.String)">
+            <summary>
+            这一对源 / 目标是不是一次「同级外购件挪进外购件目录」：源与总装同级，目标正好是
+            <see cref="M:HistoryMinerva.Contracts.ConversionPathLayout.ResolvePurchasedRelocation(System.String,System.String)"/> 算出来的那个路径。改名管线里**唯一**允许换目录的情形。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.GetSourcePartExtension(HistoryMinerva.Contracts.ConversionSourceFormat)">
+            <summary>源零件扩展名。SW 特征整备的源就是 <c>.SLDPRT</c> 本身。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.GetSourceAssemblyExtension(HistoryMinerva.Contracts.ConversionSourceFormat)">
+            <summary>源装配扩展名。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.UsesParasolidHandoff(HistoryMinerva.Contracts.ConversionSourceFormat)">
+            <summary>
+            该源格式是否经过交付用 Parasolid 中转。Solid Edge 与 SolidWorks 特征整备都先落到
+            <c>XT/</c> 再导入识别；属性整备改名不走本布局。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.HasLegacyFlatLayout(HistoryMinerva.Contracts.ConversionSourceFormat)">
+             <summary>
+             该源格式是否可能留下 V3.0 时代的旧平铺产物（产物与源同目录、同基名）。
+            
+             Solid Edge 源有：<c>A.par</c> 旁边的 <c>A.SLDPRT</c> 确实是上一代的产物。
+             SolidWorks 源没有：那个位置按构造就是**源零件本身**。把它当成旧产物，会让
+             自整备的每个零件都被判成"已存在"，并把产物路径改写回源文件——计划阶段随即
+             以"产物会覆盖源零件本身"整轮阻断，用户一个零件都整备不了。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.ResolvePackageDirectories(System.String,System.String)">
+            <summary>
+            V4.11：按源装配体所在目录与 BOM 前缀解析打包目录。只算路径，不建目录、不看存在性。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.ResolveDrawingPath(System.String)">
+            <summary>
+            V4.10：与零件同目录、同主名的工程图路径。**只算路径**，存在性由调用方判断。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.IsKnownCadFile(System.String)">
+            <summary>
+            带 CAD 扩展名的是文件，不是零件文件夹。来源选择不得靠扩展名在两种输入之间跳。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.IsOutsideAssemblyDirectory(System.String,System.String)">
+            <summary>
+            正式零件与所选装配体同级。路径落在子文件夹或其它目录即为外购件。
+            空路径不算外购件，留给未解析引用诊断。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.ConversionPathLayout.IsUnderReferencePartsDirectory(System.String)">
+             <summary>
+             文件是否位于名为 <c>参考部件</c> 的目录之下。
+            
+             该目录是现场明确标出的参考资料，不是外购件目录：其下的零件不参与属性整备，
+             也不进入任一打包清单或导出作业。检查目录段而不是字符串前缀，避免把
+             <c>参考部件备份</c> 之类的无关目录误排除。
+             </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.DrawingNumber">
+             <summary>
+             SolidWorks 属性整备使用的图号。
+             前缀由用户手写，例如 <c>ZS-LHL</c>；数字段按所选装配体的层级自动生成。
+            
+             **前缀允许为空**。空前缀不是"非法输入"，而是一个正常状态——V4.15 起它表示
+             这一轮**不动图号**：计划沿用文件名里原有的图号段（见 <c>PropertyPrepPlanner</c>），
+             这里算出来的 <see cref="P:HistoryMinerva.Contracts.DrawingNumber.Text"/> 为空只说明"本轮不发新号"。文件名规则只有一条：
+             <c>图号 名称.ext</c>，图号为空时退化成 <c>名称.ext</c>。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.DrawingNumber.#ctor(System.String,System.Collections.Generic.IReadOnlyList{System.Int32})">
+             <summary>
+             SolidWorks 属性整备使用的图号。
+             前缀由用户手写，例如 <c>ZS-LHL</c>；数字段按所选装配体的层级自动生成。
+            
+             **前缀允许为空**。空前缀不是"非法输入"，而是一个正常状态——V4.15 起它表示
+             这一轮**不动图号**：计划沿用文件名里原有的图号段（见 <c>PropertyPrepPlanner</c>），
+             这里算出来的 <see cref="P:HistoryMinerva.Contracts.DrawingNumber.Text"/> 为空只说明"本轮不发新号"。文件名规则只有一条：
+             <c>图号 名称.ext</c>，图号为空时退化成 <c>名称.ext</c>。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.DrawingNumber.RootSuffix">
+            <summary>根装配的编号尾巴。<c>前缀-00</c> 里的那个 <c>00</c>。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.DrawingNumber.Text">
+             <summary>
+             渲染出来的图号文本。
+            
+             **前缀为空时恒为空串**，而不是 <c>-01</c>：层级序号本身没有意义，它只是挂在前缀
+             后面的定位符。前缀一空就不发新号，用哪个号由计划决定（V4.15：沿用原号）。
+             层级仍然照算——用户把前缀填回来，同一个零件还是同一个号。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.DrawingNumber.NormalizePrefix(System.String)">
+            <summary>
+            归一化前缀。**空前缀合法**（＝本轮不动图号），空格和文件名非法字符仍然不收：
+            空格会让"图号 名称"这条规则自己解析不了自己，非法字符会让改名当场失败。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.DrawingNumber.SplitFileName(System.String,System.String@,System.String@)">
+             <summary>
+             按第一个空格把文件名切成「图号段」和「名称」。**这是本模块识别既有图号的唯一口径。**
+            
+             不校验图号段长什么样：现场的零件名里有大量不符合命名规则的旧号
+             （手写的、别的项目带过来的、带括号的），而这一段马上就要被本轮的新号整体替换掉，
+             拿规则去卡它只会把这些文件判成"没有图号"，于是它们的真名被当成图号留在了新名字里。
+            
+             没有空格时图号段为空、整个主名就是名称——一个还没编过号的零件正是这样。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.DrawingNumber.InferPrefix(System.String)">
+             <summary>
+             从根装配的文件名推断图号前缀，供导入时预填「图号前缀」框。
+            
+             根装配的号是 <c>前缀-00</c>，所以去掉尾巴上的 <c>-00</c> 就是前缀。
+             尾巴不是 <c>-00</c>（用户手工改过、或这个装配本来就不按规则命名）时，
+             整段当前缀用——猜错了用户改一个框就是了，而猜"没有前缀"会让整表看起来没编过号。
+             文件名里没有空格时返回空串：那是一个还没编号的装配。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.DrawingNumber.FormatFileName(HistoryMinerva.Contracts.DrawingNumber,System.String,System.String)">
+            <summary>
+            拼文件名：<c>图号 名称.ext</c>。图号为空（原本就没编过号）时只剩 <c>名称.ext</c>，
+            不留那个会长在最前面的空格。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.DrawingNumber.FormatFileName(System.String,System.String,System.String)">
+            <inheritdoc cref="M:HistoryMinerva.Contracts.DrawingNumber.FormatFileName(HistoryMinerva.Contracts.DrawingNumber,System.String,System.String)"/>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.HistoryMinervaIdentity">
+            <summary>
+            HistoryMinerva 模块名称唯一权威源。展示名、命令根、窗口标识、部署槽、
+            数据目录、Worker 文件名一律引用此类常量，代码中不再出现独立字面量。
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.HistoryMinervaIdentity.Name">
+            <summary>模块名，同时是部署槽名与数据目录名。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.HistoryMinervaIdentity.CommandDomain">
+            <summary>保留的模块身份域；新命令名称使用 <see cref="F:HistoryMinerva.Contracts.HistoryMinervaIdentity.CommandRoot"/>。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.HistoryMinervaIdentity.CommandRoot">
+            <summary>Vulcan 命令分类与 MCP 工具使用的短形根。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.HistoryMinervaIdentity.WindowTitle">
+            <summary>映射停靠页标题（去 History 前缀的短形）。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.HistoryMinervaIdentity.WindowId">
+            <summary>工具窗口内部标识与日志类别（不直接显示，保持小写稳定）。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.HistoryMinervaIdentity.WorkerFileName">
+            <summary>合并后单个 Worker 可执行文件名。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.HistoryMinervaIdentity.RequestsDirectoryName">
+            <summary>模块数据目录下的 Worker 请求目录名。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.HistoryMinervaIdentity.ProbesDirectoryName">
+            <summary>模块数据目录下的装配探查结果目录名。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.MateCandidate">
+            <summary>SolidWorks 侧一个候选面的几何签名。抽出来是为了让匹配逻辑能脱离 CAD 测试。</summary>
+            <param name="Key">回到 SW 里定位该面用的标识，匹配逻辑不解释它。</param>
+            <param name="GeometryType">1 = 平面；2 = 轴（圆柱/圆锥）。与 <see cref="T:HistoryMinerva.Contracts.RelationGeometry"/> 同口径。</param>
+            <param name="Point">平面上一点，或轴线上一点。米。</param>
+            <param name="Direction">平面法向，或轴线方向。</param>
+            <param name="Entity">
+            SolidWorks 侧的实体对象，供 Worker 选中它建配合。匹配逻辑完全不解释这个字段，
+            因此离线测试可以留空——几何判定只看 <paramref name="Point"/> 与 <paramref name="Direction"/>。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MateCandidate.#ctor(System.String,System.Int32,System.Double[],System.Double[],System.Object)">
+            <summary>SolidWorks 侧一个候选面的几何签名。抽出来是为了让匹配逻辑能脱离 CAD 测试。</summary>
+            <param name="Key">回到 SW 里定位该面用的标识，匹配逻辑不解释它。</param>
+            <param name="GeometryType">1 = 平面；2 = 轴（圆柱/圆锥）。与 <see cref="T:HistoryMinerva.Contracts.RelationGeometry"/> 同口径。</param>
+            <param name="Point">平面上一点，或轴线上一点。米。</param>
+            <param name="Direction">平面法向，或轴线方向。</param>
+            <param name="Entity">
+            SolidWorks 侧的实体对象，供 Worker 选中它建配合。匹配逻辑完全不解释这个字段，
+            因此离线测试可以留空——几何判定只看 <paramref name="Point"/> 与 <paramref name="Direction"/>。
+            </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.MateCandidate.Key">
+            <summary>回到 SW 里定位该面用的标识，匹配逻辑不解释它。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.MateCandidate.GeometryType">
+            <summary>1 = 平面；2 = 轴（圆柱/圆锥）。与 <see cref="T:HistoryMinerva.Contracts.RelationGeometry"/> 同口径。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.MateCandidate.Point">
+            <summary>平面上一点，或轴线上一点。米。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.MateCandidate.Direction">
+            <summary>平面法向，或轴线方向。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.MateCandidate.Entity">
+            <summary>
+            SolidWorks 侧的实体对象，供 Worker 选中它建配合。匹配逻辑完全不解释这个字段，
+            因此离线测试可以留空——几何判定只看 <paramref name="Point"/> 与 <paramref name="Direction"/>。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.MateMatchStatus">
+            <summary>配合几何在目标装配侧的匹配结论：唯一命中、找不到、或多于一个候选。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.MateMatch">
+            <summary>一次配合几何匹配的结果：状态、命中的候选，以及参与比较的候选键（找不到或有歧义时写进报告）。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MateMatch.#ctor(HistoryMinerva.Contracts.MateMatchStatus,HistoryMinerva.Contracts.MateCandidate,System.Collections.Generic.IReadOnlyList{System.String})">
+            <summary>一次配合几何匹配的结果：状态、命中的候选，以及参与比较的候选键（找不到或有歧义时写进报告）。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.MateGeometryMatcher">
+             <summary>
+             V3.5 §3.3：把关系给出的（点 + 方向）匹配到 SolidWorks 组件的某个面。
+            
+             不用 <c>SelectByID2</c> 的坐标点选：那条路选错面不会报错，只会生成一条语义错误的配合。
+             这里枚举候选并要求**唯一命中**——0 个和 &gt;1 个都当场判定为定位失败，绝不猜。
+            
+             纯数学，不碰 CAD，由 <c>HistoryMinerva.Smoke</c> 完整覆盖。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.MateGeometryMatcher.PositionTolerance">
+            <summary>位置容差，与 V3.0 起的位置判据同口径。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.MateGeometryMatcher.DirectionTolerance">
+            <summary>方向容差：两个单位向量叉积模长的上限。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MateGeometryMatcher.AreAllEquivalent(System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.MateCandidate})">
+            <summary>候选之间是否互为同一平面 / 同一轴。两两验证，候选数极小，不做优化。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MateGeometryMatcher.Choose(HistoryMinerva.Contracts.RelationGeometry,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.MateCandidate})">
+            <summary>
+            从等价候选里挑一个。优先法向与关系同向——配合的对齐方向依赖它；
+            其次按 Key 取序，保证同样的输入永远得到同样的输出（可复现比"最优"更重要）。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MateGeometryMatcher.IsParallel(System.Collections.Generic.IReadOnlyList{System.Double},System.Collections.Generic.IReadOnlyList{System.Double})">
+            <summary>方向平行判定。**同向与反向都算平行**——SE 的两侧法向常是反的，由对齐标志表达朝向。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.SolidWorksMateType">
+            <summary>swMateType_e 的子集，只列本版会用到的。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.SolidWorksMateAlign">
+            <summary>swMateAlign_e。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.SolidWorksMateAlign.Closest">
+            <summary>取离当前姿态最近的解。见 <see cref="T:HistoryMinerva.Contracts.MateTypeMapper"/> 的对齐策略说明。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.MatePlanKind">
+            <summary>源装配关系翻译成什么：一条 SolidWorks 配合、一次固定组件、或不翻译（抑制 / 不支持）。判「接地」一律问它，不对接口名字面量比较。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.MatePlanKind.Mate">
+            <summary>翻译成一条 SolidWorks 配合。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.MatePlanKind.Fix">
+            <summary>不是配合，而是把某个组件固定（GroundRelation3d）。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.MatePlanKind.SkipSuppressed">
+            <summary>关系被抑制，在 SE 里本来就没生效。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.MatePlanKind.Unsupported">
+            <summary>本版不翻译这个类型。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.MatePlan">
+            <summary>一条源关系的翻译计划：种类、SolidWorks 配合类型与对齐、距离，以及不翻译时的原因。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MatePlan.#ctor(HistoryMinerva.Contracts.MatePlanKind,HistoryMinerva.Contracts.SolidWorksMateType,HistoryMinerva.Contracts.SolidWorksMateAlign,System.Double,System.String)">
+            <summary>一条源关系的翻译计划：种类、SolidWorks 配合类型与对齐、距离，以及不翻译时的原因。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.MateTypeMapper">
+             <summary>
+             V3.5 §3.4：SE 关系 → SW 配合的映射表。
+            
+             只认 19 号报告实测到的三种接口名。遇到没实测过的类型一律 <see cref="F:HistoryMinerva.Contracts.MatePlanKind.Unsupported"/>
+             并把接口名带进报告——据此决定下一版补哪个，而不是现在凭猜测写一行映射。
+            
+             纯逻辑，不碰 CAD。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.MateTypeMapper.SolidWorksFixed">
+            <summary>源组件被"固定"。不是配合，落为固定该组件，与 SE 的接地同处理。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.MateTypeMapper.OffsetEpsilon">
+            <summary>偏移量小于这个值就当作重合，而不是零距离的距离配合。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MateTypeMapper.MapSolidWorksCoincident(HistoryMinerva.Contracts.AssemblyRelation)">
+            <summary>
+            SW 重合配合。带非零偏移的重合在 SW 里本来就该是距离配合——
+            采集侧照实填 <see cref="P:HistoryMinerva.Contracts.AssemblyRelation.Offset"/>，这里按值分流，与 SE 的平面关系同口径。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MateTypeMapper.CanReadAxialOffset(System.Boolean)">
+            <summary>
+            条件可读的守门人：告诉采集侧现在能不能读这个成员。
+            读不出来是正常状态，不是故障——19 号报告 §3 已实测。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.MateTypeMapper.CanReadRange(System.Boolean)">
+            <summary>同上：<c>RangedOffset == false</c> 时读 RangeLow/RangeHigh 抛 0x8000FFFF。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PackagePartCategory">
+             <summary>
+             零件 / 子装配体的件别，决定它进哪一张 BOM、要不要编号和导出。
+            
+             **缺省**仍按本模块既有的唯一口径由路径推出（<see cref="M:HistoryMinerva.Contracts.PartKinds.Default(System.String,System.String)"/>）：
+             与所选总装配体同级的是机加件，落在子文件夹或别处的是外购件，
+             落在 <c>参考部件</c> 目录下的是排除。V4.11 起用户可以在属性整备与打包两张表里
+             逐行改写它（<see cref="M:HistoryMinerva.Contracts.PartKinds.Resolve(System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.String,System.String)"/>），两张表共用同一份改写记账——
+             同一个零件不会在改名管线里算机加件、在打包管线里算外购件。
+            
+             枚举按数值序列化，新值只能追加在末尾。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PackagePartCategory.Reference">
+            <summary>
+            V4.11：排除件（V4.12 起界面叫「排除」，V4.11 叫「参考」；枚举名不改，按数值序列化）。
+            不编号、不写属性、不进任一 BOM、不导出；子装配体连同其内部件一起排除。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PartKinds">
+            <summary>
+            V4.11 件别的判定与轮换。界面上的件别格与 Janus 的「操作」格同一个手感：
+            显示「件别 + 符号」，点一下换到下一种。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.Default(System.String,System.String)">
+            <summary>按路径推出的缺省件别，与 V4.10 的判据逐条一致。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.Resolve(System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.String,System.String)">
+            <summary>
+            用户改写过的以用户的为准，否则取缺省。
+            <paramref name="edits"/> 按源文件全路径记账，键的大小写规则由调用方的字典决定。
+            <c>参考部件</c> 目录下的件不认改写，见 <see cref="M:HistoryMinerva.Contracts.PartKinds.IsFixed(System.String)"/>。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.IsFixed(System.String)">
+            <summary>
+            件别不能改的件：<c>参考部件</c> 目录下的一切。那是现场明确标出的参考资料，
+            Worker 也会拒绝改名、写属性或导出它们——放开改写只会换来一次失败的打包。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.Next(HistoryMinerva.Contracts.PackagePartCategory,System.String,System.String)">
+             <summary>
+             点一下之后的件别：机加件 → 外购件 → 排除 → 机加件。
+            
+             子文件夹里的装配体跳过「机加件」：探查不打开外购装配体，拿不到它的内部层级，
+             设成自制组件也展不开，只会让它和它里面的件一起从清单上消失。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.CanBeMachined(System.String,System.String)">
+            <summary>子文件夹里的装配体没有展开过的内部层级，不能当自制组件。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.Label(HistoryMinerva.Contracts.PackagePartCategory)">
+            <summary>件别的文字。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartKinds.BoxPlaceholder">
+            <summary>
+            V4.12 底下件别框的总状态：全表不是同一种件别时显示这两个字。
+            它是读数不是动作，选中它什么都不改。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartKinds.BoxOptions">
+            <summary>件别框的候选：总状态在前，然后是三种件别。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.TryParseLabel(System.String,HistoryMinerva.Contracts.PackagePartCategory@)">
+            <summary>按文字认件别（框里选中的那一项）。总状态与认不出的文字返回 false。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.Cell(HistoryMinerva.Contracts.PackagePartCategory)">
+            <summary>件别格的「文字 + 符号」，写法照 Janus「操作」格。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.OccurrencePaths(HistoryMinerva.Contracts.AssemblyProbeResult)">
+            <summary>探查结果里每个实例 id（<c>Name2</c>）对应的源文件全路径。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.HasExcludedAncestor(System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.String)">
+            <summary>
+            这个实例有没有哪一级**真祖先**不是机加件（被设成外购件或排除）。
+            <c>Name2</c> 天然是 <c>"父-1/子-1/孙-1"</c>，祖先就是它的每一个 <c>/</c> 前缀。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartKinds.CountOutsideExcluded(HistoryMinerva.Contracts.PurchasedPartReading,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.String)">
+             <summary>
+             V4.15：子文件夹外购件有几个实例**不在**被改成外购件 / 排除的组件里面。
+            
+             同级子装配体被改成外购件后，它就是一种货；它放在子文件夹里的内部件（螺钉、气缸附件）
+             不能再作为独立的外购件出现在表里、计进 BOM。V4.14 只在同级件上判了祖先，
+             子文件夹那一路漏了，于是用户改完件别，组件里面的件照样一行一行留在表里。
+             旧探查结果没有实例 id 时按 <see cref="P:HistoryMinerva.Contracts.PurchasedPartReading.InstanceCount"/> 原样计。
+             </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PackageArtifact">
+            <summary>整体打包要导出的三种产物。枚举按数值序列化，新值只能追加在末尾。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PackageArtifact.Step">
+            <summary>零件 <c>.SLDPRT → .STEP</c>。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PackageArtifact.Dwg">
+            <summary>工程图 <c>.SLDDRW → .DWG</c>。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PackageArtifact.Pdf">
+            <summary>工程图 <c>.SLDDRW → .PDF</c>。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PackagePartEntry">
+            <summary>
+            打包清单里的一个唯一零件。
+            </summary>
+            <param name="Id">
+            行身份，按源文件全路径定死（与 <c>PropertyPrepPlanner</c> 同一约定）。
+            重新解析后同一个零件仍是同一行，界面可以原地更新而不是整表重画。
+            </param>
+            <param name="DrawingPath">同名同目录的 <c>.SLDDRW</c>；没有图纸时为 <c>null</c>。</param>
+            <param name="DrawingNumber">
+            零件图号，取自**当前文件名**里第一个空格之前的那一段（<see cref="M:HistoryMinerva.Contracts.DrawingNumber.SplitFileName(System.String,System.String@,System.String@)"/>）。
+            BOM 描述的是此刻磁盘上的事实，不是「改名之后应该是什么」——所以这里不重新编号。
+            </param>
+            <param name="PartName">零件名称，即文件名里图号之后的那一段。</param>
+            <param name="Specification">
+            外购件的「规格」，即文件名里的非中文字段；机加件恒为空串。
+            </param>
+            <param name="Quantity">
+            该零件在整个总装配体里的实例总数，含嵌套倍数，抑制件不计。
+            </param>
+            <param name="IsAssembly">
+            V4.11：这一行是子装配体。机加件（自制组件）子装配体只在表里占一行供改件别，
+            不进 BOM、不导出——它里面的件各自进清单；外购件子装配体整体算一种货。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackagePartEntry.#ctor(System.String,System.String,System.String,System.String,System.String,System.String,System.Int32,HistoryMinerva.Contracts.PackagePartCategory,System.Boolean)">
+            <summary>
+            打包清单里的一个唯一零件。
+            </summary>
+            <param name="Id">
+            行身份，按源文件全路径定死（与 <c>PropertyPrepPlanner</c> 同一约定）。
+            重新解析后同一个零件仍是同一行，界面可以原地更新而不是整表重画。
+            </param>
+            <param name="DrawingPath">同名同目录的 <c>.SLDDRW</c>；没有图纸时为 <c>null</c>。</param>
+            <param name="DrawingNumber">
+            零件图号，取自**当前文件名**里第一个空格之前的那一段（<see cref="M:HistoryMinerva.Contracts.DrawingNumber.SplitFileName(System.String,System.String@,System.String@)"/>）。
+            BOM 描述的是此刻磁盘上的事实，不是「改名之后应该是什么」——所以这里不重新编号。
+            </param>
+            <param name="PartName">零件名称，即文件名里图号之后的那一段。</param>
+            <param name="Specification">
+            外购件的「规格」，即文件名里的非中文字段；机加件恒为空串。
+            </param>
+            <param name="Quantity">
+            该零件在整个总装配体里的实例总数，含嵌套倍数，抑制件不计。
+            </param>
+            <param name="IsAssembly">
+            V4.11：这一行是子装配体。机加件（自制组件）子装配体只在表里占一行供改件别，
+            不进 BOM、不导出——它里面的件各自进清单；外购件子装配体整体算一种货。
+            </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePartEntry.Id">
+            <summary>
+            行身份，按源文件全路径定死（与 <c>PropertyPrepPlanner</c> 同一约定）。
+            重新解析后同一个零件仍是同一行，界面可以原地更新而不是整表重画。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePartEntry.DrawingPath">
+            <summary>同名同目录的 <c>.SLDDRW</c>；没有图纸时为 <c>null</c>。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePartEntry.DrawingNumber">
+            <summary>
+            零件图号，取自**当前文件名**里第一个空格之前的那一段（<see cref="M:HistoryMinerva.Contracts.DrawingNumber.SplitFileName(System.String,System.String@,System.String@)"/>）。
+            BOM 描述的是此刻磁盘上的事实，不是「改名之后应该是什么」——所以这里不重新编号。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePartEntry.PartName">
+            <summary>零件名称，即文件名里图号之后的那一段。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePartEntry.Specification">
+            <summary>
+            外购件的「规格」，即文件名里的非中文字段；机加件恒为空串。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePartEntry.Quantity">
+            <summary>
+            该零件在整个总装配体里的实例总数，含嵌套倍数，抑制件不计。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePartEntry.IsAssembly">
+            <summary>
+            V4.11：这一行是子装配体。机加件（自制组件）子装配体只在表里占一行供改件别，
+            不进 BOM、不导出——它里面的件各自进清单；外购件子装配体整体算一种货。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePartEntry.FileName">
+            <summary>BOM 与表格显示用的文件名（含扩展名）。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PackagePlan">
+            <summary>
+            一次整体打包的完整计划。纯内存，不碰 CAD、不建目录。
+            </summary>
+            <param name="BomNamePrefix">
+            两张 BOM 与打包目录的文件名前缀，取自总装配体图号里**去掉全部纯数字段**之后剩下的部分：
+            <c>GHLSS-06-00 总装.SLDASM</c> → <c>GHLSS</c>，于是 BOM 叫
+            <c>GHLSS 机加件清单.xlsx</c>、打包目录叫 <c>GHLSS 零件采购</c>。认不出来时退回装配体主名。
+            </param>
+            <param name="Entries">
+            表里的全部行：机加件、外购件、参考件，以及自制子装配体。BOM 与导出只取其中该取的那几类。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackagePlan.#ctor(System.String,HistoryMinerva.Contracts.PackageOutputDirectories,System.String,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.PackagePartEntry},System.Collections.Generic.IReadOnlyList{System.String},System.Collections.Generic.IReadOnlyList{System.String})">
+            <summary>
+            一次整体打包的完整计划。纯内存，不碰 CAD、不建目录。
+            </summary>
+            <param name="BomNamePrefix">
+            两张 BOM 与打包目录的文件名前缀，取自总装配体图号里**去掉全部纯数字段**之后剩下的部分：
+            <c>GHLSS-06-00 总装.SLDASM</c> → <c>GHLSS</c>，于是 BOM 叫
+            <c>GHLSS 机加件清单.xlsx</c>、打包目录叫 <c>GHLSS 零件采购</c>。认不出来时退回装配体主名。
+            </param>
+            <param name="Entries">
+            表里的全部行：机加件、外购件、参考件，以及自制子装配体。BOM 与导出只取其中该取的那几类。
+            </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePlan.BomNamePrefix">
+            <summary>
+            两张 BOM 与打包目录的文件名前缀，取自总装配体图号里**去掉全部纯数字段**之后剩下的部分：
+            <c>GHLSS-06-00 总装.SLDASM</c> → <c>GHLSS</c>，于是 BOM 叫
+            <c>GHLSS 机加件清单.xlsx</c>、打包目录叫 <c>GHLSS 零件采购</c>。认不出来时退回装配体主名。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePlan.Entries">
+            <summary>
+            表里的全部行：机加件、外购件、参考件，以及自制子装配体。BOM 与导出只取其中该取的那几类。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePlan.Machined">
+            <summary>机加件零件，按图号排序。第一张 BOM 的内容；自制子装配体不在其中。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePlan.Purchased">
+            <summary>外购件（零件或整体外购的子装配体），按规格排序。第二张 BOM 的内容。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePlan.StepTargets">
+            <summary>
+            要导出 STEP 的零件：**只有机加件**。标准件厂商按规格供货，不需要你给模型，
+            而 Toolbox 螺钉螺母一批几十上百个，逐个导 STEP 只是把打包拖慢（用户确认）。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePlan.DrawingTargets">
+            <summary>
+            要导出 DWG / PDF 的工程图来源。V4.11 起**只有机加件**：
+            「图纸」目录是给加工厂的三件套（DWG / PDF / STEP），外购件的图没有人要。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePlan.CanPack">
+            <summary>两张清单至少有一张有内容才打包。表里只剩参考件或自制组件时没有东西可交付。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePlan.MachinedBomImageFileName">
+            <summary>V4.11：与 BOM 同名的截图，放在 BOM 旁边。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackagePlan.PurchasedBomImageFileName">
+            <inheritdoc cref="P:HistoryMinerva.Contracts.PackagePlan.MachinedBomImageFileName"/>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PackageJob">
+            <summary>
+            一个导出作业。<paramref name="SourcePath"/> 是零件或工程图，
+            <paramref name="OutputPath"/> 已经落在打包目录的 <c>图纸/</c> 里。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackageJob.#ctor(System.String,System.String,System.String,HistoryMinerva.Contracts.PackageArtifact)">
+            <summary>
+            一个导出作业。<paramref name="SourcePath"/> 是零件或工程图，
+            <paramref name="OutputPath"/> 已经落在打包目录的 <c>图纸/</c> 里。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PackageRequest">
+            <summary>
+            Worker <c>--package-assembly</c> 请求。只做 CAD 导出——BOM 与截图不需要 SolidWorks，
+            由前端在同一轮里自己写，Worker 起不起得来都不影响采购拿到清单。
+            </summary>
+            <param name="Overwrite">
+            缺省 <c>true</c>：打包要的是一份**与当前模型一致**的交付包，留着上一轮的旧 STEP
+            比缺一个文件更危险（用户确认）。这与转换管线默认不覆盖是两件事——那边保护的是
+            用户手工整备过的产物，这边的产物本来就由本模块整批生成。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackageRequest.#ctor(System.String,System.String,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.PackageJob},System.Boolean)">
+            <summary>
+            Worker <c>--package-assembly</c> 请求。只做 CAD 导出——BOM 与截图不需要 SolidWorks，
+            由前端在同一轮里自己写，Worker 起不起得来都不影响采购拿到清单。
+            </summary>
+            <param name="Overwrite">
+            缺省 <c>true</c>：打包要的是一份**与当前模型一致**的交付包，留着上一轮的旧 STEP
+            比缺一个文件更危险（用户确认）。这与转换管线默认不覆盖是两件事——那边保护的是
+            用户手工整备过的产物，这边的产物本来就由本模块整批生成。
+            </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PackageRequest.Overwrite">
+            <summary>
+            缺省 <c>true</c>：打包要的是一份**与当前模型一致**的交付包，留着上一轮的旧 STEP
+            比缺一个文件更危险（用户确认）。这与转换管线默认不覆盖是两件事——那边保护的是
+            用户手工整备过的产物，这边的产物本来就由本模块整批生成。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PurchasedPartReading">
+             <summary>
+             V4.10：探查时收下的一个外购件读数。
+            
+             外购件不进转换计划、不打开模型、不读属性（见 <c>SolidWorksAssemblyExplorer</c>），
+             但采购要的正是它们的数量，所以这里只收两件按路径就能确定的事实：是谁、有几个。
+             </summary>
+             <param name="InstanceCount">整个总装配体里的实例总数，抑制件不计。</param>
+             <param name="OccurrenceIds">
+             V4.15：计入 <paramref name="InstanceCount"/> 的那几个实例的 <c>Name2</c>（<c>父-1/子-1</c>）。
+             用来判断它是不是落在某个**被用户改成外购件或排除**的同级组件底下——那样它就是那个组件
+             里面的件，不再单独进表、不单独计数（见 <see cref="M:HistoryMinerva.Contracts.PartKinds.CountOutsideExcluded(HistoryMinerva.Contracts.PurchasedPartReading,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.String)"/>）。
+             为 null 表示旧探查结果没有采集，按 <paramref name="InstanceCount"/> 原样计。
+             </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PurchasedPartReading.#ctor(System.String,System.Int32,System.Collections.Generic.IReadOnlyList{System.String})">
+             <summary>
+             V4.10：探查时收下的一个外购件读数。
+            
+             外购件不进转换计划、不打开模型、不读属性（见 <c>SolidWorksAssemblyExplorer</c>），
+             但采购要的正是它们的数量，所以这里只收两件按路径就能确定的事实：是谁、有几个。
+             </summary>
+             <param name="InstanceCount">整个总装配体里的实例总数，抑制件不计。</param>
+             <param name="OccurrenceIds">
+             V4.15：计入 <paramref name="InstanceCount"/> 的那几个实例的 <c>Name2</c>（<c>父-1/子-1</c>）。
+             用来判断它是不是落在某个**被用户改成外购件或排除**的同级组件底下——那样它就是那个组件
+             里面的件，不再单独进表、不单独计数（见 <see cref="M:HistoryMinerva.Contracts.PartKinds.CountOutsideExcluded(HistoryMinerva.Contracts.PurchasedPartReading,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.String)"/>）。
+             为 null 表示旧探查结果没有采集，按 <paramref name="InstanceCount"/> 原样计。
+             </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PurchasedPartReading.InstanceCount">
+            <summary>整个总装配体里的实例总数，抑制件不计。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PurchasedPartReading.OccurrenceIds">
+            <summary>
+            V4.15：计入 <paramref name="InstanceCount"/> 的那几个实例的 <c>Name2</c>（<c>父-1/子-1</c>）。
+            用来判断它是不是落在某个**被用户改成外购件或排除**的同级组件底下——那样它就是那个组件
+            里面的件，不再单独进表、不单独计数（见 <see cref="M:HistoryMinerva.Contracts.PartKinds.CountOutsideExcluded(HistoryMinerva.Contracts.PurchasedPartReading,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.String)"/>）。
+            为 null 表示旧探查结果没有采集，按 <paramref name="InstanceCount"/> 原样计。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PackagePlanner">
+             <summary>
+             V4.10：把一次装配探查结果算成整体打包计划。
+            
+             四件事在这里定死，之后的界面、导出与 BOM 都只是照做：
+            
+             <list type="number">
+               <item><b>谁进清单</b>：探查已经把与总装同级的零件与子装配体收进 <see cref="P:HistoryMinerva.Contracts.AssemblyProbeResult.Occurrences"/>，
+                     把子文件夹里的外购件收进 <see cref="P:HistoryMinerva.Contracts.AssemblyProbeResult.PurchasedParts"/>。</item>
+               <item><b>件别</b>（V4.11）：缺省按路径推出，用户在表里改写过的以用户的为准（<see cref="M:HistoryMinerva.Contracts.PartKinds.Resolve(System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.String,System.String)"/>）。
+                     自制子装配体（机加件）照常展开，自己只占一行不进 BOM；外购子装配体整体算一种货，
+                     里面的件全部不进清单；参考件连同其内部件整个排除。</item>
+               <item><b>数量</b>：整个总装配体里的实例总数，含嵌套倍数（子装配用两次、里面三个同款件＝6），
+                     抑制件不计。</item>
+               <item><b>图号与名称</b>：按文件名第一个空格切，与改名管线同一条口径
+                     （<see cref="M:HistoryMinerva.Contracts.DrawingNumber.SplitFileName(System.String,System.String@,System.String@)"/>）。BOM 描述的是此刻磁盘上的事实，
+                     不重新编号——重新编号得到的是「改完名之后的图号」，而文件还没改。</item>
+             </list>
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackagePlanner.Create(HistoryMinerva.Contracts.AssemblyProbeResult,System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory})">
+            <param name="kinds">
+            V4.11：用户改写过的件别，按源文件全路径记账。没记的按路径取缺省。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackagePlanner.CountOccurrences(HistoryMinerva.Contracts.AssemblyProbeResult,System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},HistoryMinerva.Contracts.PackagePlanner.Tally,System.Collections.Generic.List{System.String})">
+             <summary>
+             与总装同级的零件与子装配体。探查侧已经把子文件夹外购件及其内部件排除在
+             <see cref="P:HistoryMinerva.Contracts.AssemblyProbeResult.Occurrences"/> 之外，这里只按件别再筛一遍。
+            
+             祖先按 <see cref="P:HistoryMinerva.Contracts.AssemblyOccurrence.OccurrenceId"/> 的 <c>/</c> 前缀逐级查：
+             任何一级祖先不是机加件（被设成外购件或参考），这个实例就不再单独出现。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackagePlanner.CountPurchasedReadings(HistoryMinerva.Contracts.AssemblyProbeResult,System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},HistoryMinerva.Contracts.PackagePlanner.Tally,System.Collections.Generic.List{System.String})">
+            <summary>
+            子文件夹里的外购件。数量由探查侧数好带过来——那一遍展平已经走过全部后代实例，
+            而这里连文件都不该打开（外购件很可能根本不在本机上）。
+            用户把它改成机加件时，它照样按文件名拆图号、导 STEP、找同名工程图。
+            V4.15：落在被改成外购件 / 排除的同级组件里面的实例不计，全落在里面就整行不出现。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackagePlanner.ResolveBomNamePrefix(System.String)">
+             <summary>
+             两张 BOM 与打包目录的文件名前缀：总装图号去掉尾巴上全部纯数字段。
+            
+             <c>GHLSS-06-00 总装.SLDASM</c> → 图号段 <c>GHLSS-06-00</c> → 前缀 <c>GHLSS</c>。
+             用户要的是「只带总装体前缀、不带数字」——同一台设备的多个总装分件出的 BOM
+             才不会因为层级号不同而变成一堆看不出关系的文件名。
+            
+             认不出图号（装配体名里没有空格）时退回装配体主名：宁可文件名长一点，
+             也不能让两张 BOM 叫「 机加件清单.xlsx」。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackagePlanner.EntryId(System.String)">
+            <summary>
+            行 id 按源文件全路径定死，与 <c>PropertyPrepPlanner.EntryId</c> 同一约定：
+            重新解析之后同一个零件仍是同一行，界面可以原地更新而不是整表重画。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PackagePlanner.Tally">
+            <summary>按路径累计数量；一个路径只有一种件别。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PackagePlanner.Tally.ToEntries">
+            <summary>机加件（零件与自制组件按图号混排）→ 外购件（按规格）→ 参考。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PartPropertyNames">
+             <summary>
+             SolidWorks 零件属性标签模板里那八个属性槽的名字，以及两个固定值。
+            
+             权威来源是属性标签模板文件本身，而不是界面上看到的标题：
+             `2026-025-实验室测绘/z-SW模板配置/03 属性模板/精密零件属性.prtprp`。
+             该文件是 XML，每个 <c>&lt;Control&gt;</c> 的 <c>Label</c>（界面标题）与
+             <c>PropName</c>（真实属性名）是**两个字段**，二者可以不同——「类型选择」就是这样一例。
+            
+             **为什么必须集中在这里**：写属性用的是 <c>CustomPropertyManager.Add3</c>，它按名字找槽。
+             名字差一个字不会报错，而是**新建一个重名槽**——模板槽依旧是空的，工程图明细表照样
+             取不到值，现场看到的现象是「整备跑成功了但图框还是空的」。
+            
+             同样要紧的是**写去哪一批槽**：该模板 17 个控件全部是 <c>ApplyTo="Config"</c>，
+             因此七个槽都写**配置特定**属性，不是文档级「自定义」属性。见
+             <c>SolidWorksInteropBridge.GetCustomPropertyManager</c>。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.DrawingNumber">
+            <summary>图号。值与文件名前缀部分完全一致，由 <see cref="P:HistoryMinerva.Contracts.DrawingNumber.Text"/> 给出。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.Name">
+             <summary>
+             名称。V4.8 追加，值是文件名里图号之后的那一段**原零件名称**，与
+             <see cref="M:HistoryMinerva.Contracts.DrawingNumber.FormatFileName(HistoryMinerva.Contracts.DrawingNumber,System.String,System.String)"/> 拼出来的名字取自同一个来源。
+            
+             这一槽没有界面入口，也不该有：名称就是改名时用的那个名称，让用户在旁边再填一遍
+             只会制造「文件名叫阀体、属性里写着阀盖」的两份真话。因此它随改名一起写，
+             由 <see cref="P:HistoryMinerva.Contracts.RenameEntry.PartName"/> 带下来。模板里它是自由文本 TextBox
+             （`Control Label="名称" PropName="名称" ApplyTo="Config" Type="TextBox"`）。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.Category">
+             <summary>
+             类型。本模块只整备机加件，恒为 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.MachinedCategory"/>。
+            
+             名字是「类型选择」而不是「类型」——这一条取自属性标签模板本身
+             （`精密零件属性.prtprp` 里 <c>Control Label="类型选择" PropName="类型选择"</c>），
+             不是从界面标题上猜的。曾经按「类型」写过一版，模板槽因此一直是空的。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.Date">
+            <summary>日期。文本型，格式见 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.DateFormat"/>。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.Designer">
+            <summary>设计。页面上「图号前缀」同一行的文本框一次刷满全部零件。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.Material">
+             <summary>
+             材料。**这一槽不是自由文本**。
+            
+             模板里它是 <c>Mode="SWProperty"</c>、默认值 <c>SW-Material</c>，也就是一条指向零件
+             实体材质的链接。往它写「45钢」这样的字符串，属性标签上什么都不会变——那一栏读的是
+             零件材质，不是这个字符串——而链接反倒被换成了静态文本。
+            
+             因此写材料是**两步**：先 <c>IPartDoc.SetMaterialPropertyName2</c> 把材质应用到零件，
+             再把这一槽写成 <see cref="M:HistoryMinerva.Contracts.PartPropertyNames.MaterialLinkExpression(System.String,System.String)"/> 让链接成立。候选只取用户在 SolidWorks 里
+             收藏的材料，见 <c>SolidWorksPropertyOptions</c>。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.SurfaceTreatment">
+            <summary>
+            表面处理。模板里是 <c>ComboBox</c>，候选写死在模板的 <c>&lt;Data SourceType="List"&gt;</c> 里；
+            界面同样只让选不让填，见 <see cref="P:HistoryMinerva.Contracts.PartPropertyNames.FallbackSurfaceTreatments"/>。
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.HeatTreatment">
+            <summary>热处理。同 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.SurfaceTreatment"/>，候选见 <see cref="P:HistoryMinerva.Contracts.PartPropertyNames.FallbackHeatTreatments"/>。</summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.MaterialLinkValue">
+             <summary>
+             「材料」槽链接的**记号**，与 <c>SW-Mass</c>（模板里「质量」槽用的）同一族。
+            
+             **它本身不是能写进属性的值**。属性标签模板里的 <c>DefaultValue="SW-Material"</c> 是给
+             属性标签生成器看的，生成器落盘时会展开成 <see cref="M:HistoryMinerva.Contracts.PartPropertyNames.MaterialLinkExpression(System.String,System.String)"/> 那种带引号、
+             带配置名和文件名的表达式。V4.7～V4.14 把这个记号原样写了进去，SolidWorks 把它当成
+             一段普通文字，于是属性标签和图框上永远显示「SW-Material」而不是材质名。
+             现在它只在 <see cref="M:HistoryMinerva.Contracts.PartPropertyWrite.Pairs"/> 里当占位，Worker 落盘前换成完整表达式。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartPropertyNames.MaterialLinkExpression(System.String,System.String)">
+             <summary>
+             「材料」槽真正要写的链接表达式：<c>"SW-Material@@默认@阀体.SLDPRT"</c>。
+            
+             写的是**配置特定**属性（模板全部 <c>ApplyTo="Config"</c>），所以是 <c>@@配置名@文件名</c>
+             这一种；文档级属性才是 <c>@文件名</c>。两侧的英文双引号是表达式的一部分，少了它
+             SolidWorks 同样只当它是文字。取值时解析成该配置当前的材质名。
+             </summary>
+             <param name="configuration">写入的那个配置名，与 <c>SetMaterialPropertyName2</c> 用的是同一个。</param>
+             <param name="fileName">零件**当前**的文件名（含扩展名）。改名之后写属性，用的是新名字。</param>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.NoWriteOption">
+             <summary>
+             下拉里表示「这一槽本轮不写」的那一项。
+            
+             三个下拉都必须有它：Aurora 的选项框只能在候选之间轮换，没有「清空」这个动作，
+             少了这一项用户点错一次就再也改不回不写了。落到模型层它一律折成空串。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.MachinedCategory">
+            <summary>
+            「类型」的固定值。本模块只整备机加件，不给界面开这个选项。
+            模板里这一栏是单选组，四个候选为 部件\组件 / 标准件 / 机加件 / 工件。
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PartPropertyNames.DateFormat">
+            <summary>
+            日期格式。写的是**文本型**属性而不是 <c>swCustomInfoDate</c>：
+            日期型属性被明细表取值时会带上时间与本地化格式，图框上就变成了两种写法。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyNames.All">
+            <summary>按写入顺序列出全部八个槽名，供门禁核对与文档生成。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartPropertyNames.Today">
+            <summary>系统当日日期文本。「一键设置日期」与 Worker 侧回填共用同一格式。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyNames.FallbackSurfaceTreatments">
+             <summary>
+             「表面处理」候选的兜底副本，抄自属性标签模板 <c>精密零件属性.prtprp</c>。
+            
+             正常路径是运行时去读模板本身（模板目录记在 SolidWorks 系统选项里，见
+             <c>SolidWorksPropertyOptions</c>），这份常量只在读不到时顶上——例如这台机器没装
+             SolidWorks、或用户把模板目录指到了别处。**不要拿它当权威**：模板改了它不会跟着改。
+             </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyNames.FallbackHeatTreatments">
+            <inheritdoc cref="P:HistoryMinerva.Contracts.PartPropertyNames.FallbackSurfaceTreatments"/>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PartPropertyWrite">
+             <summary>
+             一个零件要写进 SolidWorks 配置特定属性的那几个值。装配体不写属性，因此只挂在零件条目上。
+            
+             空串在这里有**两种**含义，按槽分：
+             <list type="bullet">
+               <item><b>用户填的槽</b>（日期、设计、材料、表面处理、热处理）空串＝本轮不动这一槽。
+                     用户没填不等于要把模板里已有的值抹成空；</item>
+               <item><b>计划算出来的槽</b>（名称、类型）恒写。图号在填了前缀时恒写；
+                     V4.15 起**前缀为空＝保留原图号**（<see cref="P:HistoryMinerva.Contracts.PartPropertyWrite.KeepDrawingNumber"/>），图号槽一个字都不碰——
+                     V4.9～V4.14 把空前缀当成删图号，用户没填前缀就点写入，整台设备的图号被抹掉。</item>
+             </list>
+             </summary>
+             <param name="Material">
+             材质名，例如 <c>304不锈钢</c>。它**不会**被当成文本写进「材料」槽——那一槽是链接，
+             见 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.Material"/>。必须与 <paramref name="MaterialDatabase"/> 成对出现。
+             </param>
+             <param name="MaterialDatabase">
+             材质所在的材料库，原样取自 SolidWorks 收藏材料的注册表记录：可能是库名
+             （<c>SOLIDWORKS 材料</c>）也可能是 <c>.sldmat</c> 全路径，两种都能直接喂给
+             <c>SetMaterialPropertyName2</c>，无需归一化。V4.8 追加，缺省空串＝不动零件材质。
+             </param>
+             <param name="Name">
+             「名称」槽的值，即文件名里图号之后的那一段零件名称，由
+             <see cref="P:HistoryMinerva.Contracts.RenameEntry.PartName"/> 带下来，与目标文件名取自同一次计算。
+             V4.9 起用户可以在表里逐行改名称，改完的名字同时决定文件名和这一槽——
+             仍然只有一份真话，只是这份真话现在可以编辑了。
+             </param>
+             <param name="KeepDrawingNumber">
+             V4.15：本轮没填图号前缀，零件上的「图号」槽保持原样不写。缺省 false＝照旧写 <paramref name="DrawingNumber"/>。
+             </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartPropertyWrite.#ctor(System.String,System.String,System.String,System.String,System.String,System.String,System.String,System.String,System.String,System.Boolean)">
+             <summary>
+             一个零件要写进 SolidWorks 配置特定属性的那几个值。装配体不写属性，因此只挂在零件条目上。
+            
+             空串在这里有**两种**含义，按槽分：
+             <list type="bullet">
+               <item><b>用户填的槽</b>（日期、设计、材料、表面处理、热处理）空串＝本轮不动这一槽。
+                     用户没填不等于要把模板里已有的值抹成空；</item>
+               <item><b>计划算出来的槽</b>（名称、类型）恒写。图号在填了前缀时恒写；
+                     V4.15 起**前缀为空＝保留原图号**（<see cref="P:HistoryMinerva.Contracts.PartPropertyWrite.KeepDrawingNumber"/>），图号槽一个字都不碰——
+                     V4.9～V4.14 把空前缀当成删图号，用户没填前缀就点写入，整台设备的图号被抹掉。</item>
+             </list>
+             </summary>
+             <param name="Material">
+             材质名，例如 <c>304不锈钢</c>。它**不会**被当成文本写进「材料」槽——那一槽是链接，
+             见 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.Material"/>。必须与 <paramref name="MaterialDatabase"/> 成对出现。
+             </param>
+             <param name="MaterialDatabase">
+             材质所在的材料库，原样取自 SolidWorks 收藏材料的注册表记录：可能是库名
+             （<c>SOLIDWORKS 材料</c>）也可能是 <c>.sldmat</c> 全路径，两种都能直接喂给
+             <c>SetMaterialPropertyName2</c>，无需归一化。V4.8 追加，缺省空串＝不动零件材质。
+             </param>
+             <param name="Name">
+             「名称」槽的值，即文件名里图号之后的那一段零件名称，由
+             <see cref="P:HistoryMinerva.Contracts.RenameEntry.PartName"/> 带下来，与目标文件名取自同一次计算。
+             V4.9 起用户可以在表里逐行改名称，改完的名字同时决定文件名和这一槽——
+             仍然只有一份真话，只是这份真话现在可以编辑了。
+             </param>
+             <param name="KeepDrawingNumber">
+             V4.15：本轮没填图号前缀，零件上的「图号」槽保持原样不写。缺省 false＝照旧写 <paramref name="DrawingNumber"/>。
+             </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyWrite.Material">
+            <summary>
+            材质名，例如 <c>304不锈钢</c>。它**不会**被当成文本写进「材料」槽——那一槽是链接，
+            见 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.Material"/>。必须与 <paramref name="MaterialDatabase"/> 成对出现。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyWrite.MaterialDatabase">
+            <summary>
+            材质所在的材料库，原样取自 SolidWorks 收藏材料的注册表记录：可能是库名
+            （<c>SOLIDWORKS 材料</c>）也可能是 <c>.sldmat</c> 全路径，两种都能直接喂给
+            <c>SetMaterialPropertyName2</c>，无需归一化。V4.8 追加，缺省空串＝不动零件材质。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyWrite.Name">
+            <summary>
+            「名称」槽的值，即文件名里图号之后的那一段零件名称，由
+            <see cref="P:HistoryMinerva.Contracts.RenameEntry.PartName"/> 带下来，与目标文件名取自同一次计算。
+            V4.9 起用户可以在表里逐行改名称，改完的名字同时决定文件名和这一槽——
+            仍然只有一份真话，只是这份真话现在可以编辑了。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyWrite.KeepDrawingNumber">
+            <summary>
+            V4.15：本轮没填图号前缀，零件上的「图号」槽保持原样不写。缺省 false＝照旧写 <paramref name="DrawingNumber"/>。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyWrite.HasMaterial">
+            <summary>材质名与材料库齐备，可以应用到零件。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyWrite.MaterialIsIncomplete">
+            <summary>
+            只有材质名没有材料库。<c>SetMaterialPropertyName2</c> 传空库名不会报错，只是**什么都不做**，
+            于是又变成「跑成功了但材料还是未指定」。Worker 拿它当硬错误，不让这种请求悄悄过去。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyWrite.IsEmpty">
+            <summary>
+            一个槽都写不了时，没有必要为它打开一次 SolidWorks 文档。
+            判空的责任在这个记录自己身上，而不该由调用方按"哪几个槽是恒写的"另抄一遍。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartPropertyWrite.Pairs">
+             <summary>
+             按 <see cref="T:HistoryMinerva.Contracts.PartPropertyNames"/> 的顺序展开成「槽名 → 值」。
+            
+             「图号」在填了前缀时恒在：值由改名计划算出来，与文件名里的图号段是同一个字符串。
+             没填前缀（<see cref="P:HistoryMinerva.Contracts.PartPropertyWrite.KeepDrawingNumber"/>）时不出现——原图号原样留在零件上。
+             其余用户填的槽空串＝本轮不动，不会把模板里已有的值抹掉。
+            
+             「材料」一槽给出的是链接记号 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.MaterialLinkValue"/> 而不是材质名：
+             材质本身由 <see cref="P:HistoryMinerva.Contracts.PartPropertyWrite.Material"/> / <see cref="P:HistoryMinerva.Contracts.PartPropertyWrite.MaterialDatabase"/> 走
+             <c>SetMaterialPropertyName2</c> 应用；Worker 落盘时把记号换成指向这个零件的完整链接表达式
+             （<see cref="M:HistoryMinerva.Contracts.PartPropertyNames.MaterialLinkExpression(System.String,System.String)"/>），属性标签上显示的才是材质名。
+             </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.RenameEntry">
+            <summary>
+            属性整备清单中的一个唯一文件。<see cref="P:HistoryMinerva.Contracts.RenameEntry.Properties"/> 是 V4.7 追加的可选字段，
+            放在末尾且缺省 <c>null</c>：没有它的历史请求 JSON 仍是一次纯改名。
+            </summary>
+            <param name="PartName">
+            图号之后的那一段零件名称，与 <see cref="P:HistoryMinerva.Contracts.RenameEntry.TargetPath"/> 的文件名取自同一次计算，
+            并写进「名称」属性槽。来源是文件名里第一个空格之后的部分，用户在表里改过的以用户的为准。
+            </param>
+            <param name="DrawingNumber">
+            这一条要用的图号文本。前缀为空时它是文件名里**原有**的图号段（V4.15 起保留原号），
+            原来就没有图号的文件则是空串。
+            它与 <see cref="P:HistoryMinerva.Contracts.RenameEntry.AssignsDrawingNumber"/> 不是一回事：后者说的是"这个文件归本模块管"，
+            前者说的是"管出来的号是什么"。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.RenameEntry.#ctor(System.String,System.String,System.String,System.String,System.Boolean,System.Collections.Generic.IReadOnlyList{System.String},System.Int32,HistoryMinerva.Contracts.PartPropertyWrite,System.String)">
+            <summary>
+            属性整备清单中的一个唯一文件。<see cref="P:HistoryMinerva.Contracts.RenameEntry.Properties"/> 是 V4.7 追加的可选字段，
+            放在末尾且缺省 <c>null</c>：没有它的历史请求 JSON 仍是一次纯改名。
+            </summary>
+            <param name="PartName">
+            图号之后的那一段零件名称，与 <see cref="P:HistoryMinerva.Contracts.RenameEntry.TargetPath"/> 的文件名取自同一次计算，
+            并写进「名称」属性槽。来源是文件名里第一个空格之后的部分，用户在表里改过的以用户的为准。
+            </param>
+            <param name="DrawingNumber">
+            这一条要用的图号文本。前缀为空时它是文件名里**原有**的图号段（V4.15 起保留原号），
+            原来就没有图号的文件则是空串。
+            它与 <see cref="P:HistoryMinerva.Contracts.RenameEntry.AssignsDrawingNumber"/> 不是一回事：后者说的是"这个文件归本模块管"，
+            前者说的是"管出来的号是什么"。
+            </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.RenameEntry.DrawingNumber">
+            <summary>
+            这一条要用的图号文本。前缀为空时它是文件名里**原有**的图号段（V4.15 起保留原号），
+            原来就没有图号的文件则是空串。
+            它与 <see cref="P:HistoryMinerva.Contracts.RenameEntry.AssignsDrawingNumber"/> 不是一回事：后者说的是"这个文件归本模块管"，
+            前者说的是"管出来的号是什么"。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.RenameEntry.PartName">
+            <summary>
+            图号之后的那一段零件名称，与 <see cref="P:HistoryMinerva.Contracts.RenameEntry.TargetPath"/> 的文件名取自同一次计算，
+            并写进「名称」属性槽。来源是文件名里第一个空格之后的部分，用户在表里改过的以用户的为准。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PartPropertyReading">
+             <summary>
+             V4.8：解析装配体时从零件身上**读回来**的三个槽的现值。
+            
+             为什么在探查时读而不是写入时读：这三栏本来就大多已经填过——用户是在既有零件上补图号，
+             不是从空白开始建库。表格开出来一片空白，用户唯一能做的就是把已有的值再选一遍；
+             选错一格就把零件上原本正确的材质换掉了，而且看不出来。探查时读回来，
+             表格显示的才是零件的事实，用户只改需要改的那几格。
+            
+             读数走的是装配里已经载入的组件文档，不为此另开零件——一个几百件的装配那样要开几百次。
+             </summary>
+             <param name="Material">
+             零件当前材质名。取自 <c>GetMaterialPropertyName2</c> 而不是「材料」槽的文本：
+             那一槽存的是链接记号 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.MaterialLinkValue"/>，不是材质名。
+             </param>
+             <param name="MaterialDatabase">材质所在的材料库，与 <paramref name="Material"/> 同一次调用读出。</param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PartPropertyReading.#ctor(System.String,System.String,System.String,System.String,System.String)">
+             <summary>
+             V4.8：解析装配体时从零件身上**读回来**的三个槽的现值。
+            
+             为什么在探查时读而不是写入时读：这三栏本来就大多已经填过——用户是在既有零件上补图号，
+             不是从空白开始建库。表格开出来一片空白，用户唯一能做的就是把已有的值再选一遍；
+             选错一格就把零件上原本正确的材质换掉了，而且看不出来。探查时读回来，
+             表格显示的才是零件的事实，用户只改需要改的那几格。
+            
+             读数走的是装配里已经载入的组件文档，不为此另开零件——一个几百件的装配那样要开几百次。
+             </summary>
+             <param name="Material">
+             零件当前材质名。取自 <c>GetMaterialPropertyName2</c> 而不是「材料」槽的文本：
+             那一槽存的是链接记号 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.MaterialLinkValue"/>，不是材质名。
+             </param>
+             <param name="MaterialDatabase">材质所在的材料库，与 <paramref name="Material"/> 同一次调用读出。</param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyReading.Material">
+            <summary>
+            零件当前材质名。取自 <c>GetMaterialPropertyName2</c> 而不是「材料」槽的文本：
+            那一槽存的是链接记号 <see cref="F:HistoryMinerva.Contracts.PartPropertyNames.MaterialLinkValue"/>，不是材质名。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PartPropertyReading.MaterialDatabase">
+            <summary>材质所在的材料库，与 <paramref name="Material"/> 同一次调用读出。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyRenamePlan">
+            <summary>按所选装配体层级生成的改名计划。纯内存，不碰 CAD。</summary>
+            <param name="Excluded">
+            V4.11：因件别不参与编号的文件——被设成外购件或参考的同级件，以及子文件夹里的外购件。
+            它们不编号、不写属性，在表里占一行，让用户看得见、点得回来。
+            V4.15：其中被改成外购件的**同级**件，<see cref="P:HistoryMinerva.Contracts.RenameEntry.TargetPath"/> 指向
+            <c>外购件\</c> 子文件夹——写入时随改名一起挪过去（见 <see cref="P:HistoryMinerva.Contracts.AssemblyRenamePlan.Relocations"/>）。
+            为 null 等同于空（V4.10 及以前的计划没有这一项）。
+            </param>
+            <param name="Relocated">
+            V4.15：跟着外购组件一起挪进 <c>外购件\</c> 的内部件。组件已经是一种货，它们不在表里出现，
+            但文件得跟着组件走，否则同级目录里留着一堆没人认领的零件。为 null 等同于空。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyRenamePlan.#ctor(System.String,System.String,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.RenameEntry},System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.RenameEntry},System.Collections.Generic.IReadOnlyList{System.String},System.Collections.Generic.IReadOnlyList{System.String},System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.RenameEntry},System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.RenameEntry})">
+            <summary>按所选装配体层级生成的改名计划。纯内存，不碰 CAD。</summary>
+            <param name="Excluded">
+            V4.11：因件别不参与编号的文件——被设成外购件或参考的同级件，以及子文件夹里的外购件。
+            它们不编号、不写属性，在表里占一行，让用户看得见、点得回来。
+            V4.15：其中被改成外购件的**同级**件，<see cref="P:HistoryMinerva.Contracts.RenameEntry.TargetPath"/> 指向
+            <c>外购件\</c> 子文件夹——写入时随改名一起挪过去（见 <see cref="P:HistoryMinerva.Contracts.AssemblyRenamePlan.Relocations"/>）。
+            为 null 等同于空（V4.10 及以前的计划没有这一项）。
+            </param>
+            <param name="Relocated">
+            V4.15：跟着外购组件一起挪进 <c>外购件\</c> 的内部件。组件已经是一种货，它们不在表里出现，
+            但文件得跟着组件走，否则同级目录里留着一堆没人认领的零件。为 null 等同于空。
+            </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.AssemblyRenamePlan.Excluded">
+            <summary>
+            V4.11：因件别不参与编号的文件——被设成外购件或参考的同级件，以及子文件夹里的外购件。
+            它们不编号、不写属性，在表里占一行，让用户看得见、点得回来。
+            V4.15：其中被改成外购件的**同级**件，<see cref="P:HistoryMinerva.Contracts.RenameEntry.TargetPath"/> 指向
+            <c>外购件\</c> 子文件夹——写入时随改名一起挪过去（见 <see cref="P:HistoryMinerva.Contracts.AssemblyRenamePlan.Relocations"/>）。
+            为 null 等同于空（V4.10 及以前的计划没有这一项）。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.AssemblyRenamePlan.Relocated">
+            <summary>
+            V4.15：跟着外购组件一起挪进 <c>外购件\</c> 的内部件。组件已经是一种货，它们不在表里出现，
+            但文件得跟着组件走，否则同级目录里留着一堆没人认领的零件。为 null 等同于空。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.AssemblyRenamePlan.ExcludedEntries">
+            <inheritdoc cref="P:HistoryMinerva.Contracts.AssemblyRenamePlan.Excluded"/>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.AssemblyRenamePlan.Relocations">
+            <summary>
+            本轮要挪进 <c>外购件\</c> 的全部文件：表里看得见的外购件行，加上跟着组件走的内部件。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.AssemblyRenamePlan.WorkerEntries">
+            <summary>送给 Worker 的完整清单：编号件（含名字已经对了的，属性还要写）加上要挪的外购件。</summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.AssemblyRenamePlan.CanWrite">
+             <summary>
+             「写入」= 改名 + 写属性，因此不能沿用 <see cref="P:HistoryMinerva.Contracts.AssemblyRenamePlan.CanRename"/>。
+            
+             第二次点写入时文件名早就对了，<see cref="P:HistoryMinerva.Contracts.AssemblyRenamePlan.CanRename"/> 是 false；若拿它当门，
+             用户改完材料再点写入就会被拒，只能先把文件改回旧名才能写属性。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyRenamePlan.IsWritablePart(HistoryMinerva.Contracts.RenameEntry)">
+            <summary>属性只写识别出的零件：装配体和未编号的内部件都不碰。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.AssemblyRenameRequest">
+             <summary>
+             Worker <c>--rename-assembly</c> 请求：改名、把同级外购件挪进 <c>外购件\</c>、写零件属性，一次做完。
+            
+             没有「删图号」这件事（V4.15）：前缀为空只表示本轮不动图号。V4.9～V4.14 曾把空前缀当成删图号，
+             用户只是没填前缀就点了写入，整台设备的图号被抹掉——那不是用户要的。
+             </summary>
+             <param name="DrawingPrefix">
+             图号前缀。**空串合法**，表示这一轮不动图号：文件名里的原图号段与「图号」槽都原样保留（V4.15）。
+             </param>
+             <param name="WriteProperties">
+             为 true 时，改名与引用更新全部成功后再逐个打开零件写 <see cref="P:HistoryMinerva.Contracts.RenameEntry.Properties"/>。
+             </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.AssemblyRenameRequest.#ctor(System.String,System.String,System.String,System.Collections.Generic.IReadOnlyList{HistoryMinerva.Contracts.RenameEntry},HistoryMinerva.Contracts.ConversionSourceFormat,System.Boolean)">
+             <summary>
+             Worker <c>--rename-assembly</c> 请求：改名、把同级外购件挪进 <c>外购件\</c>、写零件属性，一次做完。
+            
+             没有「删图号」这件事（V4.15）：前缀为空只表示本轮不动图号。V4.9～V4.14 曾把空前缀当成删图号，
+             用户只是没填前缀就点了写入，整台设备的图号被抹掉——那不是用户要的。
+             </summary>
+             <param name="DrawingPrefix">
+             图号前缀。**空串合法**，表示这一轮不动图号：文件名里的原图号段与「图号」槽都原样保留（V4.15）。
+             </param>
+             <param name="WriteProperties">
+             为 true 时，改名与引用更新全部成功后再逐个打开零件写 <see cref="P:HistoryMinerva.Contracts.RenameEntry.Properties"/>。
+             </param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.AssemblyRenameRequest.DrawingPrefix">
+            <summary>
+            图号前缀。**空串合法**，表示这一轮不动图号：文件名里的原图号段与「图号」槽都原样保留（V4.15）。
+            </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.AssemblyRenameRequest.WriteProperties">
+            <summary>
+            为 true 时，改名与引用更新全部成功后再逐个打开零件写 <see cref="P:HistoryMinerva.Contracts.RenameEntry.Properties"/>。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PropertyPrepPlanner">
+             <summary>
+             根据所选 SolidWorks 装配体的现有图号（或默认总装 <c>前缀-00</c>）
+             给同级零件和下层装配体分配图号。子文件夹中的外购件不编号；
+             小组件下的装配体视为零件，其内部文件不分配图号。
+            
+             **V4.15：前缀为空＝不动图号**。每个文件沿用文件名里原有的图号段，只有用户改过的名称
+             会体现到文件名上；「图号」属性槽也不写。V4.9～V4.14 把空前缀当成删图号，
+             用户没填前缀就点写入，原有的图号全被顶掉。
+            
+             **V4.15：被改成外购件的同级件挪进 <c>外购件\</c>**（<see cref="F:HistoryMinerva.Contracts.ConversionPathLayout.PurchasedPartsDirectoryName"/>）。
+             外购组件里只被它自己用到的同级内部件跟着一起挪，但不在表里出现。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.Create(HistoryMinerva.Contracts.AssemblyProbeResult,System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory})">
+            <param name="drawingPrefix">
+            图号前缀。空串合法：本轮不发新号，每个文件保留原图号。
+            </param>
+            <param name="partNames">
+            用户在表里改过的零件名称，按源文件全路径记账。没记的以文件名里第一个空格之后的
+            那一段为准。名称同时决定目标文件名和「名称」属性槽——两者永远是同一个字符串。
+            </param>
+            <param name="kinds">
+            V4.11：用户改写过的件别，按源文件全路径记账。被设成外购件或参考的同级件及其内部件
+            不编号、不改名、不写属性，也不占序号——与子文件夹外购件同一个待遇。
+            </param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.CheckRelocations(System.Collections.Generic.IEnumerable{HistoryMinerva.Contracts.RenameEntry},System.Collections.Generic.List{System.String})">
+            <summary>
+            挪进 <c>外购件\</c> 的文件：目标不能已经有人占着，同一个目标也不能来自两个源文件
+            （同级目录里不会有同名文件，但内部件和表里的行可能指向同一个名字——那就是同一个文件）。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.CollectPurchasedReadings(HistoryMinerva.Contracts.AssemblyProbeResult,System.String,HistoryMinerva.Contracts.PropertyPrepPlanner.Visit)">
+            <summary>
+            子文件夹里的外购件。探查侧不把它们放进文档层级，所以编号那一遍看不见；
+            这里只把它们列成不编号的行，让件别在属性整备里也看得见、改得动（改了只影响打包）。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.CollectRelocatedDescendants(HistoryMinerva.Contracts.PropertyPrepPlanner.Visit)">
+             <summary>
+             跟着外购组件一起挪进 <c>外购件\</c> 的内部件。
+            
+             只挪**只属于外购组件**的那些：与总装同级、不在参考目录、而且表里任何一行都不是它
+             （编号件、未编号件、按件别排除的行都不算）。同一个零件若同时被自制部分用着，
+             挪走它会让自制那边的引用断掉，所以留在原处。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.AddReferencingParents(System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.AssemblyDocumentReading},System.Collections.Generic.IEnumerable{HistoryMinerva.Contracts.PropertyPrepPlanner.MutableEntry})">
+            <summary>
+            挪目录的文件，父装配按**全部**读到的文档来认，而不只是编号那一遍走过的那几个：
+            外购组件本身就是没走进去的那一类，它里面的件挪走时，引用要在它身上改。
+            漏掉一个父装配，那一个打开时就会报找不到零件。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PropertyPrepPlanner.Visit">
+            <summary>一次遍历里不变的上下文。参数太多时收成一个，免得每层递归抄一遍。</summary>
+            <param name="KeepNumbers">V4.15：前缀为空，本轮沿用每个文件原有的图号段。</param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.Visit.#ctor(System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.AssemblyDocumentReading},HistoryMinerva.Contracts.AssemblyProbeResult,System.Collections.Generic.Dictionary{System.String,HistoryMinerva.Contracts.PropertyPrepPlanner.MutableEntry},System.Collections.Generic.Dictionary{System.String,HistoryMinerva.Contracts.PropertyPrepPlanner.MutableEntry},System.Collections.Generic.Dictionary{System.String,HistoryMinerva.Contracts.PropertyPrepPlanner.MutableEntry},System.Collections.Generic.IReadOnlyDictionary{System.String,System.String},System.Collections.Generic.IReadOnlyDictionary{System.String,HistoryMinerva.Contracts.PackagePartCategory},System.Collections.Generic.List{System.String},System.Boolean)">
+            <summary>一次遍历里不变的上下文。参数太多时收成一个，免得每层递归抄一遍。</summary>
+            <param name="KeepNumbers">V4.15：前缀为空，本轮沿用每个文件原有的图号段。</param>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PropertyPrepPlanner.Visit.KeepNumbers">
+            <summary>V4.15：前缀为空，本轮沿用每个文件原有的图号段。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.Visit.IsExcludedByKind(System.String)">
+            <summary>同级件被用户设成外购件或参考。缺省判据（子文件夹、参考目录）由调用处先判。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.Visit.RelocatesAsPurchased(System.String)">
+            <summary>
+            被改成外购件的同级件要挪进 <c>外购件\</c>（V4.15）。排除件不挪：它只是不进清单，
+            文件本身用户还要（参考位置、定位用的模型）。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.Remember(System.Collections.Generic.Dictionary{System.String,HistoryMinerva.Contracts.PropertyPrepPlanner.MutableEntry},System.String,System.Nullable{HistoryMinerva.Contracts.DrawingNumber},System.String,System.Int32,System.Boolean,HistoryMinerva.Contracts.PropertyPrepPlanner.Visit,System.Boolean)">
+            <param name="relocate">V4.15：这是一个要挪进 <c>外购件\</c> 的同级外购件（不编号，<paramref name="number"/> 为 null）。</param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.ResolvePartName(System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String})">
+             <summary>
+             这个文件的名称。用户在表里改过的以用户的为准，否则取文件名里第一个空格之后的那一段。
+            
+             **不再按前缀去匹配旧图号**（V4.8 及以前的做法）。那条路要求旧名字正好以本轮的前缀打头，
+             于是换一个前缀、或者旧号是别的项目带过来的，整个旧文件名就会被当成"名称"——
+             结果是 <c>ZS-01 QT-88 阀体.SLDPRT</c> 这样两个号叠在一起的名字。
+             按空格切只认一条规则，前缀长什么样都不影响它（DEC-058）。
+             </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.PropertyPrepPlanner.EmptyNames">
+            <summary>没有任何名称改动时用它，省掉每次建一个空字典。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PropertyPrepPlanner.EntryId(System.String)">
+             <summary>
+             条目 id 按源文件全路径定死，不用 <see cref="M:System.Guid.NewGuid"/>。
+            
+             改一次图号前缀，整份计划连同零件行都要重建。id 随机的话每一行都换一个身份：
+             界面没法原地更新，只能整表重画——几百个零件就是几百次控件重建，正是"改一格卡一下"
+             的来源；而且用户此刻点开的那一格，指向的已经是一个不存在的 id 了。
+             </summary>
+        </member>
+        <member name="P:HistoryMinerva.Contracts.PropertyPrepPlanner.MutableEntry.Relocates">
+            <summary>不编号、却要换位置：要挪进 <c>外购件\</c> 的外购件（V4.15）。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.PurchasedPartNaming">
+             <summary>
+             把外购件的文件名切成「规格」和「名称」两栏。
+            
+             外购件清单模板里这两栏的现场约定是：**名称写中文，规格写型号**。V4.11.1 起按空白切成词，
+             以词为单位判断——含汉字的词归名称，不含汉字的词归规格：
+            
+             <code>
+             GB70 M8x20 内六角螺钉  →  规格 "GB70 M8x20"    名称 "内六角螺钉"
+             深沟球轴承 6205        →  规格 "6205"          名称 "深沟球轴承"
+             SKF-6205-2RS           →  规格 "SKF-6205-2RS"  名称 ""（没有汉字就留空）
+             油封 TC-25-40-7        →  规格 "TC-25-40-7"    名称 "油封"
+             G型O型圈 G56           →  规格 "G56"           名称 "G型O型圈"
+             M8x20内六角螺钉GB70    →  规格 "M8x20 GB70"    名称 "内六角螺钉"
+             </code>
+            
+             **含汉字的词整体算名称**，词里夹着的字母（<c>G型O型圈</c> 的 G、O）是名字的一部分，
+             不能抠出来当规格——V4.10 逐字符分拣时这个名字被拆成规格 <c>GO</c>、名称 <c>型型圈</c>（DEC-069）。
+             唯一的例外是词头或词尾**贴着一段明显的型号**：不含汉字且带数字（<c>M8x20</c>、<c>GB70</c>），
+             那一段剥出去归规格。没有数字的前缀（<c>G型</c> 的 G）不算明显的型号，留在名称里。
+            
+             「汉字」只认 CJK 表意文字，不含全角标点：<c>BNTB-M20（1.0）</c> 是一个型号，不是名称。
+            
+             **不按第一个空格切**（图号那条规则）：标准件的名字里中文既可能在前也可能在后，
+             按位置切会把「深沟球轴承 6205」的规格写成「深沟球轴承」。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PurchasedPartNaming.Split(System.String,System.String@,System.String@)">
+            <param name="fileName">外购件文件名，带不带扩展名都可以。</param>
+            <param name="specification">不含汉字的词与剥出来的型号段，按原顺序以单个空格连接。</param>
+            <param name="name">含汉字的词，按原顺序以单个空格连接；没有汉字时是空串。</param>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PurchasedPartNaming.IsObviousSpecification(System.String)">
+            <summary>贴在汉字前后的一段能不能算型号：非空且带数字。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.PurchasedPartNaming.IsIdeograph(System.Char)">
+            <summary>
+            中日韩表意文字。范围照抄 Unicode 分区，不靠 <c>char.GetUnicodeCategory</c>；
+            全角标点与全角字母不算——它们常出现在型号里（<c>BNTB-M20（1.0）</c>）。
+            </summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.RenameReindex">
+             <summary>
+             V4.8：改名（V4.15 起还有外购件挪进「外购件」文件夹）之后，把一份探查结果整体挪到新路径上。
+            
+             **为什么必须有这一步**：改名成功的那一刻，上一次解析出来的每一条路径都指向一个不存在的
+             文件。V4.8 之前用户只能重新选一次装配体再解析一次——而重新解析要再开一遍 SolidWorks、
+             再走一遍整棵装配树，只为了换掉一批已经算得出来的文件名。更糟的是源装配体的内容也变了
+             （<c>ReplaceReferencedDocument</c> 会重写父装配），于是第二次写入会被
+             「源装配体在解析后发生变化」直接挡住，属性一个也写不进去。
+            
+             这里做的事纯粹是改路径：读数、层级、矩阵、装配关系一个字都不动。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.RenameReindex.Moved(System.Collections.Generic.IEnumerable{HistoryMinerva.Contracts.RenameEntry})">
+             <summary>
+             这一轮里**真的**改成了名的文件：源路径 → 新路径。
+            
+             判据是磁盘而不是 Worker 的退出码：部分失败时，改成了的那几个照样要跟上，
+             没改成的那几个必须留在原路径上，否则表格会指向一个并不存在的新名字。
+             </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.RenameReindex.Remap(HistoryMinerva.Contracts.AssemblyProbeResult,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String})">
+            <summary>
+            按 <paramref name="moved"/> 产出一份同形、但路径已经更新的探查结果。
+            映射为空时原样返回，调用方不必自己判空。
+            </summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.RenameReindex.RemapKeys``1(System.Collections.Generic.IReadOnlyDictionary{System.String,``0},System.Collections.Generic.IReadOnlyDictionary{System.String,System.String})">
+            <summary>按同一份映射搬一份「源路径 → 值」的记账，键换新路径，值原样带过去。</summary>
+        </member>
+        <member name="M:HistoryMinerva.Contracts.RenameReindex.Map(System.String,System.Collections.Generic.IReadOnlyDictionary{System.String,System.String})">
+            <summary>没改过名的路径原样返回：映射只覆盖真的动过的那几个文件。</summary>
+        </member>
+        <member name="T:HistoryMinerva.Contracts.WorkerProtocol">
+            <summary>
+            UI 与独立 Worker 共同消费的命令行和 JSON 协议。
+            </summary>
+        </member>
+        <member name="F:HistoryMinerva.Contracts.WorkerProtocol.AssemblyPackageVerb">
+            <summary>V4.10：整体打包的 CAD 导出（STEP / DWG / PDF）。两张 BOM 不走 Worker。</summary>
+        </member>
+    </members>
+</doc>

@@ -75,6 +75,39 @@ public static class ConversionPathLayout
     public const string DrawingDirectoryName = "图纸";
     public const string ReferencePartsDirectoryName = "参考部件";
 
+    /// <summary>
+    /// V4.15：属性整备写入时，被改成外购件的同级件统一挪进总装目录下的这个子文件夹。
+    /// 挪进去之后它按路径缺省就是外购件（落在子文件夹里），不靠记账也认得出来。
+    /// </summary>
+    public const string PurchasedPartsDirectoryName = "外购件";
+
+    /// <summary>同级外购件挪进 <see cref="PurchasedPartsDirectoryName"/> 之后的路径：文件名不变，只换目录。</summary>
+    public static string ResolvePurchasedRelocation(string filePath, string rootAssemblyPath)
+        => Path.Combine(
+            Path.GetDirectoryName(Path.GetFullPath(rootAssemblyPath)) ?? string.Empty,
+            PurchasedPartsDirectoryName,
+            Path.GetFileName(filePath));
+
+    /// <summary>
+    /// 这一对源 / 目标是不是一次「同级外购件挪进外购件目录」：源与总装同级，目标正好是
+    /// <see cref="ResolvePurchasedRelocation"/> 算出来的那个路径。改名管线里**唯一**允许换目录的情形。
+    /// </summary>
+    public static bool IsPurchasedRelocation(string sourcePath, string targetPath, string rootAssemblyPath)
+    {
+        if (!Path.IsPathFullyQualified(sourcePath)
+            || !Path.IsPathFullyQualified(targetPath)
+            || !Path.IsPathFullyQualified(rootAssemblyPath))
+        {
+            return false;
+        }
+
+        return !IsOutsideAssemblyDirectory(sourcePath, rootAssemblyPath)
+               && string.Equals(
+                   Path.GetFullPath(targetPath),
+                   ResolvePurchasedRelocation(sourcePath, rootAssemblyPath),
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>源零件扩展名。SW 特征整备的源就是 <c>.SLDPRT</c> 本身。</summary>
     public static string GetSourcePartExtension(ConversionSourceFormat format)
         => format == ConversionSourceFormat.SolidWorks ? SolidWorksPartExtension : SolidEdgePartExtension;

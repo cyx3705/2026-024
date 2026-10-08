@@ -8,14 +8,17 @@ namespace HistoryMinerva.Contracts;
 /// 给同级零件和下层装配体分配图号。子文件夹中的外购件不编号；
 /// 小组件下的装配体视为零件，其内部文件不分配图号。
 ///
-/// **V4.9 只剩这一条计划**。前缀为空时算出来的目标文件名就是「只有名称、没有图号」，
-/// 那正是删图号要的结果，因此原来那条独立的「按空格洗图号」计划连同它的遍历、
-/// 校验和 Worker 分支一起退役了（DEC-057）。
+/// **V4.15：前缀为空＝不动图号**。每个文件沿用文件名里原有的图号段，只有用户改过的名称
+/// 会体现到文件名上；「图号」属性槽也不写。V4.9～V4.14 把空前缀当成删图号，
+/// 用户没填前缀就点写入，原有的图号全被顶掉。
+///
+/// **V4.15：被改成外购件的同级件挪进 <c>外购件\</c>**（<see cref="ConversionPathLayout.PurchasedPartsDirectoryName"/>）。
+/// 外购组件里只被它自己用到的同级内部件跟着一起挪，但不在表里出现。
 /// </summary>
 public static class PropertyPrepPlanner
 {
     /// <param name="drawingPrefix">
-    /// 图号前缀。空串合法：整份计划的图号都是空，文件名只剩名称，也就是删图号。
+    /// 图号前缀。空串合法：本轮不发新号，每个文件保留原图号。
     /// </param>
     /// <param name="partNames">
     /// 用户在表里改过的零件名称，按源文件全路径记账。没记的以文件名里第一个空格之后的
@@ -91,7 +94,9 @@ public static class PropertyPrepPlanner
         var planned = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var unnumbered = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var excluded = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
-        var visit = new Visit(rootPath, documents, probe, planned, unnumbered, excluded, names, kinds, warnings);
+        var visit = new Visit(
+            rootPath, documents, probe, planned, unnumbered, excluded, names, kinds, warnings,
+            KeepNumbers: prefix.Length == 0);
         VisitAssembly(
             rootPath,
             rootNumber,
@@ -100,6 +105,8 @@ public static class PropertyPrepPlanner
             skipChildren: !rootNumber.IsAssembly,
             visit);
         CollectPurchasedReadings(probe, rootPath, visit);
+        var relocated = CollectRelocatedDescendants(visit);
+        AddReferencingParents(documents, excluded.Values.Where(entry => entry.Relocates).Concat(relocated.Values));
 
         var entries = planned.Values
             .Select(entry => entry.ToEntry())
@@ -132,10 +139,32 @@ public static class PropertyPrepPlanner
             .Select(pair => pair.Value.ToEntry())
             .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        var relocatedEntries = relocated.Values
+            .Select(entry => entry.ToEntry())
+            .OrderBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        CheckRelocations(excludedEntries.Concat(relocatedEntries), issues);
 
         warnings.AddRange(probe.Warnings);
         return new AssemblyRenamePlan(
-            rootPath, prefix, entries, skipped, issues, Distinct(warnings), excludedEntries);
+            rootPath, prefix, entries, skipped, issues, Distinct(warnings), excludedEntries, relocatedEntries);
+    }
+
+    /// <summary>
+    /// 挪进 <c>外购件\</c> 的文件：目标不能已经有人占着，同一个目标也不能来自两个源文件
+    /// （同级目录里不会有同名文件，但内部件和表里的行可能指向同一个名字——那就是同一个文件）。
+    /// </summary>
+    private static void CheckRelocations(IEnumerable<RenameEntry> entries, List<string> issues)
+    {
+        foreach (var entry in entries)
+        {
+            if (AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath))
+                continue;
+            if (!File.Exists(entry.SourcePath))
+                issues.Add($"源文件不存在：{entry.SourcePath}");
+            if (File.Exists(entry.TargetPath))
+                issues.Add($"「{ConversionPathLayout.PurchasedPartsDirectoryName}」文件夹里已有同名文件：{entry.TargetPath}");
+        }
     }
 
     /// <summary>
@@ -146,6 +175,7 @@ public static class PropertyPrepPlanner
     {
         if (probe.PurchasedParts is not { Count: > 0 } readings)
             return;
+        var pathById = PartKinds.OccurrencePaths(probe);
         foreach (var reading in readings)
         {
             if (reading.InstanceCount <= 0 || !Path.IsPathFullyQualified(reading.SourcePath))
@@ -153,11 +183,93 @@ public static class PropertyPrepPlanner
             var path = Path.GetFullPath(reading.SourcePath);
             if (ConversionPathLayout.IsUnderReferencePartsDirectory(path))
                 continue;
-            Remember(visit.Excluded, path, number: null, rootPath, depth: 1, assignsDrawingNumber: false, visit.PartNames);
+            // V4.15：全部实例都落在被改成外购件 / 排除的组件里面——它是那个组件里的件，不单独占一行。
+            if (PartKinds.CountOutsideExcluded(reading, pathById, visit.Kinds, rootPath) <= 0)
+                continue;
+            Remember(visit.Excluded, path, number: null, rootPath, depth: 1, assignsDrawingNumber: false, visit);
+        }
+    }
+
+    /// <summary>
+    /// 跟着外购组件一起挪进 <c>外购件\</c> 的内部件。
+    ///
+    /// 只挪**只属于外购组件**的那些：与总装同级、不在参考目录、而且表里任何一行都不是它
+    /// （编号件、未编号件、按件别排除的行都不算）。同一个零件若同时被自制部分用着，
+    /// 挪走它会让自制那边的引用断掉，所以留在原处。
+    /// </summary>
+    private static Dictionary<string, MutableEntry> CollectRelocatedDescendants(Visit visit)
+    {
+        var relocated = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
+        var pending = new Queue<(string AssemblyPath, int Depth)>(
+            visit.Excluded.Values
+                .Where(entry => entry.Relocates
+                                && ConversionPathLayout.HasExtension(
+                                    entry.SourcePath, ConversionPathLayout.SolidWorksAssemblyExtension))
+                .Select(entry => (entry.SourcePath, entry.Depth)));
+        var opened = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (pending.Count > 0)
+        {
+            var (assemblyPath, depth) = pending.Dequeue();
+            if (!opened.Add(assemblyPath) || !visit.Documents.TryGetValue(assemblyPath, out var document))
+                continue;
+            foreach (var child in document.Children)
+            {
+                if (!Path.IsPathFullyQualified(child.SourcePath))
+                    continue;
+                var childPath = Path.GetFullPath(child.SourcePath);
+                if (ConversionPathLayout.IsUnderReferencePartsDirectory(childPath)
+                    || ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, visit.RootPath)
+                    || visit.Planned.ContainsKey(childPath)
+                    || visit.Unnumbered.ContainsKey(childPath)
+                    || visit.Excluded.ContainsKey(childPath)
+                    || relocated.ContainsKey(childPath))
+                {
+                    continue;
+                }
+
+                var entry = new MutableEntry(
+                    EntryId(childPath),
+                    childPath,
+                    ConversionPathLayout.ResolvePurchasedRelocation(childPath, visit.RootPath),
+                    string.Empty,
+                    assignsDrawingNumber: false,
+                    depth + 1,
+                    Path.GetFileNameWithoutExtension(childPath));
+                relocated[childPath] = entry;
+                if (child.IsSubAssembly)
+                    pending.Enqueue((childPath, depth + 1));
+            }
+        }
+
+        return relocated;
+    }
+
+    /// <summary>
+    /// 挪目录的文件，父装配按**全部**读到的文档来认，而不只是编号那一遍走过的那几个：
+    /// 外购组件本身就是没走进去的那一类，它里面的件挪走时，引用要在它身上改。
+    /// 漏掉一个父装配，那一个打开时就会报找不到零件。
+    /// </summary>
+    private static void AddReferencingParents(
+        IReadOnlyDictionary<string, AssemblyDocumentReading> documents,
+        IEnumerable<MutableEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            foreach (var document in documents.Values)
+            {
+                if (document.Children.Any(child =>
+                        Path.IsPathFullyQualified(child.SourcePath)
+                        && string.Equals(
+                            Path.GetFullPath(child.SourcePath), entry.SourcePath, StringComparison.OrdinalIgnoreCase)))
+                {
+                    entry.AddParent(document.SourceAssemblyPath);
+                }
+            }
         }
     }
 
     /// <summary>一次遍历里不变的上下文。参数太多时收成一个，免得每层递归抄一遍。</summary>
+    /// <param name="KeepNumbers">V4.15：前缀为空，本轮沿用每个文件原有的图号段。</param>
     private sealed record Visit(
         string RootPath,
         IReadOnlyDictionary<string, AssemblyDocumentReading> Documents,
@@ -167,11 +279,20 @@ public static class PropertyPrepPlanner
         Dictionary<string, MutableEntry> Excluded,
         IReadOnlyDictionary<string, string> PartNames,
         IReadOnlyDictionary<string, PackagePartCategory>? Kinds,
-        List<string> Warnings)
+        List<string> Warnings,
+        bool KeepNumbers)
     {
         /// <summary>同级件被用户设成外购件或参考。缺省判据（子文件夹、参考目录）由调用处先判。</summary>
         public bool IsExcludedByKind(string path)
             => PartKinds.Resolve(Kinds, path, RootPath) != PackagePartCategory.Machined;
+
+        /// <summary>
+        /// 被改成外购件的同级件要挪进 <c>外购件\</c>（V4.15）。排除件不挪：它只是不进清单，
+        /// 文件本身用户还要（参考位置、定位用的模型）。
+        /// </summary>
+        public bool RelocatesAsPurchased(string path)
+            => !ConversionPathLayout.IsOutsideAssemblyDirectory(path, RootPath)
+               && PartKinds.Resolve(Kinds, path, RootPath) == PackagePartCategory.Purchased;
     }
 
     private static AssemblyRenamePlan Empty(string source, string prefix, IReadOnlyList<string> issues)
@@ -193,8 +314,8 @@ public static class PropertyPrepPlanner
         bool skipChildren,
         Visit visit)
     {
-        var (rootPath, documents, probe, planned, unnumbered, excluded, partNames, _, warnings) = visit;
-        Remember(planned, assemblyPath, number, parentPath, depth, assignsDrawingNumber: true, partNames);
+        var (rootPath, documents, probe, planned, _, excluded, _, _, warnings, _) = visit;
+        Remember(planned, assemblyPath, number, parentPath, depth, assignsDrawingNumber: true, visit);
         if (skipChildren || !documents.TryGetValue(assemblyPath, out var document))
             return;
 
@@ -227,7 +348,10 @@ public static class PropertyPrepPlanner
 
             if (ConversionPathLayout.IsOutsideAssemblyDirectory(childPath, rootPath))
             {
+                // 探查侧本来就不把子文件夹件放进文档层级；会走到这里的，是本轮刚挪进
+                // 「外购件」的件（写入后按新路径重建计划）。照样列一行不编号的外购件，件别看得见。
                 skippedPurchased++;
+                Remember(excluded, childPath, number: null, assemblyPath, depth + 1, assignsDrawingNumber: false, visit);
                 continue;
             }
 
@@ -240,10 +364,12 @@ public static class PropertyPrepPlanner
 
             // V4.11：用户设成外购件或参考的同级件，和子文件夹外购件同一个待遇——
             // 不编号、不占序号，它底下的件也一并不碰。只留一行给用户看、给用户点回来。
+            // V4.15：设成外购件的，写入时挪进「外购件」子文件夹。
             if (visit.IsExcludedByKind(childPath))
             {
                 skippedByKind++;
-                Remember(excluded, childPath, number: null, assemblyPath, depth + 1, assignsDrawingNumber: false, partNames);
+                Remember(excluded, childPath, number: null, assemblyPath, depth + 1, assignsDrawingNumber: false, visit,
+                    relocate: visit.RelocatesAsPurchased(childPath));
                 continue;
             }
 
@@ -257,7 +383,7 @@ public static class PropertyPrepPlanner
             if (treatAsPart || !child.IsSubAssembly)
             {
                 var childNumber = number.Child(sequence++, asAssembly: false);
-                Remember(planned, childPath, childNumber, assemblyPath, depth + 1, assignsDrawingNumber: true, partNames);
+                Remember(planned, childPath, childNumber, assemblyPath, depth + 1, assignsDrawingNumber: true, visit);
                 if (child.IsSubAssembly)
                     CollectUnnumberedDescendants(childPath, assemblyPath, depth + 1, visit);
                 continue;
@@ -316,11 +442,12 @@ public static class PropertyPrepPlanner
             // 它底下的件也就不再列出——外购或参考的组件，里面的件不是这一台设备的事。
             if (visit.IsExcludedByKind(childPath))
             {
-                Remember(visit.Excluded, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false, visit.PartNames);
+                Remember(visit.Excluded, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false, visit,
+                    relocate: visit.RelocatesAsPurchased(childPath));
                 continue;
             }
 
-            Remember(visit.Unnumbered, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false, visit.PartNames);
+            Remember(visit.Unnumbered, childPath, number: null, parentPath, depth + 1, assignsDrawingNumber: false, visit);
             if (child.IsSubAssembly)
                 CollectUnnumberedDescendants(childPath, assemblyPath, depth + 1, visit);
         }
@@ -335,6 +462,7 @@ public static class PropertyPrepPlanner
         return matches.Length > 0 && matches.All(item => item.IsSuppressed);
     }
 
+    /// <param name="relocate">V4.15：这是一个要挪进 <c>外购件\</c> 的同级外购件（不编号，<paramref name="number"/> 为 null）。</param>
     private static void Remember(
         Dictionary<string, MutableEntry> map,
         string sourcePath,
@@ -342,22 +470,35 @@ public static class PropertyPrepPlanner
         string? parentPath,
         int depth,
         bool assignsDrawingNumber,
-        IReadOnlyDictionary<string, string> partNames)
+        Visit visit,
+        bool relocate = false)
     {
         if (!map.TryGetValue(sourcePath, out var entry))
         {
-            var partName = ResolvePartName(sourcePath, partNames);
+            var partName = ResolvePartName(sourcePath, visit.PartNames);
             var extension = Path.GetExtension(sourcePath);
-            var targetPath = number is { } drawing
-                ? Path.Combine(
+            var drawingText = string.Empty;
+            var targetPath = sourcePath;
+            if (number is { } drawing)
+            {
+                drawingText = drawing.Text;
+                // V4.15：没填前缀就沿用文件名里原有的图号段——不填不等于要把原号抹掉。
+                if (drawingText.Length == 0 && visit.KeepNumbers)
+                    DrawingNumber.SplitFileName(Path.GetFileName(sourcePath), out drawingText, out _);
+                targetPath = Path.Combine(
                     Path.GetDirectoryName(sourcePath) ?? string.Empty,
-                    DrawingNumber.FormatFileName(drawing, partName, extension))
-                : sourcePath;
+                    DrawingNumber.FormatFileName(drawingText, partName, extension));
+            }
+            else if (relocate)
+            {
+                targetPath = ConversionPathLayout.ResolvePurchasedRelocation(sourcePath, visit.RootPath);
+            }
+
             entry = new MutableEntry(
                 EntryId(sourcePath),
                 sourcePath,
                 targetPath,
-                number?.Text ?? string.Empty,
+                drawingText,
                 assignsDrawingNumber,
                 depth,
                 partName);
@@ -434,6 +575,12 @@ public static class PropertyPrepPlanner
         private readonly List<string> _parents = [];
 
         public int Depth { get; set; } = depth;
+
+        public string SourcePath => sourcePath;
+
+        /// <summary>不编号、却要换位置：要挪进 <c>外购件\</c> 的外购件（V4.15）。</summary>
+        public bool Relocates
+            => !assignsDrawingNumber && !string.Equals(sourcePath, targetPath, StringComparison.OrdinalIgnoreCase);
 
         public void AddParent(string? parentPath)
         {

@@ -51,8 +51,9 @@ public static class PackagePlanner
         }
 
         var tally = new Tally();
-        CountOccurrences(probe, rootPath, kinds, tally, warnings);
-        CountPurchasedReadings(probe, rootPath, kinds, tally, warnings);
+        var pathById = PartKinds.OccurrencePaths(probe);
+        CountOccurrences(probe, rootPath, kinds, pathById, tally, warnings);
+        CountPurchasedReadings(probe, rootPath, kinds, pathById, tally, warnings);
 
         var entries = tally.ToEntries();
         var plan = new PackagePlan(
@@ -85,19 +86,10 @@ public static class PackagePlanner
         AssemblyProbeResult probe,
         string rootPath,
         IReadOnlyDictionary<string, PackagePartCategory>? kinds,
+        IReadOnlyDictionary<string, string> pathById,
         Tally tally,
         List<string> warnings)
     {
-        var pathById = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var occurrence in probe.Occurrences)
-        {
-            if (!string.IsNullOrEmpty(occurrence.OccurrenceId)
-                && Path.IsPathFullyQualified(occurrence.SourcePath))
-            {
-                pathById[occurrence.OccurrenceId] = Path.GetFullPath(occurrence.SourcePath);
-            }
-        }
-
         foreach (var occurrence in probe.Occurrences)
         {
             if (occurrence.IsSuppressed || !Path.IsPathFullyQualified(occurrence.SourcePath))
@@ -107,7 +99,7 @@ public static class PackagePlanner
                 || ConversionPathLayout.HasExtension(path, ConversionPathLayout.SolidWorksAssemblyExtension);
             if (!isAssembly && !ConversionPathLayout.HasExtension(path, ConversionPathLayout.SolidWorksPartExtension))
                 continue;
-            if (HasExcludedAncestor(occurrence.OccurrenceId, pathById, kinds, rootPath))
+            if (PartKinds.HasExcludedAncestor(occurrence.OccurrenceId, pathById, kinds, rootPath))
                 continue;
 
             var kind = PartKinds.Resolve(kinds, path, rootPath);
@@ -127,37 +119,17 @@ public static class PackagePlanner
         }
     }
 
-    private static bool HasExcludedAncestor(
-        string occurrenceId,
-        IReadOnlyDictionary<string, string> pathById,
-        IReadOnlyDictionary<string, PackagePartCategory>? kinds,
-        string rootPath)
-    {
-        if (string.IsNullOrEmpty(occurrenceId))
-            return false;
-        for (var separator = occurrenceId.IndexOf('/', StringComparison.Ordinal);
-             separator >= 0;
-             separator = occurrenceId.IndexOf('/', separator + 1))
-        {
-            if (pathById.TryGetValue(occurrenceId[..separator], out var ancestor)
-                && PartKinds.Resolve(kinds, ancestor, rootPath) != PackagePartCategory.Machined)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /// <summary>
     /// 子文件夹里的外购件。数量由探查侧数好带过来——那一遍展平已经走过全部后代实例，
     /// 而这里连文件都不该打开（外购件很可能根本不在本机上）。
     /// 用户把它改成机加件时，它照样按文件名拆图号、导 STEP、找同名工程图。
+    /// V4.15：落在被改成外购件 / 排除的同级组件里面的实例不计，全落在里面就整行不出现。
     /// </summary>
     private static void CountPurchasedReadings(
         AssemblyProbeResult probe,
         string rootPath,
         IReadOnlyDictionary<string, PackagePartCategory>? kinds,
+        IReadOnlyDictionary<string, string> pathById,
         Tally tally,
         List<string> warnings)
     {
@@ -167,6 +139,9 @@ public static class PackagePlanner
         foreach (var reading in readings)
         {
             if (reading.InstanceCount <= 0 || string.IsNullOrWhiteSpace(reading.SourcePath))
+                continue;
+            var instances = PartKinds.CountOutsideExcluded(reading, pathById, kinds, rootPath);
+            if (instances <= 0)
                 continue;
             if (!PartKinds.TryFullPath(reading.SourcePath, out var path))
             {
@@ -183,7 +158,7 @@ public static class PackagePlanner
                 kind = PackagePartCategory.Purchased;
             }
 
-            tally.Add(path, kind, isAssembly, counted: kind != PackagePartCategory.Reference, reading.InstanceCount);
+            tally.Add(path, kind, isAssembly, counted: kind != PackagePartCategory.Reference, instances);
         }
     }
 

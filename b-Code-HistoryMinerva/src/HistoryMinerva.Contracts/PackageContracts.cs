@@ -146,6 +146,69 @@ public static class PartKinds
         _ => kind.ToString(),
     };
 
+    /// <summary>探查结果里每个实例 id（<c>Name2</c>）对应的源文件全路径。</summary>
+    public static IReadOnlyDictionary<string, string> OccurrencePaths(AssemblyProbeResult probe)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+        var pathById = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var occurrence in probe.Occurrences)
+        {
+            if (!string.IsNullOrEmpty(occurrence.OccurrenceId)
+                && Path.IsPathFullyQualified(occurrence.SourcePath))
+            {
+                pathById[occurrence.OccurrenceId] = Path.GetFullPath(occurrence.SourcePath);
+            }
+        }
+
+        return pathById;
+    }
+
+    /// <summary>
+    /// 这个实例有没有哪一级**真祖先**不是机加件（被设成外购件或排除）。
+    /// <c>Name2</c> 天然是 <c>"父-1/子-1/孙-1"</c>，祖先就是它的每一个 <c>/</c> 前缀。
+    /// </summary>
+    public static bool HasExcludedAncestor(
+        string occurrenceId,
+        IReadOnlyDictionary<string, string> pathById,
+        IReadOnlyDictionary<string, PackagePartCategory>? kinds,
+        string rootAssemblyPath)
+    {
+        if (string.IsNullOrEmpty(occurrenceId))
+            return false;
+        for (var separator = occurrenceId.IndexOf('/', StringComparison.Ordinal);
+             separator >= 0;
+             separator = occurrenceId.IndexOf('/', separator + 1))
+        {
+            if (pathById.TryGetValue(occurrenceId[..separator], out var ancestor)
+                && Resolve(kinds, ancestor, rootAssemblyPath) != PackagePartCategory.Machined)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// V4.15：子文件夹外购件有几个实例**不在**被改成外购件 / 排除的组件里面。
+    ///
+    /// 同级子装配体被改成外购件后，它就是一种货；它放在子文件夹里的内部件（螺钉、气缸附件）
+    /// 不能再作为独立的外购件出现在表里、计进 BOM。V4.14 只在同级件上判了祖先，
+    /// 子文件夹那一路漏了，于是用户改完件别，组件里面的件照样一行一行留在表里。
+    /// 旧探查结果没有实例 id 时按 <see cref="PurchasedPartReading.InstanceCount"/> 原样计。
+    /// </summary>
+    public static int CountOutsideExcluded(
+        PurchasedPartReading reading,
+        IReadOnlyDictionary<string, string> pathById,
+        IReadOnlyDictionary<string, PackagePartCategory>? kinds,
+        string rootAssemblyPath)
+    {
+        ArgumentNullException.ThrowIfNull(reading);
+        if (reading.OccurrenceIds is not { Count: > 0 } ids)
+            return reading.InstanceCount;
+        return ids.Count(id => !HasExcludedAncestor(id, pathById, kinds, rootAssemblyPath));
+    }
+
     internal static bool TryFullPath(string path, out string full)
     {
         full = string.Empty;
@@ -305,4 +368,13 @@ public sealed record PackageRequest(
 /// 但采购要的正是它们的数量，所以这里只收两件按路径就能确定的事实：是谁、有几个。
 /// </summary>
 /// <param name="InstanceCount">整个总装配体里的实例总数，抑制件不计。</param>
-public sealed record PurchasedPartReading(string SourcePath, int InstanceCount);
+/// <param name="OccurrenceIds">
+/// V4.15：计入 <paramref name="InstanceCount"/> 的那几个实例的 <c>Name2</c>（<c>父-1/子-1</c>）。
+/// 用来判断它是不是落在某个**被用户改成外购件或排除**的同级组件底下——那样它就是那个组件
+/// 里面的件，不再单独进表、不单独计数（见 <see cref="PartKinds.CountOutsideExcluded"/>）。
+/// 为 null 表示旧探查结果没有采集，按 <paramref name="InstanceCount"/> 原样计。
+/// </param>
+public sealed record PurchasedPartReading(
+    string SourcePath,
+    int InstanceCount,
+    IReadOnlyList<string>? OccurrenceIds = null);

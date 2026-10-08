@@ -91,8 +91,8 @@ public sealed class PlanCommands : IModuleContextAware
                     },
                     new ParameterSpec
                     {
-                        Name = "clearnumber",
-                        Description = "为 true 时按空前缀出计划，即删图号；此时忽略 prefix",
+                        Name = "keepnumber",
+                        Description = "为 true 时不发新号、保留每个文件原有的图号（与页面上前缀留空相同）；此时忽略 prefix",
                         Required = false,
                     },
                 ],
@@ -119,10 +119,10 @@ public sealed class PlanCommands : IModuleContextAware
 
         var result = probe.Result!;
         string prefix;
-        if (IsTrue(command.GetString("clearnumber")))
+        if (IsTrue(command.GetString("keepnumber")))
         {
-            // 空前缀不是非法输入，而是「这一轮把图号改成空」。它与改成 ZS-LHL 走的是
-            // 同一条计划，只是值不同（DEC-057）——所以这里只挑值，不挑分支。
+            // 空前缀＝本轮不发新号、沿用原图号（V4.15）。与填了前缀走的是同一条计划，只是值不同。
+            // V4.14 及以前这里叫 clearnumber、意思是删图号——那个能力已经没有了。
             prefix = string.Empty;
         }
         else
@@ -223,9 +223,11 @@ public sealed class PlanCommands : IModuleContextAware
             return "改名计划不可执行：" + string.Join("；", plan.BlockingIssues);
 
         var renamed = plan.Entries.Count(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath));
-        var prefixText = plan.DrawingPrefix.Length == 0 ? "（空前缀＝删图号）" : plan.DrawingPrefix;
+        var prefixText = plan.DrawingPrefix.Length == 0 ? "（空前缀＝保留原图号）" : plan.DrawingPrefix;
         var head = $"改名计划：前缀 {prefixText}，编号 {plan.Entries.Count} 个文件，"
                    + $"其中 {renamed} 个需要改名，未编号 {plan.Unnumbered.Count} 个";
+        if (plan.Relocations.Count > 0)
+            head += $"，{plan.Relocations.Count} 个外购件文件要移入「{ConversionPathLayout.PurchasedPartsDirectoryName}」";
         return plan.Warnings.Count > 0 ? head + "；警告：" + string.Join("；", plan.Warnings) : head;
     }
 

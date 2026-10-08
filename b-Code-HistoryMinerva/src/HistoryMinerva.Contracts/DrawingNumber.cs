@@ -4,11 +4,10 @@ namespace HistoryMinerva.Contracts;
 /// SolidWorks 属性整备使用的图号。
 /// 前缀由用户手写，例如 <c>ZS-LHL</c>；数字段按所选装配体的层级自动生成。
 ///
-/// **V4.9：前缀允许为空**。空前缀不是"非法输入"，而是一个正常状态——它表示
-/// 这一轮把图号改成空，也就是删图号。因此文件名规则只有一条：
+/// **前缀允许为空**。空前缀不是"非法输入"，而是一个正常状态——V4.15 起它表示
+/// 这一轮**不动图号**：计划沿用文件名里原有的图号段（见 <c>PropertyPrepPlanner</c>），
+/// 这里算出来的 <see cref="Text"/> 为空只说明"本轮不发新号"。文件名规则只有一条：
 /// <c>图号 名称.ext</c>，图号为空时退化成 <c>名称.ext</c>。
-/// V4.8 之前删图号是另一条"按空格洗"的独立管线，两条路各有一份计划、一份校验、
-/// 一份 Worker 分支，而它们算出来的目标文件名本来就是同一个。
 /// </summary>
 public readonly record struct DrawingNumber(string Prefix, IReadOnlyList<int> Tokens)
 {
@@ -29,7 +28,7 @@ public readonly record struct DrawingNumber(string Prefix, IReadOnlyList<int> To
     /// 渲染出来的图号文本。
     ///
     /// **前缀为空时恒为空串**，而不是 <c>-01</c>：层级序号本身没有意义，它只是挂在前缀
-    /// 后面的定位符。前缀一空，整个图号就该消失，文件名只剩名称。
+    /// 后面的定位符。前缀一空就不发新号，用哪个号由计划决定（V4.15：沿用原号）。
     /// 层级仍然照算——用户把前缀填回来，同一个零件还是同一个号。
     /// </summary>
     public string Text
@@ -70,7 +69,7 @@ public readonly record struct DrawingNumber(string Prefix, IReadOnlyList<int> To
         => new(NormalizePrefix(prefix), [AssemblyMarker]);
 
     /// <summary>
-    /// 归一化前缀。**空前缀合法**（＝删图号），空格和文件名非法字符仍然不收：
+    /// 归一化前缀。**空前缀合法**（＝本轮不动图号），空格和文件名非法字符仍然不收：
     /// 空格会让"图号 名称"这条规则自己解析不了自己，非法字符会让改名当场失败。
     /// </summary>
     public static string NormalizePrefix(string prefix)
@@ -193,7 +192,7 @@ public readonly record struct DrawingNumber(string Prefix, IReadOnlyList<int> To
     }
 
     /// <summary>
-    /// 拼文件名：<c>图号 名称.ext</c>。图号为空（删图号）时只剩 <c>名称.ext</c>，
+    /// 拼文件名：<c>图号 名称.ext</c>。图号为空（原本就没编过号）时只剩 <c>名称.ext</c>，
     /// 不留那个会长在最前面的空格。
     /// </summary>
     public static string FormatFileName(DrawingNumber number, string originalName, string extension)

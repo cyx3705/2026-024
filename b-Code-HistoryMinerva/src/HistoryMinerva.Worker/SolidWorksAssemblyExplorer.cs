@@ -807,7 +807,7 @@ internal static class SolidWorksAssemblyExplorer
         // 抑制件不计数——BOM 上的数量必须与实际要采购的件数一致。读不到抑制状态时
         // 按「在装」处理：漏采一个件比多采一个件贵得多。
         var counted = countInstance && !TryGet(() => interop.IsComponentSuppressed(component), false);
-        skippedPurchased.Add(key, counted);
+        skippedPurchased.Add(key, counted, counted ? interop.GetComponentName(component) : null);
         return true;
     }
 
@@ -837,22 +837,34 @@ internal static class SolidWorksAssemblyExplorer
     ///
     /// 「有哪些」与「有几个」分开记：路径在每一层的直接子项循环里都会被看到，
     /// 而数量只许在顶层那一次展平里累加，否则嵌套件会被数很多遍。
+    ///
+    /// V4.15 顺手记下每个计数实例的 <c>Name2</c>：用户把某个同级组件改成外购件后，
+    /// 计划器据此认出「这几个子文件夹件就是那个组件里面的」，不再单独列出、单独计数。
     /// </summary>
     private sealed class PurchasedPartCollector
     {
+        private readonly Dictionary<string, List<string>> _instances = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, int> _counts = new(StringComparer.OrdinalIgnoreCase);
 
         public int Count => _counts.Count;
 
-        public void Add(string path, bool countInstance)
+        public void Add(string path, bool countInstance, string? occurrenceId)
         {
             var current = _counts.GetValueOrDefault(path);
             _counts[path] = countInstance ? current + 1 : current;
+            if (!_instances.TryGetValue(path, out var ids))
+                _instances[path] = ids = [];
+            if (countInstance && !string.IsNullOrEmpty(occurrenceId))
+                ids.Add(occurrenceId);
         }
 
         public IReadOnlyList<PurchasedPartReading> ToReadings()
             => _counts
-                .Select(pair => new PurchasedPartReading(pair.Key, pair.Value))
+                .Select(pair => new PurchasedPartReading(
+                    pair.Key,
+                    pair.Value,
+                    // 实例 id 不齐（个别组件读不到 Name2）时宁可不给：计划器拿到不全的清单会少计数量。
+                    _instances[pair.Key].Count == pair.Value ? _instances[pair.Key].ToArray() : null))
                 .OrderBy(item => item.SourcePath, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
     }

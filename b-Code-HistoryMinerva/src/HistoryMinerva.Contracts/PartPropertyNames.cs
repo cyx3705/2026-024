@@ -55,7 +55,7 @@ public static class PartPropertyNames
     /// 零件材质，不是这个字符串——而链接反倒被换成了静态文本。
     ///
     /// 因此写材料是**两步**：先 <c>IPartDoc.SetMaterialPropertyName2</c> 把材质应用到零件，
-    /// 再把这一槽写回 <see cref="MaterialLinkValue"/> 让链接成立。候选只取用户在 SolidWorks 里
+    /// 再把这一槽写成 <see cref="MaterialLinkExpression"/> 让链接成立。候选只取用户在 SolidWorks 里
     /// 收藏的材料，见 <c>SolidWorksPropertyOptions</c>。
     /// </summary>
     public const string Material = "材料";
@@ -70,10 +70,27 @@ public static class PartPropertyNames
     public const string HeatTreatment = "热处理";
 
     /// <summary>
-    /// 「材料」槽的链接值。SolidWorks 认得这个记号，取值时解析成零件当前的材质名。
-    /// 与 <c>SW-Mass</c>（模板里「质量」槽用的）同一族。
+    /// 「材料」槽链接的**记号**，与 <c>SW-Mass</c>（模板里「质量」槽用的）同一族。
+    ///
+    /// **它本身不是能写进属性的值**。属性标签模板里的 <c>DefaultValue="SW-Material"</c> 是给
+    /// 属性标签生成器看的，生成器落盘时会展开成 <see cref="MaterialLinkExpression"/> 那种带引号、
+    /// 带配置名和文件名的表达式。V4.7～V4.14 把这个记号原样写了进去，SolidWorks 把它当成
+    /// 一段普通文字，于是属性标签和图框上永远显示「SW-Material」而不是材质名。
+    /// 现在它只在 <see cref="PartPropertyWrite.Pairs"/> 里当占位，Worker 落盘前换成完整表达式。
     /// </summary>
     public const string MaterialLinkValue = "SW-Material";
+
+    /// <summary>
+    /// 「材料」槽真正要写的链接表达式：<c>"SW-Material@@默认@阀体.SLDPRT"</c>。
+    ///
+    /// 写的是**配置特定**属性（模板全部 <c>ApplyTo="Config"</c>），所以是 <c>@@配置名@文件名</c>
+    /// 这一种；文档级属性才是 <c>@文件名</c>。两侧的英文双引号是表达式的一部分，少了它
+    /// SolidWorks 同样只当它是文字。取值时解析成该配置当前的材质名。
+    /// </summary>
+    /// <param name="configuration">写入的那个配置名，与 <c>SetMaterialPropertyName2</c> 用的是同一个。</param>
+    /// <param name="fileName">零件**当前**的文件名（含扩展名）。改名之后写属性，用的是新名字。</param>
+    public static string MaterialLinkExpression(string configuration, string fileName)
+        => "\"" + MaterialLinkValue + "@@" + configuration + "@" + fileName + "\"";
 
     /// <summary>
     /// 下拉里表示「这一槽本轮不写」的那一项。

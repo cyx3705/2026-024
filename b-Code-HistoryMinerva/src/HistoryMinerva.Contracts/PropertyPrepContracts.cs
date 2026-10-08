@@ -7,9 +7,9 @@ namespace HistoryMinerva.Contracts;
 /// <list type="bullet">
 ///   <item><b>用户填的槽</b>（日期、设计、材料、表面处理、热处理）空串＝本轮不动这一槽。
 ///         用户没填不等于要把模板里已有的值抹成空；</item>
-///   <item><b>计划算出来的槽</b>（图号、名称、类型）恒写，空串就是**真的写成空**。
-///         图号那一槽尤其如此：V4.9 起删图号就是"把图号改成空"，
-///         它与改成 <c>ZS-01</c> 是同一条路径上的同一个动作，只是值不同（DEC-057）。</item>
+///   <item><b>计划算出来的槽</b>（名称、类型）恒写。图号在填了前缀时恒写；
+///         V4.15 起**前缀为空＝保留原图号**（<see cref="KeepDrawingNumber"/>），图号槽一个字都不碰——
+///         V4.9～V4.14 把空前缀当成删图号，用户没填前缀就点写入，整台设备的图号被抹掉。</item>
 /// </list>
 /// </summary>
 /// <param name="Material">
@@ -27,6 +27,9 @@ namespace HistoryMinerva.Contracts;
 /// V4.9 起用户可以在表里逐行改名称，改完的名字同时决定文件名和这一槽——
 /// 仍然只有一份真话，只是这份真话现在可以编辑了。
 /// </param>
+/// <param name="KeepDrawingNumber">
+/// V4.15：本轮没填图号前缀，零件上的「图号」槽保持原样不写。缺省 false＝照旧写 <paramref name="DrawingNumber"/>。
+/// </param>
 public sealed record PartPropertyWrite(
     string DrawingNumber,
     string Category,
@@ -36,7 +39,8 @@ public sealed record PartPropertyWrite(
     string SurfaceTreatment,
     string HeatTreatment,
     string MaterialDatabase = "",
-    string Name = "")
+    string Name = "",
+    bool KeepDrawingNumber = false)
 {
     /// <summary>材质名与材料库齐备，可以应用到零件。</summary>
     public bool HasMaterial
@@ -51,8 +55,6 @@ public sealed record PartPropertyWrite(
 
     /// <summary>
     /// 一个槽都写不了时，没有必要为它打开一次 SolidWorks 文档。
-    ///
-    /// V4.9 起零件条目实际上不会命中这一条：图号、名称、类型三槽恒写。留着它是因为
     /// 判空的责任在这个记录自己身上，而不该由调用方按"哪几个槽是恒写的"另抄一遍。
     /// </summary>
     public bool IsEmpty => !Pairs().Any();
@@ -60,18 +62,19 @@ public sealed record PartPropertyWrite(
     /// <summary>
     /// 按 <see cref="PartPropertyNames"/> 的顺序展开成「槽名 → 值」。
     ///
-    /// 「图号」「名称」「类型」**恒在**，哪怕值是空串：这三槽由改名计划算出来，
-    /// 计划说它是空，零件上就该是空。删图号走的正是这一条——图号槽写空串，
-    /// 而不是删掉整槽（删槽会让属性标签上少一行，用户看到的是"属性没了"而不是"属性空了"）。
-    /// 其余五槽是用户填的，空串＝本轮不动，不会把模板里已有的值抹掉。
+    /// 「图号」在填了前缀时恒在：值由改名计划算出来，与文件名里的图号段是同一个字符串。
+    /// 没填前缀（<see cref="KeepDrawingNumber"/>）时不出现——原图号原样留在零件上。
+    /// 其余用户填的槽空串＝本轮不动，不会把模板里已有的值抹掉。
     ///
     /// 「材料」一槽给出的是链接记号 <see cref="PartPropertyNames.MaterialLinkValue"/> 而不是材质名：
     /// 材质本身由 <see cref="Material"/> / <see cref="MaterialDatabase"/> 走
-    /// <c>SetMaterialPropertyName2</c> 应用，这里写的只是让属性标签认得那条链接。
+    /// <c>SetMaterialPropertyName2</c> 应用；Worker 落盘时把记号换成指向这个零件的完整链接表达式
+    /// （<see cref="PartPropertyNames.MaterialLinkExpression"/>），属性标签上显示的才是材质名。
     /// </summary>
     public IEnumerable<KeyValuePair<string, string>> Pairs()
     {
-        yield return new(PartPropertyNames.DrawingNumber, DrawingNumber ?? string.Empty);
+        if (!KeepDrawingNumber)
+            yield return new(PartPropertyNames.DrawingNumber, DrawingNumber ?? string.Empty);
         if (!string.IsNullOrEmpty(Name)) yield return new(PartPropertyNames.Name, Name);
         if (!string.IsNullOrEmpty(Category)) yield return new(PartPropertyNames.Category, Category);
         if (!string.IsNullOrEmpty(Date)) yield return new(PartPropertyNames.Date, Date);
@@ -91,7 +94,8 @@ public sealed record PartPropertyWrite(
 /// 并写进「名称」属性槽。来源是文件名里第一个空格之后的部分，用户在表里改过的以用户的为准。
 /// </param>
 /// <param name="DrawingNumber">
-/// 这一条要用的图号文本。**空串是有效值**，表示这个文件本轮不带图号（删图号）。
+/// 这一条要用的图号文本。前缀为空时它是文件名里**原有**的图号段（V4.15 起保留原号），
+/// 原来就没有图号的文件则是空串。
 /// 它与 <see cref="AssignsDrawingNumber"/> 不是一回事：后者说的是"这个文件归本模块管"，
 /// 前者说的是"管出来的号是什么"。
 /// </param>
@@ -131,8 +135,14 @@ public sealed record PartPropertyReading(
 /// <summary>按所选装配体层级生成的改名计划。纯内存，不碰 CAD。</summary>
 /// <param name="Excluded">
 /// V4.11：因件别不参与编号的文件——被设成外购件或参考的同级件，以及子文件夹里的外购件。
-/// 它们不进 Worker 请求，只在表里占一行，让用户看得见、点得回来。
+/// 它们不编号、不写属性，在表里占一行，让用户看得见、点得回来。
+/// V4.15：其中被改成外购件的**同级**件，<see cref="RenameEntry.TargetPath"/> 指向
+/// <c>外购件\</c> 子文件夹——写入时随改名一起挪过去（见 <see cref="Relocations"/>）。
 /// 为 null 等同于空（V4.10 及以前的计划没有这一项）。
+/// </param>
+/// <param name="Relocated">
+/// V4.15：跟着外购组件一起挪进 <c>外购件\</c> 的内部件。组件已经是一种货，它们不在表里出现，
+/// 但文件得跟着组件走，否则同级目录里留着一堆没人认领的零件。为 null 等同于空。
 /// </param>
 public sealed record AssemblyRenamePlan(
     string SourceAssemblyPath,
@@ -141,14 +151,26 @@ public sealed record AssemblyRenamePlan(
     IReadOnlyList<RenameEntry> Unnumbered,
     IReadOnlyList<string> BlockingIssues,
     IReadOnlyList<string> Warnings,
-    IReadOnlyList<RenameEntry>? Excluded = null)
+    IReadOnlyList<RenameEntry>? Excluded = null,
+    IReadOnlyList<RenameEntry>? Relocated = null)
 {
     /// <inheritdoc cref="Excluded"/>
     public IReadOnlyList<RenameEntry> ExcludedEntries => Excluded ?? [];
 
+    /// <summary>
+    /// 本轮要挪进 <c>外购件\</c> 的全部文件：表里看得见的外购件行，加上跟着组件走的内部件。
+    /// </summary>
+    public IReadOnlyList<RenameEntry> Relocations
+        => ExcludedEntries.Concat(Relocated ?? [])
+            .Where(entry => !SamePath(entry.SourcePath, entry.TargetPath))
+            .ToArray();
+
+    /// <summary>送给 Worker 的完整清单：编号件（含名字已经对了的，属性还要写）加上要挪的外购件。</summary>
+    public IReadOnlyList<RenameEntry> WorkerEntries => [.. Entries, .. Relocations];
+
     public bool CanRename =>
         BlockingIssues.Count == 0
-        && Entries.Any(entry => !SamePath(entry.SourcePath, entry.TargetPath));
+        && (Entries.Any(entry => !SamePath(entry.SourcePath, entry.TargetPath)) || Relocations.Count > 0);
 
     /// <summary>
     /// 「写入」= 改名 + 写属性，因此不能沿用 <see cref="CanRename"/>。
@@ -174,15 +196,13 @@ public sealed record AssemblyRenamePlan(
 }
 
 /// <summary>
-/// Worker <c>--rename-assembly</c> 请求。
+/// Worker <c>--rename-assembly</c> 请求：改名、把同级外购件挪进 <c>外购件\</c>、写零件属性，一次做完。
 ///
-/// V4.9 去掉了 <c>StripBySpace</c>。它曾经表示"反向操作：只清空图号槽、不写其余六槽"，
-/// 而删图号其实就是把图号改成空——同一条改名路径、同一份属性载荷，只是
-/// <see cref="DrawingPrefix"/> 为空。留着那个开关意味着同一件事有两份计划、两份校验、
-/// 两条 Worker 分支，而它们算出来的目标文件名本来就相同（DEC-057）。
+/// 没有「删图号」这件事（V4.15）：前缀为空只表示本轮不动图号。V4.9～V4.14 曾把空前缀当成删图号，
+/// 用户只是没填前缀就点了写入，整台设备的图号被抹掉——那不是用户要的。
 /// </summary>
 /// <param name="DrawingPrefix">
-/// 图号前缀。**空串合法**，表示这一轮把图号改成空，也就是删图号。
+/// 图号前缀。**空串合法**，表示这一轮不动图号：文件名里的原图号段与「图号」槽都原样保留（V4.15）。
 /// </param>
 /// <param name="WriteProperties">
 /// 为 true 时，改名与引用更新全部成功后再逐个打开零件写 <see cref="RenameEntry.Properties"/>。

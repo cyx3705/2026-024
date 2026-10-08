@@ -193,7 +193,7 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     /// <summary>
     /// V4.9 属性整备「图号」列。值是本轮计划算出来的图号文本，**只读**：
     /// 它由前缀加装配层级序号定死，逐行改会让同一层出现两套编号规则，
-    /// 而那正是这个模块存在的理由。前缀为空时它是空串，也就是这一轮删图号。
+    /// 而那正是这个模块存在的理由。前缀为空时它是文件名里原有的图号段（V4.15 保留原号）。
     /// </summary>
     public string DrawingText
     {

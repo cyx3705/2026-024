@@ -156,7 +156,7 @@ internal static class WorkerRequestValidator
             throw new InvalidDataException("改名批次编号无效。");
         if (request.SourceFormat != ConversionSourceFormat.SolidWorks)
             throw new InvalidDataException("属性整备改名目前只支持 SolidWorks 装配体。");
-        // 前缀为空是合法的：那一轮把图号改成空，也就是删图号。这里只拦空格与非法字符。
+        // 前缀为空是合法的：那一轮不发新号、保留原图号。这里只拦空格与非法字符。
         _ = DrawingNumber.NormalizePrefix(request.DrawingPrefix);
         ValidateSolidWorksDocument(request.SourceAssemblyPath, mustExist: true);
         if (request.Entries.Count == 0)
@@ -168,8 +168,15 @@ internal static class WorkerRequestValidator
         {
             if (string.IsNullOrWhiteSpace(entry.Id))
                 throw new InvalidDataException("改名条目缺少编号。");
+            // V4.15：唯一允许换目录的是「同级外购件挪进 外购件\」，那个目录这一轮可能才建，
+            // 所以只对它免掉「目标目录必须存在」；目录由改名器在校验通过之后再建。
+            var relocation = ConversionPathLayout.IsPurchasedRelocation(
+                entry.SourcePath, entry.TargetPath, request.SourceAssemblyPath);
             ValidateSolidWorksDocument(entry.SourcePath, mustExist: true);
-            ValidateSolidWorksDocument(entry.TargetPath, mustExist: false);
+            if (relocation)
+                ValidateSolidWorksDocument(entry.TargetPath, mustExist: false, targetDirectoryMayBeMissing: true);
+            else
+                ValidateSolidWorksDocument(entry.TargetPath, mustExist: false);
             var source = Path.GetFullPath(entry.SourcePath);
             var target = Path.GetFullPath(entry.TargetPath);
             if (ConversionPathLayout.IsUnderReferencePartsDirectory(source))
@@ -180,8 +187,10 @@ internal static class WorkerRequestValidator
                 throw new InvalidDataException($"改名清单存在重复目标：{target}");
             var sourceDir = Path.GetDirectoryName(source);
             var targetDir = Path.GetDirectoryName(target);
-            if (!string.Equals(sourceDir, targetDir, StringComparison.OrdinalIgnoreCase))
+            if (!relocation && !string.Equals(sourceDir, targetDir, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"改名不得换目录：{source}");
+            if (relocation && entry.Properties is not null)
+                throw new InvalidDataException($"挪进外购件文件夹的文件不写属性：{source}");
             if (!string.Equals(Path.GetExtension(source), Path.GetExtension(target), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"改名不得改扩展名：{source}");
             if (!AssemblyRenamePlan.SamePath(source, target) && File.Exists(target))
@@ -245,7 +254,7 @@ internal static class WorkerRequestValidator
         }
     }
 
-    private static void ValidateSolidWorksDocument(string path, bool mustExist)
+    private static void ValidateSolidWorksDocument(string path, bool mustExist, bool targetDirectoryMayBeMissing = false)
     {
         if (!Path.IsPathFullyQualified(path))
             throw new InvalidDataException($"路径必须是绝对路径：{path}");
@@ -255,7 +264,7 @@ internal static class WorkerRequestValidator
             throw new InvalidDataException($"路径必须是 .SLDPRT 或 .SLDASM：{path}");
         if (mustExist && !File.Exists(path))
             throw new FileNotFoundException("源文件不存在。", path);
-        if (!mustExist && !Directory.Exists(Path.GetDirectoryName(path)))
+        if (!mustExist && !targetDirectoryMayBeMissing && !Directory.Exists(Path.GetDirectoryName(path)))
             throw new DirectoryNotFoundException($"输出目录不存在：{Path.GetDirectoryName(path)}");
     }
 }

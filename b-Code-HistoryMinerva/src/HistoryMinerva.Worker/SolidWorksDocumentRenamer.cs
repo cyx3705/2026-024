@@ -4,7 +4,8 @@ namespace HistoryMinerva.Worker;
 
 /// <summary>
 /// 按图号清单就地改名 SolidWorks 文件，并用 <c>ReplaceReferencedDocument</c>
-/// 更新父装配引用。源文件改的是名字，不换目录。
+/// 更新父装配引用。源文件改的是名字，不换目录——唯一的例外是 V4.15 的
+/// 「同级外购件挪进 <c>外购件\</c>」，引用照样由 <c>ReplaceReferencedDocument</c> 改到新路径上。
 ///
 /// V4.7 起同一次请求还负责写零件「自定义」属性：改名与引用更新全部收工后，
 /// 才逐个打开零件写槽再保存。顺序不能反——<c>ReplaceReferencedDocument</c> 要求
@@ -38,6 +39,12 @@ internal static class SolidWorksDocumentRenamer
             .OrderByDescending(entry => entry.Depth)
             .ThenBy(entry => entry.SourcePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        // 「外购件」目录这一轮可能才第一次用到。校验已经确认过它只会是总装目录下的那一个。
+        foreach (var entry in pending)
+        {
+            if (ConversionPathLayout.IsPurchasedRelocation(entry.SourcePath, entry.TargetPath, request.SourceAssemblyPath))
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(entry.TargetPath))!);
+        }
         var propertyTargets = ResolvePropertyTargets(request);
         if (pending.Length == 0 && propertyTargets.Count == 0)
         {
@@ -95,7 +102,10 @@ internal static class SolidWorksDocumentRenamer
                     reporter.Report(
                         entry.Id,
                         ConversionStage.Completed,
-                        $"已改名为 {Path.GetFileName(entry.TargetPath)}");
+                        ConversionPathLayout.IsPurchasedRelocation(
+                            entry.SourcePath, entry.TargetPath, request.SourceAssemblyPath)
+                            ? $"已移入 {ConversionPathLayout.PurchasedPartsDirectoryName}\\{Path.GetFileName(entry.TargetPath)}"
+                            : $"已改名为 {Path.GetFileName(entry.TargetPath)}");
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -136,11 +146,8 @@ internal static class SolidWorksDocumentRenamer
     }
 
     /// <summary>
-    /// 哪些条目要写属性。只认识别出的零件：装配体、未编号的内部件和子文件夹外购件一律不碰。
-    ///
-    /// 删图号不在这里分叉：它的载荷与一次普通写入完全一样，只是「图号」槽的值是空串
-    /// （见 <see cref="PartPropertyWrite.Pairs"/>）。空串写进去是把槽清空，不是删掉整槽——
-    /// 删槽会让属性标签上少一行，用户看到的是「属性没了」而不是「属性空了」。
+    /// 哪些条目要写属性。只认识别出的零件：装配体、未编号的内部件和外购件一律不碰。
+    /// 写哪几个槽由载荷自己说（<see cref="PartPropertyWrite.Pairs"/>）：没填前缀的那一轮不带「图号」槽。
     /// </summary>
     private static IReadOnlyList<PropertyWriteJob> ResolvePropertyTargets(AssemblyRenameRequest request)
     {
@@ -289,7 +296,19 @@ internal static class SolidWorksDocumentRenamer
             {
                 if (!existing.Contains(pair.Key))
                     created.Add(pair.Key);
-                var status = interop.AddCustomProperty(manager, pair.Key, pair.Value);
+
+                // 「材料」槽要的是链接表达式，不是记号本身：原样写 SW-Material 会被当成一段文字，
+                // 属性标签和图框上永远显示「SW-Material」（V4.7～V4.14 就是这样）。
+                // 表达式里的文件名用**当前**路径——改名在前、写属性在后，用旧名链接会指空。
+                // 解析之后它读回来的是材质名，所以核对的期望值也换成材质名。
+                var isMaterialLink = pair.Key == PartPropertyNames.Material
+                                     && pair.Value == PartPropertyNames.MaterialLinkValue;
+                var value = isMaterialLink
+                    ? PartPropertyNames.MaterialLinkExpression(configuration, Path.GetFileName(path))
+                    : pair.Value;
+                var expected = isMaterialLink ? materialName : pair.Value;
+
+                var status = interop.AddCustomProperty(manager, pair.Key, value);
                 if (status != 0)
                 {
                     throw new ClassifiedConversionException(
@@ -300,11 +319,11 @@ internal static class SolidWorksDocumentRenamer
                 // Add3 返回 0 只说明调用被接受。链接到方程或被模板设成只读的槽会静默不动，
                 // 那种「成功了但值没变」在图框上与压根没跑过一模一样，必须当场读回来对一次。
                 var readBack = interop.GetCustomProperty(manager, pair.Key);
-                if (!string.Equals(readBack, pair.Value, StringComparison.Ordinal))
+                if (!string.Equals(readBack, expected, StringComparison.Ordinal))
                 {
                     throw new ClassifiedConversionException(
                         ConversionErrorClass.RenameFailed,
-                        $"属性「{pair.Key}」写入后读回是“{readBack}”，与期望的“{pair.Value}”不符。");
+                        $"属性「{pair.Key}」写入后读回是“{readBack}”，与期望的“{expected}”不符。");
                 }
 
                 written++;

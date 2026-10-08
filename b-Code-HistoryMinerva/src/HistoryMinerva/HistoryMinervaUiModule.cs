@@ -240,9 +240,11 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         var viewModel = _viewModel;
         if (viewModel is null)
             return CommandResult.Fail("Minerva 页面尚未创建。");
+        // 没有在跑的操作时点取消，结果就是"什么都不用做"，不是失败：
+        // 报失败会在控制台留一条红字，还会让宿主把控制台抢到前面（V4.15）。
         return viewModel.Cancel()
             ? CommandResult.Ok("已请求取消 Minerva 当前操作。")
-            : CommandResult.Fail("Minerva 当前没有可取消的操作。");
+            : CommandResult.Ok("Minerva 当前没有进行中的操作，无需取消。");
     }
 
     private CommandResult PickSource(CommandContext command)
@@ -928,7 +930,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             { "id": "minerva.source.set", "title": "设置来源", "command": "minerva.ui.source", "args": { "path": "{value}", "content": "{selection.minerva.content.value}" }, "summary": "按当前转换内容设置装配体文件或零件文件夹" },
             { "id": "minerva.content.set", "title": "设置转换内容", "command": "minerva.ui.content", "args": { "content": "{value}" }, "summary": "把页面当前转换内容写进模块" },
             { "id": "minerva.conversion.probe", "title": "解析装配体", "command": "minerva.conversion.probe", "args": { "content": "{selection.minerva.content.value}" }, "summary": "解析当前装配体来源" },
-            { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "args": { "content": "{selection.minerva.content.value}" }, "summary": "执行当前转换；属性整备下是改名并写入零件属性（前缀为空即删图号）" },
+            { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "args": { "content": "{selection.minerva.content.value}" }, "summary": "执行当前转换；属性整备下是改名并写入零件属性（前缀为空则保留原图号；改成外购件的同级件移入「外购件」文件夹）" },
             { "id": "minerva.conversion.cancel", "title": "取消", "command": "minerva.conversion.cancel", "summary": "取消当前操作" },
             { "id": "minerva.options.recognize", "title": "更新识别选项", "command": "minerva.ui.options", "args": { "option": "recognize", "value": "{value}" }, "summary": "开启或关闭特征与草图识别" },
             { "id": "minerva.options.continue", "title": "更新失败策略", "command": "minerva.ui.options", "args": { "option": "continue", "value": "{value}" }, "summary": "设置零件失败时是否继续" },

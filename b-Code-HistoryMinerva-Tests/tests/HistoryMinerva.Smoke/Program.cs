@@ -89,6 +89,7 @@ try
     TestPurchasedBoundary();
     TestReferencePartsBoundary(root);
     TestPackagePlanning(root);
+    TestPurchasedRelocationAndMaterialLink(root);
     TestPackageBomWorkbooks(root);
     TestPackageViewModelFlow(root);
     TestPackageBrandLookup(root);
@@ -633,7 +634,7 @@ static void TestPlanCommandSurface(string root)
     var renamePlan = rename.Data as AssemblyRenamePlan;
     True(renamePlan is not null, "minerva.plan.rename 必须把 AssemblyRenamePlan 放进 Data");
     Equal("GHLSS-06", renamePlan!.DrawingPrefix,
-        "省略 prefix 时必须按根装配文件名推断，而不是当成空前缀去删图号");
+        "省略 prefix 时必须按根装配文件名推断，而不是当成空前缀");
 
     var explicitPrefix = planned.Bus.ExecuteAsync(
         "minerva.plan.rename prefix=ZS-LHL path=" + CommandParser.QuoteArg(assemblyPath), "Smoke")
@@ -641,11 +642,11 @@ static void TestPlanCommandSurface(string root)
     Equal("ZS-LHL", (explicitPrefix.Data as AssemblyRenamePlan)?.DrawingPrefix,
         "显式 prefix 必须原样进计划");
 
-    var cleared = planned.Bus.ExecuteAsync(
-        "minerva.plan.rename clearnumber=true prefix=ZS-LHL path=" + CommandParser.QuoteArg(assemblyPath), "Smoke")
+    var kept = planned.Bus.ExecuteAsync(
+        "minerva.plan.rename keepnumber=true prefix=ZS-LHL path=" + CommandParser.QuoteArg(assemblyPath), "Smoke")
         .GetAwaiter().GetResult();
-    Equal(string.Empty, (cleared.Data as AssemblyRenamePlan)?.DrawingPrefix,
-        "clearnumber=true 就是空前缀那一份计划（DEC-057），并且盖过 prefix");
+    Equal(string.Empty, (kept.Data as AssemblyRenamePlan)?.DrawingPrefix,
+        "keepnumber=true 就是空前缀那一份计划（保留原图号），并且盖过 prefix");
 
     foreach (var name in new[] { "minerva.plan.package", "minerva.plan.rename" })
     {
@@ -2156,10 +2157,14 @@ static void TestPropertyPrepDrawingNumbers(string root)
     Equal("ZS-LHL-01-02-01 阀体.SLDPRT", Path.GetFileName(Target(minorPlan, valveBody)), "小组件零件从 -01 起编");
     Equal("ZS-LHL-01-02-02 阀芯.SLDPRT", Path.GetFileName(Target(minorPlan, valveCore)), "小组件零件按出现顺序递增");
 
-    // V4.9：空前缀是删图号，不是非法输入（DEC-057）。
+    // V4.15：空前缀是「保留原图号」，不是非法输入，也不是删图号。
     var empty = PropertyPrepPlanner.Create(minorProbe, " ");
-    True(empty.BlockingIssues.Count == 0, "空前缀是删图号，不得阻断：" + string.Join("；", empty.BlockingIssues));
-    True(empty.Entries.All(entry => entry.DrawingNumber.Length == 0), "空前缀下每一条的图号都必须是空");
+    True(empty.BlockingIssues.Count == 0, "空前缀是保留原图号，不得阻断：" + string.Join("；", empty.BlockingIssues));
+    Equal("ZS-LHL-01-02-00", empty.Entries.Single(entry => entry.SourcePath == minor).DrawingNumber,
+        "空前缀下已有的图号必须原样保留");
+    Equal("", empty.Entries.Single(entry => entry.SourcePath == valveBody).DrawingNumber,
+        "空前缀下原本没编号的文件仍然没有图号，不得凭空发号");
+    True(!empty.CanRename, "空前缀且没改名称时一个文件都不该改名");
 
     DrawingNumber.SplitFileName("ZS-LHL-00 总装.SLDASM", out var stripToken, out var stripName);
     Equal("ZS-LHL-00", stripToken, "空格前是图号段");
@@ -2216,19 +2221,27 @@ static void TestPropertyPrepDrawingNumbers(string root)
                 new AssemblyChild("螺钉-1", numberedScrew, false, false, identity),
             ], []),
         ]);
-    // 删图号就是前缀为空的那一份计划，没有第二条管线（DEC-057）。
-    var stripPlan = PropertyPrepPlanner.Create(stripProbe, string.Empty);
-    True(stripPlan.BlockingIssues.Count == 0, "合法装配的删图号规划不得有阻断：" + string.Join("；", stripPlan.BlockingIssues));
-    True(stripPlan.CanRename, "带图号的装配在空前缀下必须有文件要改名");
-    Equal("总装.SLDASM", Path.GetFileName(Target(stripPlan, numberedRoot)), "总装必须只剩名称");
-    Equal("进样器模块.SLDASM", Path.GetFileName(Target(stripPlan, numberedMajor)), "大组件必须只剩名称");
-    Equal("轴.SLDPRT", Path.GetFileName(Target(stripPlan, numberedShaft)), "零件必须只剩名称");
-    True(stripPlan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, numberedStandard)),
-        "子文件夹外购件装配体不得被删图号");
-    True(stripPlan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, numberedScrew)),
-        "子文件夹外购件内部不得被删图号");
-    // 本来就没有图号的文件在空前缀下目标名与原名相同，因此不在待改名之列。
-    Equal("底板.SLDPRT", Path.GetFileName(Target(stripPlan, plainPlate)), "没有图号的文件必须保持原名");
+    // V4.15：没填前缀＝不动图号。V4.9～V4.14 这里是删图号，用户没填前缀就把整台设备的号抹掉了。
+    var keepPlan = PropertyPrepPlanner.Create(stripProbe, string.Empty);
+    True(keepPlan.BlockingIssues.Count == 0, "空前缀规划不得有阻断：" + string.Join("；", keepPlan.BlockingIssues));
+    True(!keepPlan.CanRename, "空前缀且名称没改时不得有任何文件改名");
+    Equal("ZS-LHL-00 总装.SLDASM", Path.GetFileName(Target(keepPlan, numberedRoot)), "总装必须保留原图号");
+    Equal("ZS-LHL-01-00 进样器模块.SLDASM", Path.GetFileName(Target(keepPlan, numberedMajor)), "大组件必须保留原图号");
+    Equal("ZS-LHL-01-01 轴.SLDPRT", Path.GetFileName(Target(keepPlan, numberedShaft)), "零件必须保留原图号");
+    Equal("ZS-LHL-01-01", keepPlan.Entries.Single(entry => entry.SourcePath == numberedShaft).DrawingNumber,
+        "图号列必须显示原图号");
+    True(keepPlan.Entries.All(entry => !AssemblyRenamePlan.SamePath(entry.SourcePath, numberedStandard)),
+        "子文件夹外购件装配体不得进改名清单");
+    Equal("底板.SLDPRT", Path.GetFileName(Target(keepPlan, plainPlate)), "没有图号的文件必须保持原名");
+
+    // 名称改了照样生效，图号段原样留着。
+    var renamedKeep = PropertyPrepPlanner.Create(
+        stripProbe,
+        string.Empty,
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [numberedShaft] = "传动轴" });
+    Equal("ZS-LHL-01-01 传动轴.SLDPRT", Path.GetFileName(Target(renamedKeep, numberedShaft)),
+        "空前缀下改名称：只换名称，原图号不动");
+    True(renamedKeep.CanRename, "改了名称就有文件要改名");
 }
 
 static string Target(AssemblyRenamePlan plan, string source)
@@ -2356,21 +2369,21 @@ static void TestPropertyPrepViewModel(string root)
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     // 解析时按根装配名把前缀认出来预填；这一份样件的根装配是「ZS-LHL-00 总装.SLDASM」。
     Equal("ZS-LHL", stripModel.DrawingPrefix, "解析必须按根装配名把图号前缀认出来填进框里");
-    // 用户把前缀清空＝删图号。这一轮照样是一次写入，不是另一条管线（DEC-057）。
+    // V4.15：用户把前缀清空＝保留原图号。这一轮照样能写入（名称、材料等照写），但图号一个字都不动。
     stripModel.DrawingPrefix = string.Empty;
-    True(stripModel.CanConvert, "前缀为空是删图号，必须允许写入");
-    True(stripModel.Parts.Any(row => row.DrawingText.Length == 0 && row.PartName.Length > 0),
-        "前缀为空时图号列必须是空的，名称列仍要有名字");
+    True(stripModel.CanConvert, "前缀为空也必须允许写入属性");
+    True(stripModel.Parts.Any(row => row.DrawingText == "ZS-LHL-01" && row.PartName == "阀体"),
+        "前缀为空时图号列显示原图号，名称列照旧");
     stripModel.ConvertAsync().GetAwaiter().GetResult();
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
-    True(stripRequest is { WriteProperties: true }, "删图号也走同一条写入路径");
-    Equal(string.Empty, stripRequest!.DrawingPrefix, "删图号那一轮的前缀必须是空串");
-    var cleared = SolidWorksDocumentRenamer.DescribePropertyTargets(stripRequest);
-    True(cleared.Count >= 1, "删图号那一轮仍然要写零件属性");
-    var clearedSlots = cleared[0].Pairs.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-    True(clearedSlots.TryGetValue(PartPropertyNames.DrawingNumber, out var clearedNumber)
-         && clearedNumber.Length == 0,
-        "删图号必须把「图号」槽写成空串——清空，而不是把整槽删掉");
+    True(stripRequest is { WriteProperties: true }, "空前缀也走同一条写入路径");
+    Equal(string.Empty, stripRequest!.DrawingPrefix, "空前缀那一轮请求里的前缀是空串");
+    True(stripRequest.Entries.All(entry => AssemblyRenamePlan.SamePath(entry.SourcePath, entry.TargetPath)),
+        "空前缀且没改名称：不得有任何文件被改名");
+    var kept = SolidWorksDocumentRenamer.DescribePropertyTargets(stripRequest);
+    True(kept.Count >= 1, "空前缀那一轮仍然要写零件属性");
+    True(kept[0].Pairs.All(pair => pair.Key != PartPropertyNames.DrawingNumber),
+        "空前缀不得碰「图号」槽——写空串就是把原图号顶掉");
 }
 
 /// <summary>
@@ -4561,6 +4574,130 @@ static void TestPackagePlanning(string root)
 }
 
 /// <summary>
+/// V4.15：外购件挪进「外购件」文件夹、外购组件的内部件不进表、材料槽写链接表达式。
+///
+/// 样件：总装下一块底板、一个被用户改成外购件的同级气缸组件（里面一个只属于它的活塞、
+/// 一个总装也直接用的垫片、子文件夹里两个弹垫），以及子文件夹螺钉（组件里 1 个、总装直接 2 个）。
+/// </summary>
+static void TestPurchasedRelocationAndMaterialLink(string root)
+{
+    var dir = Path.Combine(root, "purchased-relocation");
+    var standardDir = Path.Combine(dir, "标准件");
+    Directory.CreateDirectory(standardDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "ZS-00 总装.SLDASM");
+    var plate = Path.Combine(dir, "ZS-01 底板.SLDPRT");
+    var cylinder = Path.Combine(dir, "气缸组件.SLDASM");
+    var piston = Path.Combine(dir, "活塞.SLDPRT");
+    var washer = Path.Combine(dir, "共用垫片.SLDPRT");
+    var screw = Path.Combine(standardDir, "GB70 M4x10 螺钉.SLDPRT");
+    var springWasher = Path.Combine(standardDir, "GB93 M4 弹垫.SLDPRT");
+    foreach (var path in new[] { rootAsm, plate, cylinder, piston, washer, screw, springWasher })
+        File.WriteAllText(path, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        [
+            new AssemblyOccurrence("底板-1", null, plate, false, false, false, identity, null),
+            new AssemblyOccurrence("气缸组件-1", null, cylinder, true, false, false, identity, null),
+            new AssemblyOccurrence("气缸组件-1/活塞-1", "气缸组件-1", piston, false, false, false, identity, null),
+            new AssemblyOccurrence("气缸组件-1/共用垫片-1", "气缸组件-1", washer, false, false, false, identity, null),
+            new AssemblyOccurrence("共用垫片-1", null, washer, false, false, false, identity, null),
+        ],
+        [plate, piston, washer],
+        0, 0, 3, 0, [],
+        [
+            new AssemblyDocumentReading(rootAsm,
+            [
+                new AssemblyChild("底板-1", plate, false, false, identity),
+                new AssemblyChild("气缸组件-1", cylinder, true, false, identity),
+                new AssemblyChild("共用垫片-1", washer, false, false, identity),
+            ], []),
+            new AssemblyDocumentReading(cylinder,
+            [
+                new AssemblyChild("活塞-1", piston, false, false, identity),
+                new AssemblyChild("共用垫片-1", washer, false, false, identity),
+            ], []),
+        ],
+        PurchasedParts:
+        [
+            new PurchasedPartReading(screw, 3, ["气缸组件-1/螺钉-1", "螺钉-1", "螺钉-2"]),
+            new PurchasedPartReading(springWasher, 2, ["气缸组件-1/弹垫-1", "气缸组件-1/弹垫-2"]),
+        ]);
+    var kinds = new Dictionary<string, PackagePartCategory>(StringComparer.OrdinalIgnoreCase)
+    {
+        [cylinder] = PackagePartCategory.Purchased,
+    };
+
+    // 改件别之前：子文件夹件照常两行、数量照抄探查。
+    var before = PackagePlanner.Create(probe);
+    Equal(3, before.Purchased.Single(entry => entry.SourcePath == screw).Quantity, "改件别前螺钉照抄探查数量");
+    True(before.Purchased.Any(entry => entry.SourcePath == springWasher), "改件别前弹垫照常列出");
+
+    // 打包：组件整体一行，它里面的子文件夹件不再单独计。
+    var package = PackagePlanner.Create(probe, kinds);
+    Equal(1, package.Purchased.Single(entry => entry.SourcePath == cylinder).Quantity, "外购组件整体算一种货");
+    Equal(2, package.Purchased.Single(entry => entry.SourcePath == screw).Quantity,
+        "组件里面那一个螺钉不得再计，只剩总装直接用的 2 个");
+    True(package.Entries.All(entry => entry.SourcePath != springWasher), "只在外购组件里的子文件夹件不得出现在打包表里");
+    True(package.Entries.All(entry => entry.SourcePath != piston), "外购组件里面的同级件不得出现在打包表里");
+
+    // 属性整备：同一份记账，同样的结论；另外组件要挪进「外购件」。
+    var plan = PropertyPrepPlanner.Create(probe, "ZS", kinds: kinds);
+    True(plan.BlockingIssues.Count == 0, "合法样件不得有阻断：" + string.Join("；", plan.BlockingIssues));
+    var purchasedDir = Path.Combine(dir, ConversionPathLayout.PurchasedPartsDirectoryName);
+    var cylinderRow = plan.ExcludedEntries.Single(entry => entry.SourcePath == cylinder);
+    Equal(Path.Combine(purchasedDir, "气缸组件.SLDASM"), cylinderRow.TargetPath, "改成外购件的同级组件必须挪进外购件文件夹");
+    True(cylinderRow.ParentSourcePaths.Contains(rootAsm, StringComparer.OrdinalIgnoreCase), "挪走组件要改总装里的引用");
+    True(plan.ExcludedEntries.Any(entry => entry.SourcePath == screw), "总装直接用的子文件夹螺钉照样占一行");
+    True(plan.ExcludedEntries.All(entry => entry.SourcePath != springWasher), "只在外购组件里的子文件夹件不得占行");
+    True(plan.ExcludedEntries.Single(entry => entry.SourcePath == screw).TargetPath == screw,
+        "本来就在子文件夹里的外购件不挪");
+    var pistonMove = (plan.Relocated ?? []).Single(entry => entry.SourcePath == piston);
+    Equal(Path.Combine(purchasedDir, "活塞.SLDPRT"), pistonMove.TargetPath, "只属于外购组件的内部件跟着挪");
+    True(pistonMove.ParentSourcePaths.Contains(cylinder, StringComparer.OrdinalIgnoreCase), "挪内部件要改组件里的引用");
+    True(plan.Entries.Any(entry => entry.SourcePath == washer), "总装也直接用的垫片照常编号");
+    True((plan.Relocated ?? []).All(entry => entry.SourcePath != washer), "自制部分也在用的件不得挪走");
+    Equal(2, plan.Relocations.Count, "本轮挪两个文件：组件与活塞");
+    True(plan.CanWrite, "有文件要挪时必须允许写入");
+    True(plan.WorkerEntries.Any(entry => entry.SourcePath == piston), "跟着挪的内部件必须进 Worker 请求");
+
+    // Worker 校验：外购件目录这一轮还不存在，也必须放行；别的换目录照样拦。
+    var request = new AssemblyRenameRequest("relocate", rootAsm, "ZS", plan.WorkerEntries, WriteProperties: true);
+    WorkerRequestValidator.Validate(request);
+    // 挪进外购件文件夹之外的换目录必须拦下。
+    Throws<InvalidDataException>(() => WorkerRequestValidator.Validate(request with
+    {
+        Entries = [plan.Entries.Single(entry => entry.SourcePath == plate) with { TargetPath = Path.Combine(standardDir, "ZS-01 底板.SLDPRT") }],
+    }));
+
+    // 写完之后按新路径重建：组件已在子文件夹里，不再挪；内部件不出现；外购件读数跟着搬（原 G-4）。
+    var moved = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [cylinder] = Path.Combine(purchasedDir, "气缸组件.SLDASM"),
+        [piston] = Path.Combine(purchasedDir, "活塞.SLDPRT"),
+        [screw] = Path.Combine(standardDir, "GB70 M4x10 螺钉-改.SLDPRT"),
+    };
+    var remapped = RenameReindex.Remap(probe, moved);
+    True(remapped.PurchasedParts!.Any(item => item.SourcePath == moved[screw]), "改名后外购件读数必须跟到新路径（G-4）");
+    var remappedKinds = RenameReindex.RemapKeys(kinds, moved);
+    var after = PropertyPrepPlanner.Create(remapped, "ZS", kinds: remappedKinds);
+    Equal(0, after.Relocations.Count, "挪过去之后不得再挪一次");
+    True(after.ExcludedEntries.Any(entry => entry.SourcePath == moved[cylinder]), "挪过去的组件照样占一行外购件");
+    True(after.ExcludedEntries.All(entry => entry.SourcePath != moved[piston])
+         && after.Entries.All(entry => entry.SourcePath != moved[piston]), "组件里的件挪过去之后仍不进表");
+
+    // 材料槽：链接表达式，不是记号本身。
+    Equal("\"SW-Material@@默认@ZS-01 底板.SLDPRT\"", PartPropertyNames.MaterialLinkExpression("默认", "ZS-01 底板.SLDPRT"),
+        "材料槽必须写成带引号、带配置名和文件名的链接表达式，写记号本身只会显示 SW-Material");
+    var write = new PartPropertyWrite("ZS-01", "机加件", "", "", "6061", "", "", "SOLIDWORKS 材料", "底板", KeepDrawingNumber: true);
+    True(write.Pairs().All(pair => pair.Key != PartPropertyNames.DrawingNumber), "保留原图号时不得写「图号」槽");
+    True(new PartPropertyWrite("ZS-01", "机加件", "", "", "", "", "").Pairs()
+            .Any(pair => pair.Key == PartPropertyNames.DrawingNumber && pair.Value == "ZS-01"),
+        "填了前缀时照写「图号」槽");
+}
+
+/// <summary>
 /// V4.11 件别改写：同一份记账同时决定打包清单与属性整备编号。
 /// 探查结果沿用 <see cref="TestPackagePlanning"/> 那台设备：总装下一个用了两次的进样模块（内含轴）、
 /// 一块底板、子文件夹里 12 个螺钉。
@@ -4974,7 +5111,9 @@ static void TestPackageViewModelFlow(string root)
     var plateId = viewModel.Parts.Single(row => row.PartName == "底板").Id;
     Equal(PackagePartCategory.Purchased, viewModel.CyclePartKind(plateId, out _), "属性整备里同样能点件别");
     True(!viewModel.FindRow(plateId)!.WritesProperties, "改成外购件的零件不得写属性");
-    True(!viewModel.CanWrite, "只剩外购件和参考件时属性整备没有可写的零件：" + viewModel.RenameBlockedReason);
+    // V4.15：同级件改成外购件，写入时要挪进「外购件」文件夹——所以这一轮仍然有活可干。
+    Equal("待移入", viewModel.FindRow(plateId)!.Status, "同级件改成外购件后必须标明写入时会移入外购件文件夹");
+    True(viewModel.CanWrite, "有外购件要移入时必须允许写入：" + viewModel.RenameBlockedReason);
     Equal(PackagePartCategory.Reference, viewModel.CyclePartKind(plateId, out _), "外购件再点一下是参考");
     Equal(PackagePartCategory.Machined, viewModel.CyclePartKind(plateId, out _), "参考再点一下回到机加件");
     True(viewModel.FindRow(plateId)!.WritesProperties, "改回机加件后恢复写属性");

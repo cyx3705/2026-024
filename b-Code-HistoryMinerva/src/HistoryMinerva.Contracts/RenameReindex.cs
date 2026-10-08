@@ -1,7 +1,7 @@
 namespace HistoryMinerva.Contracts;
 
 /// <summary>
-/// V4.8：改名（或按空格洗图号）之后，把一份探查结果整体挪到新文件名上。
+/// V4.8：改名（V4.15 起还有外购件挪进「外购件」文件夹）之后，把一份探查结果整体挪到新路径上。
 ///
 /// **为什么必须有这一步**：改名成功的那一刻，上一次解析出来的每一条路径都指向一个不存在的
 /// 文件。V4.8 之前用户只能重新选一次装配体再解析一次——而重新解析要再开一遍 SolidWorks、
@@ -68,7 +68,12 @@ public static class RenameReindex
                 : [.. probe.Documents.Select(document => RemapDocument(document, moved))],
             probe.PartProperties is null
                 ? null
-                : [.. probe.PartProperties.Select(item => item with { SourcePath = Map(item.SourcePath, moved) })]);
+                : [.. probe.PartProperties.Select(item => item with { SourcePath = Map(item.SourcePath, moved) })],
+            // 外购件读数也要跟上（原缺口 G-4）：漏掉它，同一份探查结果改完名再算打包，
+            // 外购件整批从清单上消失。V4.15 起外购件本身也会被挪进「外购件」文件夹，更不能漏。
+            probe.PurchasedParts is null
+                ? null
+                : [.. probe.PurchasedParts.Select(item => item with { SourcePath = Map(item.SourcePath, moved) })]);
     }
 
     /// <summary>按同一份映射搬一份「源路径 → 值」的记账，键换新路径，值原样带过去。</summary>
