@@ -16,6 +16,9 @@ namespace HistoryMinerva.Contracts;
 ///         里面的件全部不进清单；参考件连同其内部件整个排除。</item>
 ///   <item><b>数量</b>：整个总装配体里的实例总数，含嵌套倍数（子装配用两次、里面三个同款件＝6），
 ///         抑制件不计。</item>
+///   <item><b>顺序</b>（V4.16）：外购件按 SolidWorks 左侧特征树从上到下排，同一个件在树里出现多次时
+///         只占它第一次出现的那一行、数量累加（<see cref="AssemblyProbeResult.TreeOrder"/>）；
+///         没有树序（旧结果、Solid Edge 源）时按规格排。机加件仍按图号排。</item>
 ///   <item><b>图号与名称</b>：按文件名第一个空格切，与改名管线同一条口径
 ///         （<see cref="DrawingNumber.SplitFileName"/>）。BOM 描述的是此刻磁盘上的事实，
 ///         不重新编号——重新编号得到的是「改完名之后的图号」，而文件还没改。</item>
@@ -50,7 +53,7 @@ public static class PackagePlanner
             return Empty(rootPath, issues);
         }
 
-        var tally = new Tally();
+        var tally = new Tally(TreeRanks(probe));
         var pathById = PartKinds.OccurrencePaths(probe);
         CountOccurrences(probe, rootPath, kinds, pathById, tally, warnings);
         CountPurchasedReadings(probe, rootPath, kinds, pathById, tally, warnings);
@@ -115,7 +118,7 @@ public static class PackagePlanner
                 continue;
             }
 
-            tally.Add(path, kind, isAssembly, counted: true);
+            tally.Add(path, kind, isAssembly, counted: true, occurrenceIds: [occurrence.OccurrenceId]);
         }
     }
 
@@ -158,7 +161,11 @@ public static class PackagePlanner
                 kind = PackagePartCategory.Purchased;
             }
 
-            tally.Add(path, kind, isAssembly, counted: kind != PackagePartCategory.Reference, instances);
+            // 排位只看计了数的那几个实例：落在外购组件里面的那几个不在表上，不该把它拉到组件的位置上去。
+            var counted = reading.OccurrenceIds?
+                .Where(id => !PartKinds.HasExcludedAncestor(id, pathById, kinds, rootPath))
+                .ToArray();
+            tally.Add(path, kind, isAssembly, counted: kind != PackagePartCategory.Reference, instances, counted);
         }
     }
 
@@ -212,6 +219,19 @@ public static class PackagePlanner
         return prefix.Length > 0 ? prefix : Path.GetFileNameWithoutExtension(fileName).Trim();
     }
 
+    /// <summary>实例 id → 在特征树上的位次。没有树序时为空表，所有件同排位，退回按规格排。</summary>
+    private static IReadOnlyDictionary<string, int> TreeRanks(AssemblyProbeResult probe)
+    {
+        var ranks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in probe.TreeOrder ?? [])
+        {
+            if (!string.IsNullOrEmpty(id))
+                ranks.TryAdd(id, ranks.Count);
+        }
+
+        return ranks;
+    }
+
     private static PackagePlan Empty(string sourceAssemblyPath, IReadOnlyList<string> issues)
         => new(
             sourceAssemblyPath,
@@ -235,30 +255,54 @@ public static class PackagePlanner
         => Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(sourcePath.ToLowerInvariant())))[..32];
 
-    /// <summary>按路径累计数量；一个路径只有一种件别。</summary>
-    private sealed class Tally
+    /// <summary>
+    /// 按路径累计数量；一个路径只有一种件别。V4.16 顺带记下每个路径在特征树上最靠上的那个实例的位次——
+    /// 同一个件在树上出现多次，数量都累加到它第一次出现的那一行上。
+    /// </summary>
+    private sealed class Tally(IReadOnlyDictionary<string, int> treeRanks)
     {
-        private readonly Dictionary<string, (PackagePartCategory Kind, bool IsAssembly, int Quantity)> _items =
+        private readonly Dictionary<string, (PackagePartCategory Kind, bool IsAssembly, int Quantity, int Rank)> _items =
             new(StringComparer.OrdinalIgnoreCase);
 
-        public void Add(string path, PackagePartCategory kind, bool isAssembly, bool counted, int count = 1)
+        public void Add(
+            string path,
+            PackagePartCategory kind,
+            bool isAssembly,
+            bool counted,
+            int count = 1,
+            IReadOnlyList<string>? occurrenceIds = null)
         {
-            var quantity = _items.TryGetValue(path, out var current) ? current.Quantity : 0;
-            _items[path] = (kind, isAssembly, quantity + (counted ? count : 0));
+            var (quantity, rank) = _items.TryGetValue(path, out var current)
+                ? (current.Quantity, current.Rank)
+                : (0, int.MaxValue);
+            foreach (var id in occurrenceIds ?? [])
+            {
+                if (treeRanks.TryGetValue(id, out var position) && position < rank)
+                    rank = position;
+            }
+
+            _items[path] = (kind, isAssembly, quantity + (counted ? count : 0), rank);
         }
 
-        /// <summary>机加件（零件与自制组件按图号混排）→ 外购件（按规格）→ 参考。</summary>
+        /// <summary>
+        /// 机加件（零件与自制组件按图号混排）→ 外购件（按特征树从上到下；树上找不到的排在最后，按规格）→ 参考。
+        /// </summary>
         public IReadOnlyList<PackagePartEntry> ToEntries()
         {
-            var entries = _items
-                .Select(pair => CreateEntry(pair.Key, pair.Value.Quantity, pair.Value.Kind, pair.Value.IsAssembly))
+            var ranked = _items
+                .Select(pair => (
+                    Entry: CreateEntry(pair.Key, pair.Value.Quantity, pair.Value.Kind, pair.Value.IsAssembly),
+                    pair.Value.Rank))
                 .ToArray();
+            var entries = ranked.Select(item => item.Entry).ToArray();
             return entries.Where(entry => entry.Category == PackagePartCategory.Machined)
                 .OrderBy(entry => entry.DrawingNumber, StringComparer.CurrentCultureIgnoreCase)
                 .ThenBy(entry => entry.PartName, StringComparer.CurrentCultureIgnoreCase)
-                .Concat(entries.Where(entry => entry.Category == PackagePartCategory.Purchased)
-                    .OrderBy(entry => entry.Specification, StringComparer.CurrentCultureIgnoreCase)
-                    .ThenBy(entry => entry.PartName, StringComparer.CurrentCultureIgnoreCase))
+                .Concat(ranked.Where(item => item.Entry.Category == PackagePartCategory.Purchased)
+                    .OrderBy(item => item.Rank)
+                    .ThenBy(item => item.Entry.Specification, StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(item => item.Entry.PartName, StringComparer.CurrentCultureIgnoreCase)
+                    .Select(item => item.Entry))
                 .Concat(entries.Where(entry => entry.Category == PackagePartCategory.Reference)
                     .OrderBy(entry => entry.FileName, StringComparer.CurrentCultureIgnoreCase))
                 .ToArray();

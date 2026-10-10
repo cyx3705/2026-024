@@ -13,13 +13,20 @@ namespace HistoryMinerva.Bom;
 /// 查询本身失败（HistoryApollo 没装、没配密钥、断网）时的原因。
 /// 模型搜过之后确认查不到，是一个**答案**而不是失败，此时为 null。
 /// </param>
-internal sealed record BrandAnswer(string Brand, string? Failure)
+/// <param name="Name">
+/// V4.16：文件名里没有名称的外购件，顺带查出来的通用品名（气缸、直线轴承……）；没问、没查到都是 null。
+/// </param>
+internal sealed record BrandAnswer(string Brand, string? Failure, string? Name = null)
 {
     public bool Failed => Failure is not null;
 }
 
 /// <summary>
 /// V4.10.4：整体打包时，按外购件规格联网查品牌，写进外购件清单的「备注[参考供应商]」。
+/// V4.16：文件名里没有名称的外购件，同一次调用顺带查出名称，写进表格与清单的「名称」。
+///
+/// 不写 <c>provider=</c>：联网调用由 Apollo 0.6 起默认走联网供应商（Gemini + Google 搜索），
+/// 它没配密钥时 Apollo 自己退回 DeepSeek + 博查并在控制台说明。查型号要的是搜索准头，选哪家归 Apollo 管。
 ///
 /// **软依赖 HistoryApollo**：本模块不引用 Apollo 的任何程序集，只经命令总线发一行
 /// <c>apollo.chat.ask web=true json=true</c>。Apollo 没装、没配密钥或断网时，总线回的是失败回执
@@ -36,6 +43,8 @@ internal static class PurchasedBrandLookup
 
     private const int MaxBrandLength = 60;
 
+    private const int MaxNameLength = 30;
+
     /// <summary>
     /// 一个编出来的品牌比 N/A 更糟：采购会照着它去询价，所以「不许凭型号长相猜」一直在。
     /// 4.10.5 放宽的是**证据**而不是猜测（DEC-065）：代理商、电商页把该型号或同系列写在某品牌下就算数——
@@ -46,12 +55,13 @@ internal static class PurchasedBrandLookup
     /// </summary>
     private const string SystemPrompt =
         "你是工业采购助手，负责确认外购件的品牌（生产厂家）。"
-        + "搜索策略：先用 web_search 搜完整型号；结果里没有页面对应这个型号时，换成「型号 + 品类」再搜，品类参考所在文件夹名；"
+        + "搜索策略：先联网搜完整型号；结果里没有页面对应这个型号时，换成「型号 + 品类」再搜，品类参考所在文件夹名；"
         + "仍没有时，搜型号去掉尺寸参数后的系列代号加品类。"
         + "判断规则：只要有搜索结果把这个型号、或同一系列型号，明确标在某个品牌名下（官网、代理商、电商商品页写明品牌都算），就采信那个品牌；"
         + "找不到任何把型号或系列对应到品牌的页面时 brand 写 N/A，不要凭型号长得像就猜；GB、DIN、ISO 等通用标准件没有特定品牌时写 N/A。"
         + "品牌写厂家常用英文名，例如 SMC、AirTAC、MISUMI。"
-        + "只输出一个 json 对象，例如 {\"brand\": \"SMC\"} 或 {\"brand\": \"N/A\"}，不要输出其他文字。";
+        + "提问里说「名称未知」时，再给出 name：这个件的中文通用品名，例如 气缸、直线轴承、浮动接头，只写品类、不写型号和品牌，确定不了写 N/A；名称已知时不要输出 name。"
+        + "只输出一个 json 对象，例如 {\"brand\": \"SMC\"}、{\"brand\": \"SMC\", \"name\": \"气缸\"} 或 {\"brand\": \"N/A\"}，不要输出其他文字。";
 
     /// <summary>
     /// STEP 导入留在文件名尾巴上的东西：<c>_step</c>、<c>_stp</c>、<c>.STEP-1</c>、<c>(0_0)</c>、<c>_0_0_</c>。
@@ -115,21 +125,27 @@ internal static class PurchasedBrandLookup
     internal static string FolderCategory(PackagePartEntry entry)
         => Path.GetFileName(Path.GetDirectoryName(entry.SourcePath ?? string.Empty) ?? string.Empty) ?? string.Empty;
 
-    /// <summary>发给总线的那一行。参数值一律经 <see cref="CommandParser.QuoteArg"/> 编码，不含换行。</summary>
+    /// <summary>
+    /// 发给总线的那一行。参数值一律经 <see cref="CommandParser.QuoteArg"/> 编码，不含换行。
+    /// 不设 maxtokens（V4.16）：Gemini 的思考 token 算在输出上限里，300 会把答复截成空串；答复本身只有一个短 JSON。
+    /// </summary>
     public static string BuildCommand(PackagePartEntry entry)
-        => "apollo.chat.ask web=true json=true maxtokens=300 timeout=120"
+        => "apollo.chat.ask web=true json=true timeout=120"
            + " system=" + CommandParser.QuoteArg(SystemPrompt)
            + " prompt=" + CommandParser.QuoteArg(BuildPrompt(entry));
 
     internal static string BuildPrompt(PackagePartEntry entry)
     {
         var parts = new List<string> { $"外购件规格型号：{QuerySpecification(entry)}" };
-        if (entry.PartName.Trim() is { Length: > 0 } name)
-            parts.Add($"名称：{name}");
+        parts.Add(NeedsName(entry) ? "名称未知，请一并给出 name" : $"名称：{entry.PartName.Trim()}");
         if (FolderCategory(entry).Trim() is { Length: > 0 } folder)
             parts.Add($"品类（所在文件夹）：{folder}");
         return string.Join("；", parts) + "。请联网确认它的品牌，按 json 输出。";
     }
+
+    /// <summary>V4.16：文件名里没有名称（整个主名都是型号）的外购件要顺带查名称。</summary>
+    public static bool NeedsName(PackagePartEntry entry)
+        => entry.Category == PackagePartCategory.Purchased && entry.PartName.Trim().Length == 0;
 
     /// <summary>把 Apollo 的回执读成一个答案。</summary>
     public static BrandAnswer Read(CommandResult result)
@@ -143,11 +159,14 @@ internal static class PurchasedBrandLookup
         {
             using var document = JsonDocument.Parse(result.Message);
             var root = document.RootElement;
-            return root.ValueKind == JsonValueKind.Object
-                   && root.TryGetProperty("brand", out var brand)
-                   && brand.ValueKind == JsonValueKind.String
-                ? new BrandAnswer(Normalize(brand.GetString()), null)
-                : new BrandAnswer(NotAvailable, null);
+            if (root.ValueKind != JsonValueKind.Object)
+                return new BrandAnswer(NotAvailable, null);
+            var name = root.TryGetProperty("name", out var nameNode) && nameNode.ValueKind == JsonValueKind.String
+                ? NormalizeName(nameNode.GetString())
+                : null;
+            return root.TryGetProperty("brand", out var brand) && brand.ValueKind == JsonValueKind.String
+                ? new BrandAnswer(Normalize(brand.GetString()), null, name)
+                : new BrandAnswer(NotAvailable, null, name);
         }
         catch (JsonException)
         {
@@ -162,6 +181,18 @@ internal static class PurchasedBrandLookup
         if (text.Length == 0 || NotFoundWords.Contains(text))
             return NotAvailable;
         return text.Length <= MaxBrandLength ? text : text[..MaxBrandLength];
+    }
+
+    /// <summary>
+    /// 名称的读法：查不到的各种写法一律当没有（名称格留空，不写 N/A——空名称是「文件名里本来就没有」，
+    /// N/A 写进名称列只会让采购以为这是个叫 N/A 的件）。
+    /// </summary>
+    public static string? NormalizeName(string? name)
+    {
+        var text = Normalize(name);
+        if (text == NotAvailable)
+            return null;
+        return text.Length <= MaxNameLength ? text : text[..MaxNameLength];
     }
 
     /// <summary>经宿主命令总线查询。</summary>

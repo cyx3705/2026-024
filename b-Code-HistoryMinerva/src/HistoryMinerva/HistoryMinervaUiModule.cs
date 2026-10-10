@@ -168,8 +168,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 // 要到发出那一行指令时才知道——不在就是失败回执，那一格写 N/A，打包照常完成。
                 BrandLookup = _context.Bus is { } bus ? PurchasedBrandLookup.OverBus(bus) : null,
             };
-            // V4.10.5：「AI 查品牌」开关记在本机，页面实例重建（热重载、重启）后保持上次选择。
-            _viewModel.SetBrandLookupEnabled(PackageOptions.LoadBrandLookup(PackageOptionsPath));
+            // V4.10.5：打包开关记在本机，页面实例重建（热重载、重启）后保持上次选择（V4.16 起六个）。
+            _viewModel.SetPackageSteps(PackageOptions.Load(PackageOptionsPath));
         }
 
         return _viewModel;
@@ -337,24 +337,28 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 case "prefix":
                     model.DrawingPrefix = value ?? string.Empty;
                     break;
-                case "brandai":
+                case var step when PackageOptions.Keys.ContainsKey(step):
                     var enabled = ParseSwitch(value ?? string.Empty);
-                    model.SetBrandLookupEnabled(enabled);
+                    var steps = PackageOptions.With(model.PackageSteps, step, enabled);
+                    model.SetPackageSteps(steps);
+                    var label = $"打包步骤「{PackageStepLabel(step)}」已{(enabled ? "开启" : "关闭")}";
                     try
                     {
-                        PackageOptions.SaveBrandLookup(PackageOptionsPath, enabled);
+                        PackageOptions.Save(PackageOptionsPath, steps);
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                     {
                         // 记不住只影响下次打开页面时的初值，本轮开关照样生效；报出来，不吞掉。
-                        return CommandResult.Ok($"AI 查品牌已{(enabled ? "开启" : "关闭")}，但未能保存到本机：{ex.Message}");
+                        return CommandResult.Ok($"{label}，但未能保存到本机：{ex.Message}");
                     }
 
-                    return CommandResult.Ok(enabled
-                        ? "AI 查品牌已开启：打包时用 DeepSeek 联网搜索外购件品牌（按次计费）。"
-                        : "AI 查品牌已关闭：打包不调用 DeepSeek、不搜索，品牌列与外购件清单 H 列留空。");
+                    return CommandResult.Ok(step == "brandai"
+                        ? enabled
+                            ? "AI 查品牌已开启：打包时联网查外购件品牌，文件名里没有名称的顺带查名称（Apollo 联网供应商，按次计费）。"
+                            : "AI 查品牌已关闭：打包不调用模型、不搜索，品牌列与外购件清单 H 列留空。"
+                        : label + "。");
                 default:
-                    return CommandResult.Fail("未知转换选项；支持 recognize、continue、mates、prefix、brandai");
+                    return CommandResult.Fail("未知转换选项；支持 recognize、continue、mates、prefix、machinedbom、purchasedbom、brandai、step、dwg、pdf");
             }
         }
         catch (InvalidOperationException ex)
@@ -765,23 +769,42 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         _ => result.Message.Trim(),
     };
 
-    /// <summary>「AI 查品牌」开关的本机存档位置（V4.10.5）。</summary>
+    private static string PackageStepLabel(string option) => option switch
+    {
+        "machinedbom" => "机加件清单",
+        "purchasedbom" => "外购件清单",
+        "brandai" => "AI 查品牌",
+        "step" => "STEP",
+        "dwg" => "DWG",
+        "pdf" => "PDF",
+        _ => option,
+    };
+
+    /// <summary>打包开关的本机存档位置（V4.10.5）。</summary>
     private string PackageOptionsPath
         => PackageOptions.PathIn(
             (_runtimePaths ?? throw new InvalidOperationException("Minerva 模块尚未装配。")).ModuleDataDirectory);
 
     /// <summary>
-    /// 页面描述里只有「AI 查品牌」开关的初值是活的：页面在就取页面上的，否则取本机记下的上次选择。
+    /// 页面描述里只有六个打包开关的初值是活的：页面在就取页面上的，否则取本机记下的上次选择。
     /// 其余部分是常量；开关拨动之后由控件自己持有状态，不需要再重发描述。
+    /// 占位写成 <c>__PKG_开关名__</c>。
     /// </summary>
     private string DescribePage()
     {
-        var enabled = _viewModel?.BrandLookupEnabled
-            ?? (_runtimePaths is null || PackageOptions.LoadBrandLookup(PackageOptionsPath));
-        return DescribeJson.Replace(BrandAiPlaceholder, enabled ? "true" : "false", StringComparison.Ordinal);
-    }
+        var steps = _viewModel?.PackageSteps
+            ?? (_runtimePaths is null ? PackageSteps.All : PackageOptions.Load(PackageOptionsPath));
+        var json = DescribeJson;
+        foreach (var option in PackageOptions.Keys.Keys)
+        {
+            json = json.Replace(
+                $"__PKG_{option.ToUpperInvariant()}__",
+                PackageOptions.Get(steps, option) ? "true" : "false",
+                StringComparison.Ordinal);
+        }
 
-    private const string BrandAiPlaceholder = "__BRAND_AI__";
+        return json;
+    }
 
     private CommandResult Data(CommandContext command)
     {
@@ -914,7 +937,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 { "case": "SolidWorks .SLDASM → 整体打包（零件采购：BOM + 图纸）", "type": "stack", "gap": "tight", "children": [
                   { "type": "panel", "id": "sw-package-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "打包" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
                   { "type": "table", "id": "sw-package-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号 / 规格", "width": "170" }, { "key": "name", "title": "名称", "width": "*" }, { "key": "quantity", "title": "数量", "width": "60" }, { "key": "category", "title": "件别", "width": "90", "cellAction": "minerva.cell.kind" }, { "key": "brand", "title": "品牌", "width": "110" }, { "key": "hasdrawing", "title": "工程图", "width": "70" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "detail", "title": "结果", "width": "2*" }] },
-                  { "type": "panel", "id": "sw-package-options", "text": "打包选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-kind", "label": "", "mode": "select", "options": ["件别", "机加件", "外购件", "排除"], "commitAction": "minerva.property.kind" }, { "kind": "switch", "id": "package-brand-ai", "label": "AI 查品牌（DeepSeek 联网搜索，按次计费）", "value": "__BRAND_AI__", "action": "minerva.options.brandai" }] }] }
+                  { "type": "panel", "id": "sw-package-options", "text": "打包选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-kind", "label": "", "mode": "select", "options": ["件别", "机加件", "外购件", "排除"], "commitAction": "minerva.property.kind" }, { "kind": "switch", "id": "package-brand-ai", "label": "AI 查品牌与名称（联网，按次计费）", "value": "__PKG_BRANDAI__", "action": "minerva.options.brandai" }] }, { "mode": "even", "widgets": [{ "kind": "switch", "id": "package-machined-bom", "label": "机加件清单", "value": "__PKG_MACHINEDBOM__", "action": "minerva.options.machinedbom" }, { "kind": "switch", "id": "package-purchased-bom", "label": "外购件清单", "value": "__PKG_PURCHASEDBOM__", "action": "minerva.options.purchasedbom" }] }, { "mode": "even", "widgets": [{ "kind": "switch", "id": "package-step", "label": "STEP", "value": "__PKG_STEP__", "action": "minerva.options.step" }, { "kind": "switch", "id": "package-dwg", "label": "DWG", "value": "__PKG_DWG__", "action": "minerva.options.dwg" }, { "kind": "switch", "id": "package-pdf", "label": "PDF", "value": "__PKG_PDF__", "action": "minerva.options.pdf" }] }] }
                 ] }
               ] }
             ] }
@@ -936,7 +959,12 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             { "id": "minerva.options.continue", "title": "更新失败策略", "command": "minerva.ui.options", "args": { "option": "continue", "value": "{value}" }, "summary": "设置零件失败时是否继续" },
             { "id": "minerva.options.mates", "title": "更新装配关系", "command": "minerva.ui.options", "args": { "option": "mates", "value": "{value}" }, "summary": "设置是否重建装配关系" },
             { "id": "minerva.options.prefix", "title": "更新图号前缀", "command": "minerva.ui.options", "args": { "option": "prefix", "value": "{value}" }, "summary": "设置属性整备图号前缀" },
-            { "id": "minerva.options.brandai", "title": "AI 查品牌", "command": "minerva.ui.options", "args": { "option": "brandai", "value": "{value}" }, "summary": "整体打包时是否用 DeepSeek 联网搜索外购件品牌（按次计费）；关着时品牌列与外购件清单 H 列留空" },
+            { "id": "minerva.options.brandai", "title": "AI 查品牌", "command": "minerva.ui.options", "args": { "option": "brandai", "value": "{value}" }, "summary": "整体打包时是否联网查外购件品牌、并给文件名里没有名称的外购件补名称（Apollo 联网供应商，按次计费）；关着时品牌列与外购件清单 H 列留空" },
+            { "id": "minerva.options.machinedbom", "title": "机加件清单", "command": "minerva.ui.options", "args": { "option": "machinedbom", "value": "{value}" }, "summary": "整体打包时是否生成机加件清单与截图；关着时不写也不删上一轮的" },
+            { "id": "minerva.options.purchasedbom", "title": "外购件清单", "command": "minerva.ui.options", "args": { "option": "purchasedbom", "value": "{value}" }, "summary": "整体打包时是否生成外购件清单与截图；关着时不写也不删上一轮的" },
+            { "id": "minerva.options.step", "title": "导出 STEP", "command": "minerva.ui.options", "args": { "option": "step", "value": "{value}" }, "summary": "整体打包时是否导出机加件 STEP" },
+            { "id": "minerva.options.dwg", "title": "导出 DWG", "command": "minerva.ui.options", "args": { "option": "dwg", "value": "{value}" }, "summary": "整体打包时是否把工程图导成 DWG" },
+            { "id": "minerva.options.pdf", "title": "导出 PDF", "command": "minerva.ui.options", "args": { "option": "pdf", "value": "{value}" }, "summary": "整体打包时是否把工程图导成 PDF" },
             { "id": "minerva.property.designer", "title": "设置设计", "command": "minerva.ui.property", "args": { "field": "designer", "value": "{value}" }, "summary": "把「设计」属性一次刷满全部零件" },
             { "id": "minerva.property.today", "title": "一键设置日期", "command": "minerva.ui.property", "args": { "field": "date" }, "summary": "把「日期」属性设为系统当日" },
             { "id": "minerva.property.kind", "title": "统一设置件别", "command": "minerva.ui.property", "args": { "field": "kind", "value": "{value}" }, "summary": "把表里每一行的件别统一为 机加件 / 外购件 / 排除；「参考部件」目录下的件与子文件夹里的装配体改不成的保持原样" },

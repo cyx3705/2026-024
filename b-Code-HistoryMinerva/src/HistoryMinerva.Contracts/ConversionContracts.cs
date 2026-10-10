@@ -333,7 +333,10 @@ public sealed record AssemblyProbeResult(
     IReadOnlyList<PartPropertyReading>? PartProperties = null,
     // V4.10：子文件夹外购件的路径与实例数，供整体打包写外购件 BOM。为 null 表示本次
     // 没有采集（Solid Edge 源）——不是「这台设备没有外购件」。
-    IReadOnlyList<PurchasedPartReading>? PurchasedParts = null);
+    IReadOnlyList<PurchasedPartReading>? PurchasedParts = null,
+    // V4.16：全部实例的 Name2，按 SolidWorks 左侧特征树从上到下、先父后子的顺序。整体打包据此给外购件排序
+    // （树上靠上的排在上面）。为 null 表示没有采集（Solid Edge 源、旧结果）——那时外购件按规格排。
+    IReadOnlyList<string>? TreeOrder = null);
 
 /// <summary>装配转换请求（<c>--assembly</c>）：零件作业、实例矩阵、子装配节点与配合关系，Worker 据此按源层级重建 SolidWorks 装配。</summary>
 public sealed record AssemblyBatchRequest(

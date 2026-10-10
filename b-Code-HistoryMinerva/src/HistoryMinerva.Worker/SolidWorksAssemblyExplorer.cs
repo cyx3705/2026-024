@@ -69,11 +69,12 @@ internal static class SolidWorksAssemblyExplorer
             // V4.8：属性整备表格要预填的三个槽。只在顶层那一次展平里收，
             // 因为那一遍就已经走过全部后代组件了。
             var partProperties = new Dictionary<string, PartPropertyReading>(StringComparer.OrdinalIgnoreCase);
+            var treeOrder = new List<string>();
             var documents = new List<AssemblyDocumentReading>
             {
                 ReadDocument(
                     interop, rootPath, occurrences, warnings, cancellationToken, rootPath,
-                    skippedPurchased, partProperties),
+                    skippedPurchased, partProperties, treeOrder),
             };
 
             var uniqueParts = occurrences
@@ -123,7 +124,8 @@ internal static class SolidWorksAssemblyExplorer
                 partProperties.Values
                     .OrderBy(item => item.SourcePath, StringComparer.OrdinalIgnoreCase)
                     .ToArray(),
-                skippedPurchased.ToReadings());
+                skippedPurchased.ToReadings(),
+                treeOrder);
         }
         catch (ClassifiedConversionException)
         {
@@ -168,7 +170,8 @@ internal static class SolidWorksAssemblyExplorer
         CancellationToken cancellationToken,
         string rootAssemblyPath,
         PurchasedPartCollector skippedPurchased,
-        Dictionary<string, PartPropertyReading>? partProperties)
+        Dictionary<string, PartPropertyReading>? partProperties,
+        List<string>? treeOrder = null)
     {
         var hash = ComputeSha256(assemblyPath);
         var children = new List<AssemblyChild>();
@@ -222,6 +225,8 @@ internal static class SolidWorksAssemblyExplorer
             if (output is not null)
             {
                 var descendants = interop.GetAssemblyComponents(model, topLevelOnly: false);
+                if (treeOrder is not null)
+                    treeOrder.AddRange(ReadTreeOrder(interop, model, directChildren, descendants, local, cancellationToken));
                 // 先把全部外购件实例的 id 认出来，再逐个判祖先。两遍是必须的：
                 // GetComponents 不保证父在子之前返回，一遍走完没法知道当前这一个
                 // 是不是落在某个外购件底下。
@@ -295,6 +300,143 @@ internal static class SolidWorksAssemblyExplorer
         if (children.Count == 0)
             warnings.Add($"装配没有可读的一级实例：{assemblyPath}");
         return new AssemblyDocumentReading(assemblyPath, children, local, relations);
+    }
+
+    /// <summary>
+    /// V4.16：全部实例的 <c>Name2</c>，按 SolidWorks 左侧特征树从上到下、先父后子排。整体打包据此给外购件排序。
+    ///
+    /// 两层分开取，因为 API 只给两样东西的顺序是有保证的：
+    /// 顶层用**特征树本身**——组件特征的名字就是组件的 <c>Name2</c>，按 <c>FirstFeature/GetNextFeature</c> 走一遍即树序，
+    /// 落在 FeatureManager 文件夹里的组件再看文件夹的子特征（两路都见到的去重）；
+    /// <c>GetComponents</c> 的返回顺序没有文档保证，用户在树上拖过顺序后它不跟着变。
+    /// 子装配体里面用 <c>GetChildren</c>（它的 <c>Name2</c> 已是 <c>父-1/子-1</c>），顺序只有真机核对过。
+    /// 任何一步读不到都不拦探查：树上没认到的实例按 <c>GetComponents</c> 的顺序补在最后，打包退回按规格排。
+    /// </summary>
+    private static IReadOnlyList<string> ReadTreeOrder(
+        SolidWorksInteropBridge interop,
+        object model,
+        IReadOnlyList<object> directChildren,
+        IReadOnlyList<object> descendants,
+        List<string> diagnostics,
+        CancellationToken cancellationToken)
+    {
+        var topLevel = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        foreach (var component in directChildren)
+        {
+            var name = TryGet(() => interop.GetComponentName(component), string.Empty);
+            if (name.Length > 0)
+                topLevel.TryAdd(name, component);
+        }
+
+        var topOrder = new List<string>();
+        var seenTop = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Visit(object feature)
+        {
+            var name = TryGet(() => interop.FeatureName(feature), string.Empty);
+            if (topLevel.ContainsKey(name) && seenTop.Add(name))
+                topOrder.Add(name);
+        }
+
+        object? feature = null;
+        try
+        {
+            feature = interop.FirstFeature(model);
+            while (feature is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                object? next = null;
+                try
+                {
+                    next = interop.NextFeature(feature);
+                    Visit(feature);
+                    if (string.Equals(
+                            TryGet(() => interop.FeatureTypeName(feature), string.Empty),
+                            "FtrFolder",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        VisitFolder(interop, feature, Visit);
+                    }
+                }
+                finally
+                {
+                    ComRelease.Final(feature);
+                    feature = next;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            diagnostics.Add("遍历特征树读取组件顺序失败，外购件退回按规格排：" + ex.Message);
+        }
+        finally
+        {
+            ComRelease.Final(feature);
+        }
+
+        // 树上没认到的顶层组件（读不到名字、特征名与组件名不一致）按 GetComponents 的顺序补上。
+        foreach (var name in topLevel.Keys)
+        {
+            if (seenTop.Add(name))
+                topOrder.Add(name);
+        }
+
+        var order = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Walk(object component, int depth)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var name = TryGet(() => interop.GetComponentName(component), string.Empty);
+            if (name.Length == 0 || !seen.Add(name))
+                return;
+            order.Add(name);
+            // 深度兜底：坏掉的引用环不该让探查栈溢出。
+            if (depth >= 32)
+                return;
+            foreach (var child in TryGet(() => interop.GetComponentChildren(component), (IReadOnlyList<object>)[]))
+                Walk(child, depth + 1);
+        }
+
+        foreach (var name in topOrder)
+            Walk(topLevel[name], 0);
+        foreach (var component in descendants)
+        {
+            var name = TryGet(() => interop.GetComponentName(component), string.Empty);
+            if (name.Length > 0 && seen.Add(name))
+                order.Add(name);
+        }
+
+        return order;
+    }
+
+    /// <summary>FeatureManager 文件夹的子特征（组件放进文件夹后挂在这里）。文件夹可以嵌套。</summary>
+    private static void VisitFolder(SolidWorksInteropBridge interop, object folder, Action<object> visit)
+    {
+        var sub = TryGet(() => interop.GetFirstSubFeature(folder), null);
+        while (sub is not null)
+        {
+            object? next = null;
+            try
+            {
+                next = TryGet(() => interop.GetNextSubFeature(sub), null);
+                visit(sub);
+                if (string.Equals(
+                        TryGet(() => interop.FeatureTypeName(sub), string.Empty),
+                        "FtrFolder",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    VisitFolder(interop, sub, visit);
+                }
+            }
+            finally
+            {
+                ComRelease.Final(sub);
+                sub = next;
+            }
+        }
     }
 
     /// <summary>

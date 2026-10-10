@@ -73,7 +73,9 @@ public static class RenameReindex
             // 外购件整批从清单上消失。V4.15 起外购件本身也会被挪进「外购件」文件夹，更不能漏。
             probe.PurchasedParts is null
                 ? null
-                : [.. probe.PurchasedParts.Select(item => item with { SourcePath = Map(item.SourcePath, moved) })]);
+                : [.. probe.PurchasedParts.Select(item => item with { SourcePath = Map(item.SourcePath, moved) })],
+            // 实例 id 是探查那一刻的 Name2，上面的 Occurrences 也没改 id，树序原样带着才对得上。
+            probe.TreeOrder);
     }
 
     /// <summary>按同一份映射搬一份「源路径 → 值」的记账，键换新路径，值原样带过去。</summary>

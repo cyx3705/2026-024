@@ -69,25 +69,66 @@ public static class BomWorkbookWriter
     /// V4.10.4：按 <see cref="PackagePartEntry.Id"/> 取的品牌，写进 H 列。为 null 或缺这一行时 H 列留空——
     /// 「没查过」与「查过、写 N/A」在清单上必须分得开。
     /// </param>
-    /// <returns>写进去的数据行数。</returns>
+    /// <param name="names">
+    /// V4.16：AI 补出来的名称，按 <see cref="PackagePartEntry.Id"/> 取。只有文件名里没有名称的外购件才会有这一项，
+    /// 有就写进 E 列；文件名里本来有的名称永远不被替换。
+    /// </param>
+    /// <returns>写进去的数据行数（合并后的）。</returns>
     public static int WritePurchased(
         PackagePlan plan,
         string outputPath,
-        IReadOnlyDictionary<string, string>? brands = null)
+        IReadOnlyDictionary<string, string>? brands = null,
+        IReadOnlyDictionary<string, string>? names = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        var entries = plan.Purchased;
-        var rows = entries.Select((entry, index) => (IReadOnlyList<SheetCellValue>)
+        var lines = MergePurchased(plan.Purchased, names);
+        var rows = lines.Select((line, index) => (IReadOnlyList<SheetCellValue>)
         [
             SheetCellValue.Number("A", index + 1),
-            SheetCellValue.Text("D", entry.Specification),
-            SheetCellValue.Text("E", entry.PartName),
-            SheetCellValue.Number("F", entry.Quantity),
-            .. BrandCell(brands, entry),
+            SheetCellValue.Text("D", line.Entry.Specification),
+            SheetCellValue.Text("E", line.Name),
+            SheetCellValue.Number("F", line.Quantity),
+            .. BrandCell(brands, line.Entry),
         ]).ToArray();
 
         Write(PurchasedTemplateResource, outputPath, rows, afterFill: null);
-        return entries.Count;
+        return lines.Count;
+    }
+
+    /// <summary>外购件清单上的一行：取这一行的那个件（排在最上面的那个）、写上去的名称与合计数量。</summary>
+    internal sealed record PurchasedLine(PackagePartEntry Entry, string Name, int Quantity);
+
+    /// <summary>
+    /// V4.16：同规格、同名称的外购件只占一行，数量加到排在最上面的那一行上（用户的话：下面的有重叠就在上方加数量）。
+    ///
+    /// 计划里已经按路径合过一次（同一个文件出现多次）；这里合的是**不同文件、同一种货**——
+    /// 同一颗螺钉被复制进两个文件夹，采购买的仍是一种。顺序沿用计划的（特征树从上到下），合并不改先后。
+    /// 规格和名称都按不分大小写、去首尾空白比较；两样都空的不合并（说不清是不是同一种）。
+    /// </summary>
+    internal static IReadOnlyList<PurchasedLine> MergePurchased(
+        IReadOnlyList<PackagePartEntry> entries,
+        IReadOnlyDictionary<string, string>? names = null)
+    {
+        var lines = new List<PurchasedLine>(entries.Count);
+        var indexByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in entries)
+        {
+            var name = entry.PartName.Length == 0 && names is not null && names.TryGetValue(entry.Id, out var found)
+                ? found
+                : entry.PartName;
+            var key = entry.Specification.Trim() + "\u001f" + name.Trim();
+            if (key.Length > 1 && indexByKey.TryGetValue(key, out var index))
+            {
+                lines[index] = lines[index] with { Quantity = lines[index].Quantity + entry.Quantity };
+                continue;
+            }
+
+            if (key.Length > 1)
+                indexByKey[key] = lines.Count;
+            lines.Add(new PurchasedLine(entry, name, entry.Quantity));
+        }
+
+        return lines;
     }
 
     private static SheetCellValue[] BrandCell(IReadOnlyDictionary<string, string>? brands, PackagePartEntry entry)

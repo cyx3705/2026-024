@@ -303,7 +303,7 @@ public sealed record PackagePlan(
         .Where(entry => entry.Category == PackagePartCategory.Machined && !entry.IsAssembly)
         .ToArray();
 
-    /// <summary>外购件（零件或整体外购的子装配体），按规格排序。第二张 BOM 的内容。</summary>
+    /// <summary>外购件（零件或整体外购的子装配体），按特征树从上到下排（V4.16；没有树序时按规格）。第二张 BOM 的内容。</summary>
     public IReadOnlyList<PackagePartEntry> Purchased { get; } = Entries
         .Where(entry => entry.Category == PackagePartCategory.Purchased)
         .ToArray();

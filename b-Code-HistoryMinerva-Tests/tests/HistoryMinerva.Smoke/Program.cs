@@ -95,6 +95,8 @@ try
     TestPackageViewModelFlow(root);
     TestPackageBrandLookup(root);
     TestPackageOptions(root);
+    TestPackageTreeOrderAndMerge(root);
+    TestPackageStepsAndNameFill(root);
     Console.WriteLine("HistoryMinerva.Smoke: PASS");
 }
 finally
@@ -5216,13 +5218,186 @@ static void TestPackageViewModelFlow(string root)
 static void TestPackageOptions(string root)
 {
     var path = PackageOptions.PathIn(Path.Combine(root, "package-options"));
-    True(PackageOptions.LoadBrandLookup(path), "没有保存过时「AI 查品牌」默认开启");
-    PackageOptions.SaveBrandLookup(path, false);
-    True(!PackageOptions.LoadBrandLookup(path), "关掉后必须落盘，下次打开仍是关");
-    PackageOptions.SaveBrandLookup(path, true);
-    True(PackageOptions.LoadBrandLookup(path), "重新打开后必须落盘");
+    Equal(PackageSteps.All, PackageOptions.Load(path), "没有保存过时六个打包开关默认全开");
+    var steps = PackageOptions.With(PackageOptions.With(PackageSteps.All, "pdf", false), "brandai", false);
+    PackageOptions.Save(path, steps);
+    Equal(steps, PackageOptions.Load(path), "关掉的开关必须落盘，下次打开仍是关");
+    True(!PackageOptions.Get(PackageOptions.Load(path), "PDF"), "开关名不分大小写");
+
+    // V4.15 的旧文件只有 brandLookup 一项：它照旧生效，其余按开启读。
+    File.WriteAllText(path, """{"brandLookup":false}""");
+    Equal(PackageSteps.All with { BrandLookup = false }, PackageOptions.Load(path), "旧存档只认 brandLookup，其余默认开");
     File.WriteAllText(path, "not json");
-    True(PackageOptions.LoadBrandLookup(path), "配置文件损坏时回到默认开启，而不是让页面打不开");
+    Equal(PackageSteps.All, PackageOptions.Load(path), "配置文件损坏时回到默认全开，而不是让页面打不开");
+    True(!new PackageSteps(false, false, false, false, false, false).AnyStep, "六步全关时没有可做的事");
+    True(!new PackageSteps(Step: false, Dwg: false, Pdf: false).AnyCadExport, "三种导出都关时不起 Worker");
+}
+
+static void TestPackageTreeOrderAndMerge(string root)
+{
+    // V4.16：外购件按 SW 左侧特征树从上到下排；同一个件在树上出现多次，数量累加到它最靠上那一次的位置。
+    var dir = Path.Combine(root, "package-tree-order");
+    var standardDir = Path.Combine(dir, "标准件");
+    var cylinderDir = Path.Combine(dir, "气缸");
+    Directory.CreateDirectory(standardDir);
+    Directory.CreateDirectory(cylinderDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "GHLSS-06-00 总装.SLDASM");
+    var plate = Path.Combine(dir, "GHLSS-06-01 底板.SLDPRT");
+    var module = Path.Combine(dir, "GHLSS-06-02 模组.SLDASM");
+    var cylinder = Path.Combine(cylinderDir, "CDQ2B20-10D 气缸.SLDPRT");
+    var screw = Path.Combine(standardDir, "GB70 M8x20 内六角螺钉.SLDPRT");
+    var nut = Path.Combine(standardDir, "GB6170 M8 螺母.SLDPRT");
+    foreach (var path in new[] { rootAsm, plate, module, cylinder, screw, nut })
+        File.WriteAllText(path, "cad");
+
+    AssemblyProbeResult Probe(IReadOnlyList<string>? treeOrder) => new(
+        rootAsm,
+        [
+            new AssemblyOccurrence("底板-1", null, plate, false, false, false, identity, null),
+            new AssemblyOccurrence("模组-1", null, module, true, false, false, identity, null),
+        ],
+        [plate],
+        0, 0, 1, 0, [],
+        PurchasedParts:
+        [
+            // 计数口径同探查：螺钉一个在顶层（树上第 6 位）、两个在模组里（第 2、3 位）；
+            // 气缸在顶层第 4 位；螺母在顶层第 5 位。
+            new PurchasedPartReading(screw, 3, ["螺钉-1", "模组-1/螺钉-1", "模组-1/螺钉-2"]),
+            new PurchasedPartReading(cylinder, 1, ["气缸-1"]),
+            new PurchasedPartReading(nut, 2, ["螺母-1", "螺母-2"]),
+        ],
+        TreeOrder: treeOrder);
+
+    var ordered = PackagePlanner.Create(Probe(
+        ["底板-1", "模组-1", "模组-1/螺钉-1", "模组-1/螺钉-2", "气缸-1", "螺母-1", "螺钉-1", "螺母-2"]));
+    Equal("GB70 M8x20,CDQ2B20-10D,GB6170 M8", string.Join(",", ordered.Purchased.Select(entry => entry.Specification)),
+        "外购件按特征树从上到下排：螺钉第一次出现在模组里（最靠上），所以排第一");
+    Equal(3, ordered.Purchased[0].Quantity, "树上下面再出现的同一个件，数量加到上面那一行");
+
+    // 模组被改成外购件：它里面的两颗螺钉不计，螺钉只剩顶层那一颗，排位也跟着落到它自己的位置（第 7 位）。
+    var bought = PackagePlanner.Create(
+        Probe(["底板-1", "模组-1", "模组-1/螺钉-1", "模组-1/螺钉-2", "气缸-1", "螺母-1", "螺钉-1", "螺母-2"]),
+        new Dictionary<string, PackagePartCategory>(StringComparer.OrdinalIgnoreCase) { [module] = PackagePartCategory.Purchased });
+    Equal("GHLSS-06-02,CDQ2B20-10D,GB6170 M8,GB70 M8x20",
+        string.Join(",", bought.Purchased.Select(entry => entry.Specification)),
+        "外购组件按它自己在树上的位置排；里面的件不再把螺钉拉到组件的位置上");
+    Equal(1, bought.Purchased.Single(entry => entry.SourcePath == screw).Quantity, "外购组件里面的螺钉不计数");
+
+    // 没有树序（旧结果、Solid Edge 源）：退回按规格排。
+    var legacy = PackagePlanner.Create(Probe(null));
+    Equal("CDQ2B20-10D,GB6170 M8,GB70 M8x20", string.Join(",", legacy.Purchased.Select(entry => entry.Specification)),
+        "没有树序时外购件按规格排");
+
+    // 改名重排后的探查结果照样带着树序。
+    var remapped = RenameReindex.Remap(Probe(["气缸-1"]), new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [plate] = plate + ".x" });
+    Equal("气缸-1", remapped.TreeOrder?.Single(), "Remap 必须带上树序");
+
+    // 外购件清单：不同文件、同规格同名称的合成一行，数量加到上面那行；名称为空时用 AI 补的名称参与比较。
+    var copy = Path.Combine(dir, "备件", "GB70 M8x20 内六角螺钉.SLDPRT");
+    PackagePartEntry Make(string id, string path, string spec, string name, int quantity)
+        => new(id, path, null, string.Empty, name, spec, quantity, PackagePartCategory.Purchased);
+    var lines = BomWorkbookWriter.MergePurchased(
+        [
+            Make("a", screw, "GB70 M8x20", "内六角螺钉", 3),
+            Make("b", cylinder, "CDQ2B20-10D", "气缸", 1),
+            Make("c", copy, "gb70 m8x20", "内六角螺钉", 2),
+            Make("d", Path.Combine(dir, "x", "F-M10X125F.SLDPRT"), "F-M10X125F", string.Empty, 1),
+            Make("e", Path.Combine(dir, "y", "F-M10X125F.SLDPRT"), "F-M10X125F", string.Empty, 4),
+        ],
+        new Dictionary<string, string> { ["d"] = "浮动接头", ["e"] = "浮动接头" });
+    Equal("a:5,b:1,d:5", string.Join(",", lines.Select(line => $"{line.Entry.Id}:{line.Quantity}")),
+        "同规格同名称的合进最上面那一行、顺序不变");
+    Equal("浮动接头", lines[2].Name, "名称为空的外购件写 AI 补的名称");
+}
+
+static void TestPackageStepsAndNameFill(string root)
+{
+    var dir = Path.Combine(root, "package-steps");
+    var jointDir = Path.Combine(dir, "气动浮头");
+    Directory.CreateDirectory(jointDir);
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var rootAsm = Path.Combine(dir, "GHLSS-07-00 总装.SLDASM");
+    var plate = Path.Combine(dir, "GHLSS-07-01 底板.SLDPRT");
+    var plateDrawing = Path.ChangeExtension(plate, ".SLDDRW");
+    var joint = Path.Combine(jointDir, "F-M10X125F.SLDPRT");
+    foreach (var path in new[] { rootAsm, plate, plateDrawing, joint })
+        File.WriteAllText(path, "cad");
+
+    var probe = new AssemblyProbeResult(
+        rootAsm,
+        [new AssemblyOccurrence("底板-1", null, plate, false, false, false, identity, null)],
+        [plate],
+        0, 0, 1, 0, [],
+        [new AssemblyDocumentReading(rootAsm, [new AssemblyChild("底板-1", plate, false, false, identity)], [])],
+        PartProperties: null,
+        PurchasedParts: [new PurchasedPartReading(joint, 2)]);
+
+    PackageRequest? captured = null;
+    using var viewModel = new AssemblyViewModel(
+        (request, progress, token) => Task.FromResult(probe),
+        (request, progress, token) => Task.FromResult(0),
+        _ => { },
+        Dispatcher.CurrentDispatcher,
+        packWorker: (request, progress, token) =>
+        {
+            captured = request;
+            return Task.FromResult(0);
+        });
+    var prompts = new List<string>();
+    viewModel.BrandLookup = (entry, _) =>
+    {
+        lock (prompts)
+            prompts.Add(PurchasedBrandLookup.BuildPrompt(entry));
+        return Task.FromResult(PurchasedBrandLookup.Read(CommandResult.Ok("""{"brand": "AirTAC", "name": "浮动接头"}""")));
+    };
+
+    viewModel.SelectedMappingContent = MappingContentOption.Available
+        .Single(option => option.Kind == MappingContent.SolidWorksAssemblyPackage);
+    viewModel.SetSourcePath(rootAsm);
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    var jointId = viewModel.Parts.Single(row => row.FileName == "F-M10X125F.SLDPRT").Id;
+    Equal(string.Empty, viewModel.FindRow(jointId)!.PartName, "文件名里没有名称、还没查过时名称列留空");
+
+    // 只开外购件清单、AI 查品牌与 STEP：机加件清单不写、DWG / PDF 不导。
+    viewModel.SetPackageSteps(new PackageSteps(MachinedBom: false, Dwg: false, Pdf: false));
+    True(viewModel.CanConvert, "开着几步时打包按钮可用：" + viewModel.PackBlockedReason);
+    viewModel.ConvertAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+
+    True(captured is not null, "STEP 开着时必须起 Worker");
+    True(captured!.Jobs.All(job => job.Artifact == PackageArtifact.Step), "DWG / PDF 关着时只导 STEP");
+    Equal(1, captured.Jobs.Count, "一个机加件一个 STEP");
+    var bomDirectory = Path.Combine(dir, "GHLSS 零件采购");
+    True(!File.Exists(Path.Combine(bomDirectory, "GHLSS 机加件清单.xlsx")), "机加件清单关着时不写");
+    var sheet = ReadSheetCells(Path.Combine(bomDirectory, "GHLSS 外购件清单.xlsx"));
+    Equal("浮动接头", sheet["E6"], "文件名里没有名称的外购件，清单名称写 AI 查到的");
+    Equal("AirTAC", sheet["H6"], "品牌照常写 H 列");
+    Equal("2", sheet["F6"], "数量照常");
+    Equal("浮动接头", viewModel.FindRow(jointId)!.PartName, "表格名称列回填 AI 查到的名称");
+    True(prompts.Single().Contains("名称未知", StringComparison.Ordinal), "名称为空时提示词要求一并给出 name：" + prompts.Single());
+    True(viewModel.ResultText.Contains("补全名称 1 种", StringComparison.Ordinal), "结论报告补了几种名称：" + viewModel.ResultText);
+    True(viewModel.LastOperationSucceeded, "分步打包照常判成功：" + viewModel.ResultText);
+
+    // 名称已知的件不问名称，模型多给了 name 也不采信。
+    var named = new PackagePartEntry("n", Path.Combine(jointDir, "CDQ2B20-10D 气缸.SLDPRT"), null, string.Empty, "气缸", "CDQ2B20-10D", 1, PackagePartCategory.Purchased);
+    True(!PurchasedBrandLookup.NeedsName(named), "文件名里有名称的不查名称");
+    True(PurchasedBrandLookup.BuildPrompt(named).Contains("名称：气缸", StringComparison.Ordinal), "名称已知时照旧带上名称");
+    Equal(null, PurchasedBrandLookup.Read(CommandResult.Ok("""{"brand":"SMC","name":"N/A"}""")).Name, "名称查不到不写 N/A");
+    True(!PurchasedBrandLookup.BuildCommand(named).Contains("maxtokens", StringComparison.Ordinal),
+        "不设 maxtokens：Gemini 的思考 token 算在输出上限里");
+
+    // 关掉 AI 查品牌：名称列回到文件名里的（空），不拿缓存填。
+    viewModel.SetPackageSteps(viewModel.PackageSteps with { BrandLookup = false });
+    Equal(string.Empty, viewModel.FindRow(jointId)!.PartName, "关掉 AI 查品牌后名称列不拿缓存填");
+
+    // 六步全关：按钮不可用，原因说清楚。
+    viewModel.ProbeAsync().GetAwaiter().GetResult();
+    Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
+    viewModel.SetPackageSteps(new PackageSteps(false, false, false, false, false, false));
+    True(!viewModel.CanConvert, "六步全关时打包按钮不可用");
+    True(viewModel.PackBlockedReason.Contains("全关", StringComparison.Ordinal), "说明为什么不能打包：" + viewModel.PackBlockedReason);
 }
 
 static void TestPackageBrandLookup(string root)
