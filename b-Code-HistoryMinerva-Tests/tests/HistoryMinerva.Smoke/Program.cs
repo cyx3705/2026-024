@@ -5385,8 +5385,8 @@ static void TestPackageStepsAndNameFill(string root)
     True(!PurchasedBrandLookup.NeedsName(named), "文件名里有名称的不查名称");
     True(PurchasedBrandLookup.BuildPrompt(named).Contains("名称：气缸", StringComparison.Ordinal), "名称已知时照旧带上名称");
     Equal(null, PurchasedBrandLookup.Read(CommandResult.Ok("""{"brand":"SMC","name":"N/A"}""")).Name, "名称查不到不写 N/A");
-    True(!PurchasedBrandLookup.BuildCommand(named).Contains("maxtokens", StringComparison.Ordinal),
-        "不设 maxtokens：Gemini 的思考 token 算在输出上限里");
+    True(PurchasedBrandLookup.BuildCommand(named).Contains("provider=deepseek", StringComparison.Ordinal),
+        "品牌查询固定走 DeepSeek，不跟 Apollo 的联网供应商");
 
     // 关掉 AI 查品牌：名称列回到文件名里的（空），不拿缓存填。
     viewModel.SetPackageSteps(viewModel.PackageSteps with { BrandLookup = false });

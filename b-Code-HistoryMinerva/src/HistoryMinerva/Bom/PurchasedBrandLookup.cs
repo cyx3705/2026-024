@@ -25,8 +25,8 @@ internal sealed record BrandAnswer(string Brand, string? Failure, string? Name =
 /// V4.10.4：整体打包时，按外购件规格联网查品牌，写进外购件清单的「备注[参考供应商]」。
 /// V4.16：文件名里没有名称的外购件，同一次调用顺带查出名称，写进表格与清单的「名称」。
 ///
-/// 不写 <c>provider=</c>：联网调用由 Apollo 0.6 起默认走联网供应商（Gemini + Google 搜索），
-/// 它没配密钥时 Apollo 自己退回 DeepSeek + 博查并在控制台说明。查型号要的是搜索准头，选哪家归 Apollo 管。
+/// 固定 <c>provider=deepseek</c>（V4.16）：试过 Apollo 0.6 的 Gemini + Google 搜索，本机用不起来，
+/// 改回原来的 DeepSeek + 博查，并且写死，不跟 Apollo 的联网供应商设置走。
 ///
 /// **软依赖 HistoryApollo**：本模块不引用 Apollo 的任何程序集，只经命令总线发一行
 /// <c>apollo.chat.ask web=true json=true</c>。Apollo 没装、没配密钥或断网时，总线回的是失败回执
@@ -127,10 +127,9 @@ internal static class PurchasedBrandLookup
 
     /// <summary>
     /// 发给总线的那一行。参数值一律经 <see cref="CommandParser.QuoteArg"/> 编码，不含换行。
-    /// 不设 maxtokens（V4.16）：Gemini 的思考 token 算在输出上限里，300 会把答复截成空串；答复本身只有一个短 JSON。
     /// </summary>
     public static string BuildCommand(PackagePartEntry entry)
-        => "apollo.chat.ask web=true json=true timeout=120"
+        => "apollo.chat.ask provider=deepseek web=true json=true maxtokens=300 timeout=120"
            + " system=" + CommandParser.QuoteArg(SystemPrompt)
            + " prompt=" + CommandParser.QuoteArg(BuildPrompt(entry));
 

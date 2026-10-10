@@ -354,8 +354,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
                     return CommandResult.Ok(step == "brandai"
                         ? enabled
-                            ? "AI 查品牌已开启：打包时联网查外购件品牌，文件名里没有名称的顺带查名称（Apollo 联网供应商，按次计费）。"
-                            : "AI 查品牌已关闭：打包不调用模型、不搜索，品牌列与外购件清单 H 列留空。"
+                            ? "AI 查品牌已开启：打包时用 DeepSeek 联网搜索外购件品牌，文件名里没有名称的顺带查名称（按次计费）。"
+                            : "AI 查品牌已关闭：打包不调用 DeepSeek、不搜索，品牌列与外购件清单 H 列留空。"
                         : label + "。");
                 default:
                     return CommandResult.Fail("未知转换选项；支持 recognize、continue、mates、prefix、machinedbom、purchasedbom、brandai、step、dwg、pdf");
@@ -771,8 +771,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
     private static string PackageStepLabel(string option) => option switch
     {
-        "machinedbom" => "机加件清单",
-        "purchasedbom" => "外购件清单",
+        "machinedbom" => "机加单",
+        "purchasedbom" => "外购单",
         "brandai" => "AI 查品牌",
         "step" => "STEP",
         "dwg" => "DWG",
@@ -937,7 +937,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 { "case": "SolidWorks .SLDASM → 整体打包（零件采购：BOM + 图纸）", "type": "stack", "gap": "tight", "children": [
                   { "type": "panel", "id": "sw-package-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "打包" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
                   { "type": "table", "id": "sw-package-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号 / 规格", "width": "170" }, { "key": "name", "title": "名称", "width": "*" }, { "key": "quantity", "title": "数量", "width": "60" }, { "key": "category", "title": "件别", "width": "90", "cellAction": "minerva.cell.kind" }, { "key": "brand", "title": "品牌", "width": "110" }, { "key": "hasdrawing", "title": "工程图", "width": "70" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "detail", "title": "结果", "width": "2*" }] },
-                  { "type": "panel", "id": "sw-package-options", "text": "打包选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-kind", "label": "", "mode": "select", "options": ["件别", "机加件", "外购件", "排除"], "commitAction": "minerva.property.kind" }, { "kind": "switch", "id": "package-brand-ai", "label": "AI 查品牌与名称（联网，按次计费）", "value": "__PKG_BRANDAI__", "action": "minerva.options.brandai" }] }, { "mode": "even", "widgets": [{ "kind": "switch", "id": "package-machined-bom", "label": "机加件清单", "value": "__PKG_MACHINEDBOM__", "action": "minerva.options.machinedbom" }, { "kind": "switch", "id": "package-purchased-bom", "label": "外购件清单", "value": "__PKG_PURCHASEDBOM__", "action": "minerva.options.purchasedbom" }] }, { "mode": "even", "widgets": [{ "kind": "switch", "id": "package-step", "label": "STEP", "value": "__PKG_STEP__", "action": "minerva.options.step" }, { "kind": "switch", "id": "package-dwg", "label": "DWG", "value": "__PKG_DWG__", "action": "minerva.options.dwg" }, { "kind": "switch", "id": "package-pdf", "label": "PDF", "value": "__PKG_PDF__", "action": "minerva.options.pdf" }] }] }
+                  { "type": "panel", "id": "sw-package-options", "text": "打包选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-kind", "label": "", "mode": "select", "options": ["件别", "机加件", "外购件", "排除"], "commitAction": "minerva.property.kind" }, { "kind": "switch", "id": "package-brand-ai", "label": "AI 查品牌与名称（DeepSeek 联网搜索，按次计费）", "value": "__PKG_BRANDAI__", "action": "minerva.options.brandai" }] }, { "mode": "even", "widgets": [{ "kind": "switch", "id": "package-machined-bom", "label": "机加单", "value": "__PKG_MACHINEDBOM__", "action": "minerva.options.machinedbom" }, { "kind": "switch", "id": "package-purchased-bom", "label": "外购单", "value": "__PKG_PURCHASEDBOM__", "action": "minerva.options.purchasedbom" }, { "kind": "switch", "id": "package-step", "label": "STEP", "value": "__PKG_STEP__", "action": "minerva.options.step" }, { "kind": "switch", "id": "package-dwg", "label": "DWG", "value": "__PKG_DWG__", "action": "minerva.options.dwg" }, { "kind": "switch", "id": "package-pdf", "label": "PDF", "value": "__PKG_PDF__", "action": "minerva.options.pdf" }] }] }
                 ] }
               ] }
             ] }
@@ -959,9 +959,9 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             { "id": "minerva.options.continue", "title": "更新失败策略", "command": "minerva.ui.options", "args": { "option": "continue", "value": "{value}" }, "summary": "设置零件失败时是否继续" },
             { "id": "minerva.options.mates", "title": "更新装配关系", "command": "minerva.ui.options", "args": { "option": "mates", "value": "{value}" }, "summary": "设置是否重建装配关系" },
             { "id": "minerva.options.prefix", "title": "更新图号前缀", "command": "minerva.ui.options", "args": { "option": "prefix", "value": "{value}" }, "summary": "设置属性整备图号前缀" },
-            { "id": "minerva.options.brandai", "title": "AI 查品牌", "command": "minerva.ui.options", "args": { "option": "brandai", "value": "{value}" }, "summary": "整体打包时是否联网查外购件品牌、并给文件名里没有名称的外购件补名称（Apollo 联网供应商，按次计费）；关着时品牌列与外购件清单 H 列留空" },
-            { "id": "minerva.options.machinedbom", "title": "机加件清单", "command": "minerva.ui.options", "args": { "option": "machinedbom", "value": "{value}" }, "summary": "整体打包时是否生成机加件清单与截图；关着时不写也不删上一轮的" },
-            { "id": "minerva.options.purchasedbom", "title": "外购件清单", "command": "minerva.ui.options", "args": { "option": "purchasedbom", "value": "{value}" }, "summary": "整体打包时是否生成外购件清单与截图；关着时不写也不删上一轮的" },
+            { "id": "minerva.options.brandai", "title": "AI 查品牌", "command": "minerva.ui.options", "args": { "option": "brandai", "value": "{value}" }, "summary": "整体打包时是否联网查外购件品牌、并给文件名里没有名称的外购件补名称（DeepSeek 联网搜索，按次计费）；关着时品牌列与外购件清单 H 列留空" },
+            { "id": "minerva.options.machinedbom", "title": "机加单", "command": "minerva.ui.options", "args": { "option": "machinedbom", "value": "{value}" }, "summary": "整体打包时是否生成机加件清单与截图；关着时不写也不删上一轮的" },
+            { "id": "minerva.options.purchasedbom", "title": "外购单", "command": "minerva.ui.options", "args": { "option": "purchasedbom", "value": "{value}" }, "summary": "整体打包时是否生成外购件清单与截图；关着时不写也不删上一轮的" },
             { "id": "minerva.options.step", "title": "导出 STEP", "command": "minerva.ui.options", "args": { "option": "step", "value": "{value}" }, "summary": "整体打包时是否导出机加件 STEP" },
             { "id": "minerva.options.dwg", "title": "导出 DWG", "command": "minerva.ui.options", "args": { "option": "dwg", "value": "{value}" }, "summary": "整体打包时是否把工程图导成 DWG" },
             { "id": "minerva.options.pdf", "title": "导出 PDF", "command": "minerva.ui.options", "args": { "option": "pdf", "value": "{value}" }, "summary": "整体打包时是否把工程图导成 PDF" },

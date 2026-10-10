@@ -827,6 +827,10 @@ internal sealed partial class SolidWorksInteropBridge : IDisposable
     public object? FirstFeature(object model)
         => Invoke(_modelInterface, model, "FirstFeature");
 
+    /// <summary>V4.16：组件实例在总装树上展开后的第一个特征（子装配体里就是它的组件特征、文件夹）。</summary>
+    public object? ComponentFirstFeature(object component)
+        => Invoke(_componentInterface, component, "FirstFeature");
+
     public object? NextFeature(object feature)
         => Invoke(_featureInterface, feature, "GetNextFeature");
 
