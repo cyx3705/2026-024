@@ -248,10 +248,11 @@ public enum PackageArtifact
 /// </param>
 /// <param name="DrawingPath">同名同目录的 <c>.SLDDRW</c>；没有图纸时为 <c>null</c>。</param>
 /// <param name="DrawingNumber">
-/// 零件图号，取自**当前文件名**里第一个空格之前的那一段（<see cref="Contracts.DrawingNumber.SplitFileName"/>）。
-/// BOM 描述的是此刻磁盘上的事实，不是「改名之后应该是什么」——所以这里不重新编号。
+/// 零件图号，优先取探查到的「图号」属性，属性为空时取**当前文件名**里第一个空格之前的那一段
+/// （<see cref="Contracts.DrawingNumber.SplitFileName"/>）。BOM 描述的是此刻磁盘上的事实，
+/// 不是「改名之后应该是什么」——所以这里不重新编号。
 /// </param>
-/// <param name="PartName">零件名称，即文件名里图号之后的那一段。</param>
+/// <param name="PartName">零件名称，优先取探查到的「名称」属性，属性为空时取文件名里图号之后的那一段。</param>
 /// <param name="Specification">
 /// 外购件的「规格」，即文件名里的非中文字段；机加件恒为空串。
 /// </param>

@@ -8,8 +8,8 @@ namespace HistoryMinerva.Contracts;
 /// 给同级零件和下层装配体分配图号。子文件夹中的外购件不编号；
 /// 小组件下的装配体视为零件，其内部文件不分配图号。
 ///
-/// **V4.15：前缀为空＝不动图号**。每个文件沿用文件名里原有的图号段，只有用户改过的名称
-/// 会体现到文件名上；「图号」属性槽也不写。V4.9～V4.14 把空前缀当成删图号，
+/// **V4.15：前缀为空＝不动图号**。每个文件沿用属性里的图号，属性为空时再沿用文件名里的图号，
+/// 只有用户改过的名称或已探查到的属性名称会体现到文件名上；「图号」属性槽也不写。V4.9～V4.14 把空前缀当成删图号，
 /// 用户没填前缀就点写入，原有的图号全被顶掉。
 ///
 /// **V4.15：被改成外购件的同级件挪进 <c>外购件\</c>**（<see cref="ConversionPathLayout.PurchasedPartsDirectoryName"/>）。
@@ -91,11 +91,12 @@ public static class PropertyPrepPlanner
 
         var rootNumber = ResolveRootNumber(rootPath, prefix);
         var names = partNames ?? EmptyNames;
+        var properties = PropertyReadings(probe);
         var planned = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var unnumbered = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var excluded = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var visit = new Visit(
-            rootPath, documents, probe, planned, unnumbered, excluded, names, kinds, warnings,
+            rootPath, documents, probe, planned, unnumbered, excluded, names, properties, kinds, warnings,
             KeepNumbers: prefix.Length == 0);
         VisitAssembly(
             rootPath,
@@ -285,6 +286,7 @@ public static class PropertyPrepPlanner
         Dictionary<string, MutableEntry> Unnumbered,
         Dictionary<string, MutableEntry> Excluded,
         IReadOnlyDictionary<string, string> PartNames,
+        IReadOnlyDictionary<string, PartPropertyReading> Properties,
         IReadOnlyDictionary<string, PackagePartCategory>? Kinds,
         List<string> Warnings,
         bool KeepNumbers)
@@ -321,7 +323,7 @@ public static class PropertyPrepPlanner
         bool skipChildren,
         Visit visit)
     {
-        var (rootPath, documents, probe, planned, _, excluded, _, _, warnings, _) = visit;
+        var (rootPath, documents, probe, planned, _, excluded, _, _, _, warnings, _) = visit;
         Remember(planned, assemblyPath, number, parentPath, depth, assignsDrawingNumber: true, visit);
         if (skipChildren || !documents.TryGetValue(assemblyPath, out var document))
             return;
@@ -482,7 +484,7 @@ public static class PropertyPrepPlanner
     {
         if (!map.TryGetValue(sourcePath, out var entry))
         {
-            var partName = ResolvePartName(sourcePath, visit.PartNames);
+            var partName = ResolvePartName(sourcePath, visit.PartNames, visit.Properties);
             var extension = Path.GetExtension(sourcePath);
             var drawingText = string.Empty;
             var targetPath = sourcePath;
@@ -491,7 +493,7 @@ public static class PropertyPrepPlanner
                 drawingText = drawing.Text;
                 // V4.15：没填前缀就沿用文件名里原有的图号段——不填不等于要把原号抹掉。
                 if (drawingText.Length == 0 && visit.KeepNumbers)
-                    DrawingNumber.SplitFileName(Path.GetFileName(sourcePath), out drawingText, out _);
+                    drawingText = ResolveDrawingNumber(sourcePath, visit.Properties);
                 targetPath = Path.Combine(
                     Path.GetDirectoryName(sourcePath) ?? string.Empty,
                     DrawingNumber.FormatFileName(drawingText, partName, extension));
@@ -518,14 +520,17 @@ public static class PropertyPrepPlanner
     }
 
     /// <summary>
-    /// 这个文件的名称。用户在表里改过的以用户的为准，否则取文件名里第一个空格之后的那一段。
+    /// 这个文件的名称。用户在表里改过的以用户的为准，否则取属性里的名称，再否则取文件名里第一个空格之后的那一段。
     ///
     /// **不再按前缀去匹配旧图号**（V4.8 及以前的做法）。那条路要求旧名字正好以本轮的前缀打头，
     /// 于是换一个前缀、或者旧号是别的项目带过来的，整个旧文件名就会被当成"名称"——
     /// 结果是 <c>ZS-01 QT-88 阀体.SLDPRT</c> 这样两个号叠在一起的名字。
     /// 按空格切只认一条规则，前缀长什么样都不影响它（DEC-058）。
     /// </summary>
-    private static string ResolvePartName(string sourcePath, IReadOnlyDictionary<string, string> partNames)
+    private static string ResolvePartName(
+        string sourcePath,
+        IReadOnlyDictionary<string, string> partNames,
+        IReadOnlyDictionary<string, PartPropertyReading> properties)
     {
         if (partNames.TryGetValue(Path.GetFullPath(sourcePath), out var edited)
             && !string.IsNullOrWhiteSpace(edited))
@@ -533,9 +538,35 @@ public static class PropertyPrepPlanner
             return edited.Trim();
         }
 
+        if (properties.TryGetValue(Path.GetFullPath(sourcePath), out var reading)
+            && !string.IsNullOrWhiteSpace(reading.Name))
+        {
+            return reading.Name.Trim();
+        }
+
         DrawingNumber.SplitFileName(Path.GetFileName(sourcePath), out _, out var name);
         return name;
     }
+
+    private static string ResolveDrawingNumber(
+        string sourcePath,
+        IReadOnlyDictionary<string, PartPropertyReading> properties)
+    {
+        if (properties.TryGetValue(Path.GetFullPath(sourcePath), out var reading)
+            && !string.IsNullOrWhiteSpace(reading.DrawingNumber))
+        {
+            return reading.DrawingNumber.Trim();
+        }
+
+        DrawingNumber.SplitFileName(Path.GetFileName(sourcePath), out var drawingNumber, out _);
+        return drawingNumber;
+    }
+
+    private static IReadOnlyDictionary<string, PartPropertyReading> PropertyReadings(AssemblyProbeResult probe)
+        => (probe.PartProperties ?? [])
+            .Where(item => Path.IsPathFullyQualified(item.SourcePath))
+            .GroupBy(item => Path.GetFullPath(item.SourcePath), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>没有任何名称改动时用它，省掉每次建一个空字典。</summary>
     private static readonly IReadOnlyDictionary<string, string> EmptyNames =

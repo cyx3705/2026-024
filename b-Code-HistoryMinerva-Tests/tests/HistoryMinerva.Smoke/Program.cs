@@ -62,6 +62,7 @@ try
     TestPropertyPrepViewModel(root);
     TestPropertyPrepPropertyWrite(root);
     TestPropertyPrepProbedProperties(root);
+    TestPropertyFirstNameAndDrawing(root);
     TestPropertyPrepLargeTableUpdatesInPlace(root);
     TestPropertyPrepReindexAfterRename(root);
     TestSolidWorksSelfPipelinePlanning(root);
@@ -2635,7 +2636,7 @@ static void TestPropertyPrepProbedProperties(string root)
                 new AssemblyChild("阀体-1", part, false, false, identity),
             ], []),
         ],
-        [new PartPropertyReading(part, "304不锈钢", "GB 补充", "镀白锌", "调质处理")]);
+        [new PartPropertyReading(part, "304不锈钢", "GB 补充", "镀白锌", "调质处理", "属性阀体", "PROP-01")]);
 
     AssemblyRenameRequest? request = null;
     using var model = new AssemblyViewModel(
@@ -2657,6 +2658,7 @@ static void TestPropertyPrepProbedProperties(string root)
 
     var partRow = model.Parts.Single(row => row.SourcePath.EndsWith(".SLDPRT", StringComparison.OrdinalIgnoreCase));
     Equal("304不锈钢", partRow.Material, "解析时读回的材料必须直接出现在表格里");
+    Equal("属性阀体", partRow.PartName, "解析时读回的名称必须直接出现在表格里");
     Equal("镀白锌", partRow.SurfaceTreatment, "解析时读回的表面处理必须直接出现在表格里");
     Equal("调质处理", partRow.HeatTreatment, "解析时读回的热处理必须直接出现在表格里");
 
@@ -2671,6 +2673,64 @@ static void TestPropertyPrepProbedProperties(string root)
     Equal("304不锈钢", written.Material, "没动过的材料按解析读回的原值写回去，不得变成空");
     Equal("GB 补充", written.MaterialDatabase, "材料库要跟着解析读数一起带下来，否则材质应用不上去");
     Equal("退火", written.HeatTreatment, "用户改过的那一格要盖过解析读回的旧值");
+    Equal("属性阀体", written.Name, "写入请求的名称必须优先使用属性名称");
+}
+
+/// <summary>V1.17.1：属性整备与整体打包优先使用零件属性里的名称、图号，空值才回退文件名。</summary>
+static void TestPropertyFirstNameAndDrawing(string root)
+{
+    var directory = Path.Combine(root, "property-first-name-drawing");
+    Directory.CreateDirectory(directory);
+    var assembly = Path.Combine(directory, "OLD-00 总装.SLDASM");
+    var part = Path.Combine(directory, "OLD-01 旧名称.SLDPRT");
+    var purchased = Path.Combine(directory, "标准件", "GB70 M4x10 旧螺钉.SLDPRT");
+    Directory.CreateDirectory(Path.GetDirectoryName(purchased)!);
+    File.WriteAllText(assembly, "asm");
+    File.WriteAllText(part, "part");
+    File.WriteAllText(purchased, "part");
+    double[] identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    var probe = new AssemblyProbeResult(
+        assembly,
+        [new AssemblyOccurrence("旧名称-1", null, part, false, false, false, identity, null)],
+        [part],
+        0, 0, 1, 0, [],
+        [new AssemblyDocumentReading(
+            assembly,
+            [new AssemblyChild("旧名称-1", part, false, false, identity)],
+            [])],
+        [
+            new PartPropertyReading(part, "", "", "", "", "属性名称", "PROP-99"),
+            new PartPropertyReading(purchased, "", "", "", "", "属性螺钉", "IGNORED-01"),
+        ],
+        PurchasedParts: [new PurchasedPartReading(purchased, 2)]);
+
+    var keep = PropertyPrepPlanner.Create(probe, string.Empty);
+    var keepEntry = keep.Entries.Single(entry => entry.SourcePath == part);
+    Equal("PROP-99", keepEntry.DrawingNumber, "空前缀时属性图号必须优先于文件名图号");
+    Equal("属性名称", keepEntry.PartName, "属性整备名称必须优先取属性名称");
+    Equal("PROP-99 属性名称.SLDPRT", Path.GetFileName(keepEntry.TargetPath),
+        "空前缀时目标文件名必须使用属性图号与名称");
+
+    var renumber = PropertyPrepPlanner.Create(probe, "NEW");
+    var renumberEntry = renumber.Entries.Single(entry => entry.SourcePath == part);
+    Equal("NEW-01", renumberEntry.DrawingNumber, "填写新前缀时新规划图号必须覆盖旧属性图号");
+    Equal("属性名称", renumberEntry.PartName, "重新编号时名称仍必须取属性名称");
+
+    var package = PackagePlanner.Create(probe);
+    var packageEntry = package.Machined.Single(entry => entry.SourcePath == part);
+    Equal("PROP-99", packageEntry.DrawingNumber, "打包机加件图号必须优先取属性图号");
+    Equal("属性名称", packageEntry.PartName, "打包名称必须优先取属性名称");
+    var purchasedEntry = package.Purchased.Single(entry => entry.SourcePath == purchased);
+    Equal("", purchasedEntry.DrawingNumber, "外购件仍不生成图号");
+    Equal("属性螺钉", purchasedEntry.PartName, "打包外购件名称也必须优先取属性名称");
+
+    var fallback = probe with { PartProperties = null };
+    var fallbackRename = PropertyPrepPlanner.Create(fallback, string.Empty).Entries.Single(entry => entry.SourcePath == part);
+    Equal("OLD-01", fallbackRename.DrawingNumber, "属性为空时属性整备必须回退文件名图号");
+    Equal("旧名称", fallbackRename.PartName, "属性为空时属性整备必须回退文件名名称");
+    var fallbackPackage = PackagePlanner.Create(fallback).Machined.Single(entry => entry.SourcePath == part);
+    Equal("OLD-01", fallbackPackage.DrawingNumber, "属性为空时打包必须回退文件名图号");
+    Equal("旧名称", fallbackPackage.PartName, "属性为空时打包必须回退文件名名称");
 }
 
 /// <summary>

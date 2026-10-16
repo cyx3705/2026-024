@@ -3,9 +3,9 @@ using HistoryMinerva.Contracts;
 namespace HistoryMinerva.Worker;
 
 /// <summary>
-/// V4.8：解析装配体时顺手读回每个零件的「材料」「表面处理」「热处理」现值。
+/// V4.8：解析装配体时顺手读回每个零件的「名称」「图号」「材料」「表面处理」「热处理」现值。
 ///
-/// **为什么在探查这一步读**：这三栏在现场大多已经填过——用户是在既有零件上补图号，
+/// **为什么在探查这一步读**：这些栏在现场大多已经填过——用户是在既有零件上补图号，
 /// 不是从空白开始建库。表格开出来一片空白，用户唯一能做的就是把已有的值再选一遍；
 /// 选错一格就把零件上原本正确的材质换掉了，而且属性标签上看不出任何异样。
 ///
@@ -19,7 +19,7 @@ namespace HistoryMinerva.Worker;
 internal static class SolidWorksPartPropertyReader
 {
     /// <summary>
-    /// 读一个零件组件的三个槽。返回 null 表示这个组件当下拿不到文档（抑制、未加载、虚拟件）。
+    /// 读一个零件组件的属性槽。返回 null 表示这个组件当下拿不到文档（抑制、未加载、虚拟件）。
     /// </summary>
     /// <param name="sourcePath">零件源文件全路径，作为读数在结果里的键。</param>
     public static PartPropertyReading? Read(
@@ -46,6 +46,8 @@ internal static class SolidWorksPartPropertyReader
             var extension = TryGet(() => interop.GetExtension(model), (object?)null);
             var surface = string.Empty;
             var heat = string.Empty;
+            var name = string.Empty;
+            var drawingNumber = string.Empty;
             if (extension is not null)
             {
                 var manager = TryGet(
@@ -58,6 +60,12 @@ internal static class SolidWorksPartPropertyReader
                     heat = TryGet(
                         () => interop.GetCustomProperty(manager, PartPropertyNames.HeatTreatment),
                         string.Empty);
+                    name = TryGet(
+                        () => interop.GetCustomProperty(manager, PartPropertyNames.Name),
+                        string.Empty);
+                    drawingNumber = TryGet(
+                        () => interop.GetCustomProperty(manager, PartPropertyNames.DrawingNumber),
+                        string.Empty);
                 }
             }
 
@@ -68,7 +76,9 @@ internal static class SolidWorksPartPropertyReader
                 hasMaterial ? material.Name : string.Empty,
                 hasMaterial ? material.Database : string.Empty,
                 surface.Trim(),
-                heat.Trim());
+                heat.Trim(),
+                name.Trim(),
+                drawingNumber.Trim());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

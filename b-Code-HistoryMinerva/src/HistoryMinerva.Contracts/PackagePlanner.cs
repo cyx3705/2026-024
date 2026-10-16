@@ -19,7 +19,7 @@ namespace HistoryMinerva.Contracts;
 ///   <item><b>顺序</b>（V4.16）：外购件按 SolidWorks 左侧特征树从上到下排，同一个件在树里出现多次时
 ///         只占它第一次出现的那一行、数量累加（<see cref="AssemblyProbeResult.TreeOrder"/>）；
 ///         没有树序（旧结果、Solid Edge 源）时按规格排。机加件仍按图号排。</item>
-///   <item><b>图号与名称</b>：按文件名第一个空格切，与改名管线同一条口径
+///   <item><b>图号与名称</b>：优先取探查到的属性值，属性为空时按文件名第一个空格切
 ///         （<see cref="DrawingNumber.SplitFileName"/>）。BOM 描述的是此刻磁盘上的事实，
 ///         不重新编号——重新编号得到的是「改完名之后的图号」，而文件还没改。</item>
 /// </list>
@@ -53,7 +53,7 @@ public static class PackagePlanner
             return Empty(rootPath, issues);
         }
 
-        var tally = new Tally(TreeRanks(probe));
+        var tally = new Tally(TreeRanks(probe), PropertyReadings(probe));
         var pathById = PartKinds.OccurrencePaths(probe);
         CountOccurrences(probe, rootPath, kinds, pathById, tally, warnings);
         CountPurchasedReadings(probe, rootPath, kinds, pathById, tally, warnings);
@@ -173,16 +173,26 @@ public static class PackagePlanner
         string sourcePath,
         int quantity,
         PackagePartCategory category,
-        bool isAssembly)
+        bool isAssembly,
+        IReadOnlyDictionary<string, PartPropertyReading> properties)
     {
         var fileName = Path.GetFileName(sourcePath);
         DrawingNumber.SplitFileName(fileName, out var drawingNumber, out var partName);
+        properties.TryGetValue(Path.GetFullPath(sourcePath), out var reading);
+        if (!string.IsNullOrWhiteSpace(reading?.Name))
+            partName = reading.Name.Trim();
         var specification = string.Empty;
         if (category != PackagePartCategory.Machined)
         {
             // 外购件不编号，所以「图号 名称」那条规则对它们没有意义：整个主名都是货物描述。
             PurchasedPartNaming.Split(fileName, out specification, out partName);
+            if (!string.IsNullOrWhiteSpace(reading?.Name))
+                partName = reading.Name.Trim();
             drawingNumber = string.Empty;
+        }
+        else if (!string.IsNullOrWhiteSpace(reading?.DrawingNumber))
+        {
+            drawingNumber = reading.DrawingNumber.Trim();
         }
 
         var drawingPath = isAssembly ? null : ConversionPathLayout.ResolveDrawingPath(sourcePath);
@@ -232,6 +242,12 @@ public static class PackagePlanner
         return ranks;
     }
 
+    private static IReadOnlyDictionary<string, PartPropertyReading> PropertyReadings(AssemblyProbeResult probe)
+        => (probe.PartProperties ?? [])
+            .Where(item => Path.IsPathFullyQualified(item.SourcePath))
+            .GroupBy(item => Path.GetFullPath(item.SourcePath), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
+
     private static PackagePlan Empty(string sourceAssemblyPath, IReadOnlyList<string> issues)
         => new(
             sourceAssemblyPath,
@@ -259,7 +275,9 @@ public static class PackagePlanner
     /// 按路径累计数量；一个路径只有一种件别。V4.16 顺带记下每个路径在特征树上最靠上的那个实例的位次——
     /// 同一个件在树上出现多次，数量都累加到它第一次出现的那一行上。
     /// </summary>
-    private sealed class Tally(IReadOnlyDictionary<string, int> treeRanks)
+    private sealed class Tally(
+        IReadOnlyDictionary<string, int> treeRanks,
+        IReadOnlyDictionary<string, PartPropertyReading> properties)
     {
         private readonly Dictionary<string, (PackagePartCategory Kind, bool IsAssembly, int Quantity, int Rank)> _items =
             new(StringComparer.OrdinalIgnoreCase);
@@ -291,7 +309,7 @@ public static class PackagePlanner
         {
             var ranked = _items
                 .Select(pair => (
-                    Entry: CreateEntry(pair.Key, pair.Value.Quantity, pair.Value.Kind, pair.Value.IsAssembly),
+                    Entry: CreateEntry(pair.Key, pair.Value.Quantity, pair.Value.Kind, pair.Value.IsAssembly, properties),
                     pair.Value.Rank))
                 .ToArray();
             var entries = ranked.Select(item => item.Entry).ToArray();

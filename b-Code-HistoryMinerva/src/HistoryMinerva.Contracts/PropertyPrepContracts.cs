@@ -111,7 +111,7 @@ public sealed record RenameEntry(
     string PartName = "");
 
 /// <summary>
-/// V4.8：解析装配体时从零件身上**读回来**的三个槽的现值。
+/// V4.8：解析装配体时从零件身上**读回来**的属性槽现值。
 ///
 /// 为什么在探查时读而不是写入时读：这三栏本来就大多已经填过——用户是在既有零件上补图号，
 /// 不是从空白开始建库。表格开出来一片空白，用户唯一能做的就是把已有的值再选一遍；
@@ -120,6 +120,8 @@ public sealed record RenameEntry(
 ///
 /// 读数走的是装配里已经载入的组件文档，不为此另开零件——一个几百件的装配那样要开几百次。
 /// </summary>
+/// <param name="Name">零件当前「名称」槽的值；空串表示读不到。</param>
+/// <param name="DrawingNumber">零件当前「图号」槽的值；空串表示读不到。</param>
 /// <param name="Material">
 /// 零件当前材质名。取自 <c>GetMaterialPropertyName2</c> 而不是「材料」槽的文本：
 /// 那一槽存的是链接记号 <see cref="PartPropertyNames.MaterialLinkValue"/>，不是材质名。
@@ -130,7 +132,9 @@ public sealed record PartPropertyReading(
     string Material,
     string MaterialDatabase,
     string SurfaceTreatment,
-    string HeatTreatment);
+    string HeatTreatment,
+    string Name = "",
+    string DrawingNumber = "");
 
 /// <summary>按所选装配体层级生成的改名计划。纯内存，不碰 CAD。</summary>
 /// <param name="Excluded">
