@@ -8,6 +8,7 @@ using HistoryMinerva.Worker;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
+using System.IO.Compression;
 using System.Text.Json;
 using System.Windows.Threading;
 
@@ -685,21 +686,23 @@ static void TestVulcanModuleHostSurface(string root)
     var moduleAssembly = LocateRepoFile(Path.Combine(
         "b-Code-HistoryMinerva", "src", "HistoryMinerva", "bin", "Release",
         "net8.0-windows", "HistoryMinerva.dll"));
-    var package = Path.Combine(root, "probe-package", "HistoryMinerva");
-    Directory.CreateDirectory(package);
-    File.Copy(moduleAssembly, Path.Combine(package, "HistoryMinerva.dll"), overwrite: true);
+    var packageRoot = Path.Combine(root, "probe-package");
+    var packageContents = Path.Combine(packageRoot, "contents");
+    var package = Path.Combine(packageRoot, "HistoryMinerva.nupkg");
+    Directory.CreateDirectory(packageContents);
+    File.Copy(moduleAssembly, Path.Combine(packageContents, "HistoryMinerva.dll"), overwrite: true);
     foreach (var fileName in new[] { "HistoryMinerva.xml", "HistoryMinerva.Contracts.dll" })
-        File.Copy(Path.Combine(Path.GetDirectoryName(moduleAssembly)!, fileName), Path.Combine(package, fileName), overwrite: true);
-    File.Copy(LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "module.manifest.json")),
-        Path.Combine(package, "module.manifest.json"), overwrite: true);
-    File.WriteAllLines(Path.Combine(package, "SHA256SUMS"), Directory.GetFiles(package)
-        .Where(file => Path.GetFileName(file) != "SHA256SUMS")
-        .Select(file => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file)))
-            + "  " + Path.GetFileName(file)));
+        File.Copy(Path.Combine(Path.GetDirectoryName(moduleAssembly)!, fileName), Path.Combine(packageContents, fileName), overwrite: true);
+    var manifestPath = LocateRepoFile(Path.Combine("b-Code-HistoryMinerva", "module.manifest.json"));
+    File.Copy(manifestPath, Path.Combine(packageContents, "module.manifest.json"), overwrite: true);
+    var version = JsonDocument.Parse(File.ReadAllText(manifestPath)).RootElement.GetProperty("version").GetString()!;
+    File.WriteAllText(Path.Combine(packageContents, "HistoryMinerva.nuspec"),
+        $"<?xml version=\"1.0\" encoding=\"utf-8\"?><package xmlns=\"http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd\"><metadata><id>HistoryMinerva</id><version>{version}</version><authors>HistoryVulcan</authors><description>HistoryMinerva</description></metadata></package>");
+    ZipFile.CreateFromDirectory(packageContents, package, CompressionLevel.Optimal, includeBaseDirectory: false);
 
     // 宿主 5.9.0 统一契约：交给已发布宿主的 `HistoryVulcan.Cli.exe --probe` 装载，按 JSON 读结果，
     // 不再引用宿主实现程序集构造 ModuleHost。UI 标记的包在 probe 里照常装载。
-    var listed = ProbeHost(package, "vulcan.command.list domain=minerva");
+    var listed = ProbeHost(packageRoot, "vulcan.command.list domain=minerva");
     var module = listed.GetProperty("data").GetProperty("module");
     True(module.GetProperty("attached").GetBoolean(),
         "the real Vulcan host must attach Minerva: " + module.GetProperty("attachFailures").GetRawText()
@@ -721,7 +724,7 @@ static void TestVulcanModuleHostSurface(string root)
             $"{row.GetProperty("commandName").GetString()} must be registered on the host bus as a UI-thread command");
     }
 
-    var status = ProbeHost(package, "minerva.worker.status").GetProperty("data").GetProperty("result");
+    var status = ProbeHost(packageRoot, "minerva.worker.status").GetProperty("data").GetProperty("result");
     True(status.GetProperty("success").GetBoolean()
          && status.GetProperty("message").GetString()!.Contains(HistoryMinervaIdentity.Name, StringComparison.Ordinal),
         "the real Vulcan command bus must execute minerva.worker.status");
