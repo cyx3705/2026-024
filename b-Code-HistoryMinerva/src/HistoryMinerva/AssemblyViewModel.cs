@@ -613,9 +613,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
             throw new InvalidOperationException($"请选择存在的 {sourceAssemblyExtension} 装配体文件。");
         // COM ProgID 查询和后续 Worker 启动都不要占着选文件那一拍的 UI 线程。
         await Task.Run(() => _validateEnvironment(sourceFormat), cancellationToken).ConfigureAwait(false);
-        // 三个属性下拉的候选也在这一拍认一次：之后整轮整备都用这一份，不再每点开一格
-        // 就重读一次注册表和整个模板目录（那是在 UI 线程上）。
-        await Task.Run(SolidWorksPropertyOptions.Refresh, cancellationToken).ConfigureAwait(false);
 
         var batchId = Guid.NewGuid().ToString("N");
         var resultDirectory = _runtimePaths.ProbesDirectory;
@@ -860,9 +857,6 @@ public sealed partial class AssemblyViewModel : INotifyPropertyChanged, IDisposa
     {
         ClearProbeResult();
         _mateOutcome = null;
-        // 换了来源装配，上一台设备的材料和表面处理就不再是这批零件的事实。
-        // 记账按源文件全路径，不清掉的话换回旧装配还会把旧值诈尸带出来。
-        _propertyEdits.Clear();
         _nameEdits.Clear();
         _kindEdits.Clear();
         XtDirectory = string.Empty;

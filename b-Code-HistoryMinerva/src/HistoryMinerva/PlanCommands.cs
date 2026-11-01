@@ -77,7 +77,7 @@ public sealed class PlanCommands : IModuleContextAware
                 Name = HistoryMinervaIdentity.CommandRoot + ".plan.rename",
                 Domain = HistoryMinervaIdentity.CommandRoot,
                 CommandClass = "plan",
-                Summary = "只读解析装配体并返回属性整备改名计划（不改任何文件）",
+                Summary = "只读解析装配体并返回批量改名计划（不改任何文件）",
                 Example = HistoryMinervaIdentity.CommandRoot + ".plan.rename path=" + CommandParser.QuoteArg(SamplePath) + " prefix=ZS-LHL",
                 Readonly = true,
                 Parameters =

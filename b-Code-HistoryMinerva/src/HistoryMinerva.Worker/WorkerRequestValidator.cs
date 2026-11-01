@@ -182,7 +182,7 @@ internal static class WorkerRequestValidator
             var source = Path.GetFullPath(entry.SourcePath);
             var target = Path.GetFullPath(entry.TargetPath);
             if (ConversionPathLayout.IsUnderReferencePartsDirectory(source))
-                throw new InvalidDataException($"参考部件目录下的文件不得改名或整备属性：{source}");
+                throw new InvalidDataException($"参考部件目录下的文件不得改名：{source}");
             if (!sources.Add(source))
                 throw new InvalidDataException($"改名清单存在重复源文件：{source}");
             if (!targets.Add(target))
@@ -191,8 +191,6 @@ internal static class WorkerRequestValidator
             var targetDir = Path.GetDirectoryName(target);
             if (!relocation && !string.Equals(sourceDir, targetDir, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"改名不得换目录：{source}");
-            if (relocation && entry.Properties is not null)
-                throw new InvalidDataException($"挪进外购件文件夹的文件不写属性：{source}");
             if (!string.Equals(Path.GetExtension(source), Path.GetExtension(target), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"改名不得改扩展名：{source}");
             if (!AssemblyRenamePlan.SamePath(source, target) && File.Exists(target) && !vacated.Contains(target))

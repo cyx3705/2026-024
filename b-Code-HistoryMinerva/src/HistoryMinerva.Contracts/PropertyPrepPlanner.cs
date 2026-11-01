@@ -91,12 +91,11 @@ public static class PropertyPrepPlanner
 
         var rootNumber = ResolveRootNumber(rootPath, prefix);
         var names = partNames ?? EmptyNames;
-        var properties = PropertyReadings(probe);
         var planned = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var unnumbered = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var excluded = new Dictionary<string, MutableEntry>(StringComparer.OrdinalIgnoreCase);
         var visit = new Visit(
-            rootPath, documents, probe, planned, unnumbered, excluded, names, properties, kinds, warnings,
+            rootPath, documents, probe, planned, unnumbered, excluded, names, kinds, warnings,
             KeepNumbers: prefix.Length == 0);
         VisitAssembly(
             rootPath,
@@ -286,7 +285,6 @@ public static class PropertyPrepPlanner
         Dictionary<string, MutableEntry> Unnumbered,
         Dictionary<string, MutableEntry> Excluded,
         IReadOnlyDictionary<string, string> PartNames,
-        IReadOnlyDictionary<string, PartPropertyReading> Properties,
         IReadOnlyDictionary<string, PackagePartCategory>? Kinds,
         List<string> Warnings,
         bool KeepNumbers)
@@ -323,7 +321,7 @@ public static class PropertyPrepPlanner
         bool skipChildren,
         Visit visit)
     {
-        var (rootPath, documents, probe, planned, _, excluded, _, _, _, warnings, _) = visit;
+        var (rootPath, documents, probe, planned, _, excluded, _, _, warnings, _) = visit;
         Remember(planned, assemblyPath, number, parentPath, depth, assignsDrawingNumber: true, visit);
         if (skipChildren || !documents.TryGetValue(assemblyPath, out var document))
             return;
@@ -484,7 +482,7 @@ public static class PropertyPrepPlanner
     {
         if (!map.TryGetValue(sourcePath, out var entry))
         {
-            var partName = ResolvePartName(sourcePath, visit.PartNames, visit.Properties);
+            var partName = ResolvePartName(sourcePath, visit.PartNames);
             var extension = Path.GetExtension(sourcePath);
             var drawingText = string.Empty;
             var targetPath = sourcePath;
@@ -493,7 +491,7 @@ public static class PropertyPrepPlanner
                 drawingText = drawing.Text;
                 // V4.15：没填前缀就沿用文件名里原有的图号段——不填不等于要把原号抹掉。
                 if (drawingText.Length == 0 && visit.KeepNumbers)
-                    drawingText = ResolveDrawingNumber(sourcePath, visit.Properties);
+                    drawingText = ResolveDrawingNumber(sourcePath);
                 targetPath = Path.Combine(
                     Path.GetDirectoryName(sourcePath) ?? string.Empty,
                     DrawingNumber.FormatFileName(drawingText, partName, extension));
@@ -529,8 +527,7 @@ public static class PropertyPrepPlanner
     /// </summary>
     private static string ResolvePartName(
         string sourcePath,
-        IReadOnlyDictionary<string, string> partNames,
-        IReadOnlyDictionary<string, PartPropertyReading> properties)
+        IReadOnlyDictionary<string, string> partNames)
     {
         if (partNames.TryGetValue(Path.GetFullPath(sourcePath), out var edited)
             && !string.IsNullOrWhiteSpace(edited))
@@ -538,35 +535,15 @@ public static class PropertyPrepPlanner
             return edited.Trim();
         }
 
-        if (properties.TryGetValue(Path.GetFullPath(sourcePath), out var reading)
-            && !string.IsNullOrWhiteSpace(reading.Name))
-        {
-            return reading.Name.Trim();
-        }
-
         DrawingNumber.SplitFileName(Path.GetFileName(sourcePath), out _, out var name);
         return name;
     }
 
-    private static string ResolveDrawingNumber(
-        string sourcePath,
-        IReadOnlyDictionary<string, PartPropertyReading> properties)
+    private static string ResolveDrawingNumber(string sourcePath)
     {
-        if (properties.TryGetValue(Path.GetFullPath(sourcePath), out var reading)
-            && !string.IsNullOrWhiteSpace(reading.DrawingNumber))
-        {
-            return reading.DrawingNumber.Trim();
-        }
-
         DrawingNumber.SplitFileName(Path.GetFileName(sourcePath), out var drawingNumber, out _);
         return drawingNumber;
     }
-
-    private static IReadOnlyDictionary<string, PartPropertyReading> PropertyReadings(AssemblyProbeResult probe)
-        => (probe.PartProperties ?? [])
-            .Where(item => Path.IsPathFullyQualified(item.SourcePath))
-            .GroupBy(item => Path.GetFullPath(item.SourcePath), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>没有任何名称改动时用它，省掉每次建一个空字典。</summary>
     private static readonly IReadOnlyDictionary<string, string> EmptyNames =

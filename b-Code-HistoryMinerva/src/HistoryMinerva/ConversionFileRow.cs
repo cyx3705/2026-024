@@ -21,9 +21,6 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     private string _featureText = "";
     private string _sketchText = "";
     private bool _hasFeatureWarning;
-    private string _material = "";
-    private string _surfaceTreatment = "";
-    private string _heatTreatment = "";
     private string _drawingText = "";
     private string _partName = "";
     private string _quantityText = "";
@@ -164,33 +161,6 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// V4.7 属性整备：材料、表面处理、热处理三槽的待写值。
-    ///
-    /// 值住在行上而不是计划里，因为 <c>AssemblyRenamePlan</c> 每次改图号前缀都会整份重建，
-    /// 而用户填的材料不该跟着前缀一起被清掉。ViewModel 负责按源路径把它们搬回新行。
-    /// 空串表示这一槽本轮不写，不会把模板里已有的值抹掉。
-    /// </summary>
-    public string Material
-    {
-        get => _material;
-        set => SetField(ref _material, value ?? "");
-    }
-
-    /// <inheritdoc cref="Material"/>
-    public string SurfaceTreatment
-    {
-        get => _surfaceTreatment;
-        set => SetField(ref _surfaceTreatment, value ?? "");
-    }
-
-    /// <inheritdoc cref="Material"/>
-    public string HeatTreatment
-    {
-        get => _heatTreatment;
-        set => SetField(ref _heatTreatment, value ?? "");
-    }
-
-    /// <summary>
     /// V4.9 属性整备「图号」列。值是本轮计划算出来的图号文本，**只读**：
     /// 它由前缀加装配层级序号定死，逐行改会让同一层出现两套编号规则，
     /// 而那正是这个模块存在的理由。前缀为空时它是文件名里原有的图号段（V4.15 保留原号）。
@@ -259,19 +229,9 @@ public sealed class ConversionFileRow : INotifyPropertyChanged
 
     /// <summary>
     /// 这一行归本模块编号，因此文件会被改名、「名称」列可以改。
-    ///
-    /// 与 <see cref="WritesProperties"/> 是两件事：装配体也编号也改名，但不写属性。
-    /// 小组件内部那些未编号的件两者都是 false——它们保持原名，改了也不会落盘。
+    /// 小组件内部那些未编号的件是 false：它们保持原名。
     /// </summary>
     public bool RenamesFile { get; set; }
-
-    /// <summary>
-    /// 这一行的属性会不会真的落盘：只有拿到图号的 <c>.SLDPRT</c> 才会。
-    ///
-    /// 判定在建行时一次算好，不是每次取数再回改名计划里查一遍——页面每刷新一次表，
-    /// 就要为每行的三列各查一次，几百个零件就是十万次线性查找。
-    /// </summary>
-    public bool WritesProperties { get; set; }
 
     /// <summary>识别为空、或有草图未能完全定义时为 true，用于着色。</summary>
     public bool HasFeatureWarning

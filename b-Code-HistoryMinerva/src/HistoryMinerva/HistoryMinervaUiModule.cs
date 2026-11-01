@@ -137,17 +137,17 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             {
                 Name = HistoryMinervaIdentity.CommandRoot + ".ui.property",
                 CommandClass = "ui",
-                Summary = "一键刷满属性整备的某一个属性槽",
+                Summary = "统一设置批量改名与打包表的件别",
                 RequiresUiThread = true,
                 AllowUnspecifiedParameters = true,
-                HiddenReason = "Aurora 属性整备内部协议，不对远程消费面暴露",
+                HiddenReason = "Aurora 件别内部协议，不对远程消费面暴露",
                 Handler = SetPropertyAsync,
             });
             registry.Register(new CommandDescriptor
             {
                 Name = HistoryMinervaIdentity.CommandRoot + ".ui.cell",
                 CommandClass = "ui",
-                Summary = "修改零件表里某一行的材料、表面处理或热处理",
+                Summary = "修改零件表里某一行的名称或件别",
                 RequiresUiThread = true,
                 AllowUnspecifiedParameters = true,
                 HiddenReason = "Aurora 单元格编辑内部协议，不对远程消费面暴露",
@@ -194,7 +194,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             return CommandResult.Fail(viewModel.StatusText);
 
         var result = await ConversionCommandHandlers.ProbeAsync(viewModel, command).ConfigureAwait(true);
-        // 解析出来的零件行、以及零件上读回来的材料/表面处理/热处理，要立刻出现在表里。
+        // 解析出来的零件行要立刻出现在表里。
         await RefreshPropertyPrepTableAsync(command).ConfigureAwait(true);
         return result;
     }
@@ -223,7 +223,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
     /// <summary>
     /// Aurora 转换内容下拉默认只改选择通道。选来源、解析、改名必须先套用页面当前内容，
-    /// 否则属性整备仍按默认零件文件夹去选目录。
+    /// 否则批量改名仍按默认零件文件夹去选目录。
     /// </summary>
     private CommandResult? ApplyPageContent(CommandContext command)
     {
@@ -400,12 +400,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     /// <inheritdoc cref="PropertyPartsTableNode"/>
     private const string PackagePartsTableNode = "sw-package-parts";
 
-    /// <summary>
-    /// 一键刷满一个属性槽：设计、日期、材料、表面处理、热处理。
-    ///
-    /// 返回改了几行而不是空口说成功。「刷了 0 行」与「刷完了」必须能分开——
-    /// 没解析装配体时一行都没有，用户点下去要能看出是自己少了一步。
-    /// </summary>
+    /// <summary>统一设置件别。</summary>
     private async Task<CommandResult> SetPropertyAsync(CommandContext command)
     {
         var field = command.GetString("field")?.Trim().ToLowerInvariant();
@@ -417,17 +412,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         string message;
         switch (field)
         {
-            case "designer":
-                model.Designer = value;
-                message = value.Length == 0
-                    ? "已清空「设计」属性的待写值。"
-                    : $"「设计」将写入：{value}";
-                break;
-            case "date":
-                message = $"「日期」将写入：{model.SetDateToday()}";
-                break;
             case "kind":
-                // V4.12 统一设置件别。「件别」是框的总状态，与材料框的「材料」同一个意思：读数，不是动作。
+                // V4.12 统一设置件别。「件别」是框的总状态：读数，不是动作。
                 if (!PartKinds.TryParseLabel(value, out var kind))
                     return CommandResult.Ok(value.Length == 0 || value == PartKinds.BoxPlaceholder
                         ? "件别保持每行各自的值；要改某一行，点那一行的件别格。"
@@ -439,49 +425,21 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 // 件别一变两张表都重算，刷整表并把底下各框对齐（同点件别格）。
                 await RefreshPropertyPrepTableAsync(command).ConfigureAwait(true);
                 return CommandResult.Ok(message);
-            case "material":
-            case "surface":
-            case "heat":
-                var target = ParsePartPropertyField(field);
-                // 计划还没建起来时一行都刷不到。这时报「刷了 0 个零件」是句真话但没用——
-                // 用户看不出是自己少了「解析装配体」这一步。
-                if (!model.PropertyEditsReady)
-                    return CommandResult.Ok($"请先解析装配体，再统一「{DescribeField(target)}」。");
-                // 框的总状态（V4.12 起就是这一栏的名字，如「材料」；旧写法「（不写）」也认）是显示态，
-                // 读作「这一列没有一个共同的值」，不是一个动作：选中它什么都不该发生，每行仍按自己的值写（DEC-059）。
-                // 要把某一行清空，点那一行的单元格——不写是单元格上的事。
-                if (IsNoWrite(value) || value == AssemblyViewModel.PropertyBoxPlaceholder(target))
-                    return CommandResult.Ok(
-                        $"「{DescribeField(target)}」保持每行各自的值；要清空某一行，点那一行的单元格。");
-                if (!TryResolveSelection(target, value, out var resolved, out var database, out var reason))
-                    return CommandResult.Fail(reason);
-                var changed = model.SetAllPartProperties(target, resolved, database);
-                message = $"已把「{DescribeField(target)}」统一到 {changed} 个零件：{resolved}";
-                break;
             default:
-                return CommandResult.Fail("未知属性槽；支持 designer、date、kind、material、surface、heat");
+                return CommandResult.Fail("未知字段；支持 kind");
         }
 
-        await RefreshPartsTableAsync(command).ConfigureAwait(true);
-        await SyncPropertyPanelAsync(command).ConfigureAwait(true);
-        return CommandResult.Ok(message);
     }
 
-    /// <summary>
-    /// 点单元格改一行的材料 / 表面处理 / 热处理。
-    ///
-    /// 弹窗走 <c>aurora.ui.dialog</c> 而不是自己 <c>new Window</c>：前端独立之后顶层窗口
-    /// 拿不到 <c>Aurora.*</c> 令牌，自建窗口会静默退化成系统外观。
-    /// 用户点取消时命令仍然成功——失败指令会让宿主抢控制台并重排停靠（REQ-002）。
-    /// </summary>
+    /// <summary>点单元格改一行的名称或件别。取消时命令仍然成功——失败指令会让宿主抢控制台（REQ-002）。</summary>
     private async Task<CommandResult> EditCellAsync(CommandContext command)
     {
         var fieldText = command.GetString("field")?.Trim().ToLowerInvariant();
         var rowId = command.GetString("id")?.Trim();
         if (string.IsNullOrWhiteSpace(fieldText) || string.IsNullOrWhiteSpace(rowId))
             return CommandResult.Fail("需要 field 和 id");
-        if (fieldText is not ("name" or "kind" or "material" or "surface" or "heat"))
-            return CommandResult.Fail("未知列；单元格只支持 name、kind、material、surface、heat");
+        if (fieldText is not ("name" or "kind"))
+            return CommandResult.Fail("未知列；单元格只支持 name、kind");
 
         var bus = _context?.Bus;
         if (bus is null)
@@ -489,35 +447,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
 
         if (fieldText == "name")
             return await EditNameAsync(bus, command, rowId).ConfigureAwait(true);
-        if (fieldText == "kind")
-            return await CycleKindAsync(command, rowId).ConfigureAwait(true);
-
-        var field = ParsePartPropertyField(fieldText);
-        var label = DescribeField(field);
-        var model = GetViewModel();
-        if (!model.WritesProperties(rowId))
-            return CommandResult.Ok($"这一行不写属性（装配体或未编号内部件），「{label}」未修改。");
-        var options = SelectionOptions(field, model);
-        if (options.Count <= 1)
-            return CommandResult.Ok(EmptyOptionsReason(field));
-
-        var dialog = await bus.ExecuteAsync(
-            BuildChoiceCommand(label, options),
-            command.Source,
-            command.Cancellation).ConfigureAwait(true);
-        if (!dialog.Success)
-            return CommandResult.Ok($"未修改「{label}」。");
-
-        if (!TryResolveSelection(field, DialogValue(dialog), out var next, out var database, out var reason))
-            return CommandResult.Fail(reason);
-        if (!model.SetPartProperty(rowId, field, next, database))
-            return CommandResult.Ok($"这一行不写属性（装配体或未编号内部件），「{label}」未修改。");
-
-        await RefreshPartsTableAsync(command).ConfigureAwait(true);
-        // 改完一格，这一列可能刚刚变得统一、也可能刚刚变得不统一，
-        // 底下那个框要跟着换态——它显示的就是这一列有没有共同的值（DEC-059）。
-        await SyncPropertyPanelAsync(command).ConfigureAwait(true);
-        return CommandResult.Ok(next.Length == 0 ? $"已清空「{label}」。" : $"「{label}」已改为 {next}");
+        return await CycleKindAsync(command, rowId).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -554,8 +484,8 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     /// <summary>
     /// V4.11：点件别格，机加件 → 外购件 → 排除 轮换。手感照 Janus「操作」格——点了就改，不弹窗。
     ///
-    /// 件别一变，属性整备的编号和打包的清单都要重算，所以刷的是整张表而不只是这一格；
-    /// 属性整备下写属性的行也可能变了，底下那排框的统一态要跟着对齐。
+    /// 件别一变，批量改名的编号和打包的清单都要重算，所以刷的是整张表而不只是这一格；
+    /// 底下的件别框要跟着对齐。
     /// 改不了（没解析、正在执行、参考部件目录）时命令仍然成功，只把原因说出来（REQ-002）。
     /// </summary>
     private async Task<CommandResult> CycleKindAsync(CommandContext command, string rowId)
@@ -569,22 +499,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         return CommandResult.Ok($"{name} 的件别已改为{PartKinds.Label(next)}");
     }
 
-    /// <summary>「（不写）」这一项，空串也算——两者在模型层是同一个意思。</summary>
-    private static bool IsNoWrite(string value)
-        => value.Length == 0
-           || string.Equals(value, PartPropertyNames.NoWriteOption, StringComparison.Ordinal);
-
-    /// <summary>
-    /// 把底下那一排框对齐到表格的现状：件别（V4.12）、图号前缀，以及三个属性槽的统一态。
-    /// 整体打包下只有件别框。
-    ///
-    /// **这是 V4.9 状态机的另一半**。表格是权威，框是它的读数：解析完读回一批材料，
-    /// 框就该显示那个共同值；用户改一格让这一列不再统一，框就该退回「（不写）」。
-    /// 没有这一步，框永远停在用户上次点出来的那个值上，而那个值可能一个零件都对不上。
-    ///
-    /// 走 <c>aurora.ui.panelset</c>（P-07 程序回写）。程序回写不触发控件的提交动作，
-    /// 否则这里每回写一次就会反过来把整表刷一遍——见 Aurora 1.15.0 对 PanelView 的修正。
-    /// </summary>
+    /// <summary>把底下的件别框和图号前缀对齐到表格现状（<c>aurora.ui.panelset</c>，程序回写不触发控件提交）。</summary>
     private async Task SyncPropertyPanelAsync(CommandContext command)
     {
         var bus = _context?.Bus;
@@ -609,9 +524,6 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                  {
                      ("batch-kind", model.KindBoxText()),
                      ("prefix", model.DrawingPrefix),
-                     ("batch-material", model.PropertyBoxText(PartPropertyField.Material)),
-                     ("batch-surface", model.PropertyBoxText(PartPropertyField.SurfaceTreatment)),
-                     ("batch-heat", model.PropertyBoxText(PartPropertyField.HeatTreatment)),
                  })
         {
             _ = await bus.ExecuteAsync(
@@ -623,97 +535,11 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         }
     }
 
-    /// <summary>属性整备那一排框所在的面板 id。回写要按它定位。</summary>
+    /// <summary>批量改名那一排框所在的面板 id。回写要按它定位。</summary>
     private const string PropertyPanelNode = "sw-property-options";
 
     /// <summary>整体打包底下那排控件所在的面板 id（V4.12 件别框）。</summary>
     private const string PackagePanelNode = "sw-package-options";
-
-    /// <summary>
-    /// 三个属性槽在 SolidWorks 里都不是自由文本，界面上也就只让选不让填。
-    ///
-    /// 首项恒为 <paramref name="neutral"/>。单元格弹窗里它是 <see cref="PartPropertyNames.NoWriteOption"/>——
-    /// 选项只能在候选之间轮换，没有「清空」这个动作，少了这一项用户点错一次就再也退不回不写了。
-    /// 底下的框（V4.12）里它是这一栏的名字，读作总状态，见 <see cref="AssemblyViewModel.PropertyBoxText"/>。
-    /// </summary>
-    private static IReadOnlyList<string> SelectionOptions(
-        PartPropertyField field,
-        AssemblyViewModel? model = null,
-        string neutral = PartPropertyNames.NoWriteOption)
-    {
-        var values = field switch
-        {
-            PartPropertyField.Material => SolidWorksPropertyOptions.Materials().Select(item => item.Label),
-            PartPropertyField.SurfaceTreatment => SolidWorksPropertyOptions.SurfaceTreatments().AsEnumerable(),
-            PartPropertyField.HeatTreatment => SolidWorksPropertyOptions.HeatTreatments().AsEnumerable(),
-            _ => throw new ArgumentOutOfRangeException(nameof(field), field, null),
-        };
-        // 零件身上可能是一种用户没收藏过的材质。不把它补进候选，底下那个框就选不中它，
-        // 会退回第一项，看起来像是材料被悄悄改成了不写。
-        var extras = field == PartPropertyField.Material && model is not null
-            ? model.ExtraMaterialNames()
-            : [];
-        return new[] { neutral }
-            .Concat(values)
-            .Concat(extras)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-    }
-
-    /// <summary>只剩「（不写）」一项时的说明。材料是唯一会空的一栏，另两栏有模板兜底。</summary>
-    private static string EmptyOptionsReason(PartPropertyField field)
-        => field == PartPropertyField.Material
-            ? "没有可选材质：请先在 SolidWorks 的材料对话框里把常用材质加入收藏，再回到这里。"
-            : $"没有可选的「{DescribeField(field)}」候选，请检查 SolidWorks 属性标签模板。";
-
-    /// <summary>
-    /// 把下拉里选中的那一项折成模型层的值。
-    ///
-    /// 「（不写）」折成空串——空串是 <see cref="PartPropertyWrite"/> 里「本轮不动这一槽」的约定。
-    /// 材料还要多一步：下拉显示的是材质名（重名时带库名），而应用材质需要材质名**加**材料库，
-    /// 所以要按候选表反查回去。查不到就报错，不能当成空串放过——那会变成静默的「选了但没生效」。
-    /// </summary>
-    private static bool TryResolveSelection(
-        PartPropertyField field,
-        string selection,
-        out string value,
-        out string database,
-        out string error)
-    {
-        value = string.Empty;
-        database = string.Empty;
-        error = string.Empty;
-        var text = selection.Trim();
-        if (text.Length == 0 || string.Equals(text, PartPropertyNames.NoWriteOption, StringComparison.Ordinal))
-            return true;
-
-        if (field != PartPropertyField.Material)
-        {
-            value = text;
-            return true;
-        }
-
-        var match = SolidWorksPropertyOptions.Materials().FirstOrDefault(
-            item => string.Equals(item.Label, text, StringComparison.Ordinal)
-                    || string.Equals(item.Name, text, StringComparison.Ordinal));
-        if (match.Database.Length == 0)
-        {
-            error = $"收藏材料里没有「{text}」。请在 SolidWorks 材料对话框里收藏它，或改选别的材质。";
-            return false;
-        }
-
-        value = match.Name;
-        database = match.Database;
-        return true;
-    }
-
-    private static string BuildChoiceCommand(string label, IReadOnlyList<string> options)
-        => "aurora.ui.dialog kind=choice"
-            + " title=" + CommandParser.QuoteArg(label)
-            + " body=" + CommandParser.QuoteArg($"选择要写进零件属性的「{label}」")
-            + " cancel=取消"
-            + " options=" + CommandParser.QuoteArg(JsonSerializer.Serialize(
-                options.Select(option => new { label = option, value = option })));
 
     /// <summary>
     /// 单元格动作是 Aurora 直接打到总线的，表格不会自己重取。不显式刷这一格，
@@ -732,7 +558,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
     }
 
     /// <summary>
-    /// 刷属性整备与整体打包那两张表。另外三种转换内容的表由 Aurora 自己按
+    /// 刷批量改名与整体打包那两张表。另外三种转换内容的表由 Aurora 自己按
     /// <c>dataSource</c> 取，不需要也不允许在这里代刷（见 <see cref="PropertyPartsTableNode"/>）。
     /// </summary>
     private async Task RefreshPropertyPrepTableAsync(CommandContext command)
@@ -740,28 +566,9 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         if (_viewModel is not { IsRenameMode: true } and not { IsPackMode: true })
             return;
         await RefreshPartsTableAsync(command).ConfigureAwait(true);
-        // 表一变，底下那排框的读数就可能变了：解析后前缀是刚认出来的，
-        // 三个槽的统一态也是刚从零件上读回来的。
+        // 表一变，底下那排框的读数就可能变了：解析后前缀是刚认出来的。
         await SyncPropertyPanelAsync(command).ConfigureAwait(true);
     }
-
-    private static PartPropertyField ParsePartPropertyField(string field)
-        => field switch
-        {
-            "material" => PartPropertyField.Material,
-            "surface" => PartPropertyField.SurfaceTreatment,
-            "heat" => PartPropertyField.HeatTreatment,
-            _ => throw new ArgumentOutOfRangeException(nameof(field), field, null),
-        };
-
-    private static string DescribeField(PartPropertyField field)
-        => field switch
-        {
-            PartPropertyField.Material => PartPropertyNames.Material,
-            PartPropertyField.SurfaceTreatment => PartPropertyNames.SurfaceTreatment,
-            PartPropertyField.HeatTreatment => PartPropertyNames.HeatTreatment,
-            _ => throw new ArgumentOutOfRangeException(nameof(field), field, null),
-        };
 
     private static string DialogValue(CommandResult result) => result.Data switch
     {
@@ -819,28 +626,9 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                     ["value"] = item.DisplayName,
                     ["index"] = index.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 }).ToList()),
-            // 三个下拉的候选走 optionsSource 实时取，而不是写死在页面描述里：
-            // 用户在 SolidWorks 里收藏一种新材质、或改一次属性标签模板，下次展开面板就该看见。
-            "materials" => CommandResult.Ok("Minerva 材料候选", OptionRows(PartPropertyField.Material, model)),
-            "surfaces" => CommandResult.Ok("Minerva 表面处理候选", OptionRows(PartPropertyField.SurfaceTreatment, model)),
-            "heats" => CommandResult.Ok("Minerva 热处理候选", OptionRows(PartPropertyField.HeatTreatment, model)),
-            _ => CommandResult.Fail("未知 view；支持 parts、content、materials、surfaces、heats"),
+            _ => CommandResult.Fail("未知 view；支持 parts、content"),
         };
     }
-
-    /// <summary>
-    /// 底下那三个框的候选。候选取数的行格式：Aurora 的 <c>optionsSource</c> 固定读 <c>value</c> 列。
-    /// 首项是框的总状态（这一栏的名字），不是单元格弹窗里的「（不写）」。
-    /// </summary>
-    private static IReadOnlyList<IReadOnlyDictionary<string, string>> OptionRows(
-        PartPropertyField field,
-        AssemblyViewModel? model)
-        => SelectionOptions(field, model, AssemblyViewModel.PropertyBoxPlaceholder(field))
-            .Select(option => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>
-            {
-                ["value"] = option,
-            })
-            .ToList();
 
     private static IReadOnlyList<IReadOnlyDictionary<string, string>> PartRows(AssemblyViewModel? viewModel)
     {
@@ -851,10 +639,10 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
         {
             // id 是隐藏字段：单元格动作按被点那一行的同名字段取值，不读当前选中行。
             ["id"] = row.Id,
-            // 属性整备下 DisplayName 给的是**改完之后**的文件名，不再另开一列「改名后预览」：
+            // 批量改名下 DisplayName 给的是**改完之后**的文件名，不再另开一列「改名后预览」：
             // 同一个东西占两列，而改名成功之后「文件」那一列显示的还是一个已经不存在的文件。
             ["file"] = row.DisplayName,
-            // V4.9：属性整备不再显示「文件」，而是把它拆成图号与名称两列——
+            // V4.9：批量改名不再显示「文件」，而是把它拆成图号与名称两列——
             // 文件名永远是这两段拼出来的，拆开显示才改得动其中一段。
             ["drawing"] = row.DrawingText,
             ["name"] = row.PartName,
@@ -862,9 +650,6 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             ["detail"] = row.Detail,
             ["features"] = row.FeatureText,
             ["sketches"] = row.SketchText,
-            ["material"] = PropertyCell(row, PartPropertyField.Material),
-            ["surface"] = PropertyCell(row, PartPropertyField.SurfaceTreatment),
-            ["heat"] = PropertyCell(row, PartPropertyField.HeatTreatment),
             // V4.10 整体打包三列。打包表里「drawing」那一列对机加件是图号、
             // 对外购件是规格——两者在各自那张 BOM 上占的正是同一格。
             ["quantity"] = row.QuantityText,
@@ -874,31 +659,6 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             ["brand"] = row.BrandText,
         }).ToList();
     }
-
-    /// <summary>
-    /// 三个可点列的显示值。
-    ///
-    /// **空格子不能真的留空**：Aurora 的 <c>cellAction</c> 明确不触发空单元格，
-    /// 而第一次填材料要点的恰恰是空格子——留空就等于这三列永远点不开。
-    /// 因此会写属性的零件行在空值时渲染成占位符 <c>—</c>；不写属性的装配体行留真空，
-    /// 让它保持不可点，用户也就不会往一个不会落盘的地方填字。
-    /// </summary>
-    private static string PropertyCell(ConversionFileRow row, PartPropertyField field)
-    {
-        if (!row.WritesProperties)
-            return string.Empty;
-        var value = field switch
-        {
-            PartPropertyField.Material => row.Material,
-            PartPropertyField.SurfaceTreatment => row.SurfaceTreatment,
-            PartPropertyField.HeatTreatment => row.HeatTreatment,
-            _ => string.Empty,
-        };
-        return value.Length > 0 ? value : EmptyPropertyCell;
-    }
-
-    /// <summary>会写属性但还没填时的占位符。见 <see cref="PropertyCell"/> 里为什么不能留空。</summary>
-    internal const string EmptyPropertyCell = "—";
 
     private const string DescribeJson = """
         {
@@ -929,10 +689,10 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                   { "type": "table", "id": "sw-feature-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "file", "title": "文件", "width": "220" }, { "key": "status", "title": "状态", "width": "90" }, { "key": "detail", "title": "详情", "width": "*" }, { "key": "features", "title": "特征", "width": "70" }, { "key": "sketches", "title": "草图", "width": "70" }] },
                   { "type": "panel", "id": "sw-feature-options", "text": "转换选项", "rows": [{ "mode": "even", "widgets": [{ "kind": "switch", "id": "sw-feature-recognize", "label": "识别特征与草图", "value": "true", "action": "minerva.options.recognize" }, { "kind": "switch", "id": "sw-feature-continue", "label": "失败继续", "value": "true", "action": "minerva.options.continue" }, { "kind": "switch", "id": "sw-feature-mates", "label": "重建装配关系", "value": "true", "action": "minerva.options.mates" }] }] }
                 ] },
-                { "case": "SolidWorks .SLDASM → 属性整备（改名）", "type": "stack", "gap": "tight", "children": [
-                  { "type": "panel", "id": "sw-property-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.property.today", "text": "一键设置日期" }, { "kind": "button", "action": "minerva.conversion.run", "text": "写入" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
-                  { "type": "table", "id": "sw-property-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号", "width": "150" }, { "key": "name", "title": "名称", "width": "*", "cellAction": "minerva.cell.name" }, { "key": "category", "title": "件别", "width": "90", "cellAction": "minerva.cell.kind" }, { "key": "status", "title": "状态", "width": "80" }, { "key": "material", "title": "材料", "width": "110", "cellAction": "minerva.cell.material" }, { "key": "surface", "title": "表面处理", "width": "110", "cellAction": "minerva.cell.surface" }, { "key": "heat", "title": "热处理", "width": "110", "cellAction": "minerva.cell.heat" }] },
-                  { "type": "panel", "id": "sw-property-options", "text": "图号前缀", "rows": [{ "mode": "flex", "widgets": [{ "kind": "textbox", "id": "batch-kind", "label": "", "mode": "select", "options": ["件别", "机加件", "外购件", "排除"], "commitAction": "minerva.property.kind", "minWidth": 96 }, { "kind": "textbox", "id": "prefix", "label": "图号前缀", "commitAction": "minerva.options.prefix", "flex": true, "minWidth": 160 }, { "kind": "textbox", "id": "designer", "label": "设计", "commitAction": "minerva.property.designer", "flex": true, "minWidth": 120 }] }, { "mode": "even", "widgets": [{ "kind": "textbox", "id": "batch-material", "label": "", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "materials" } }, "commitAction": "minerva.property.material" }, { "kind": "textbox", "id": "batch-surface", "label": "", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "surfaces" } }, "commitAction": "minerva.property.surface" }, { "kind": "textbox", "id": "batch-heat", "label": "", "mode": "select", "optionsSource": { "command": "minerva.ui.data", "args": { "view": "heats" } }, "commitAction": "minerva.property.heat" }] }] }
+                { "case": "SolidWorks .SLDASM → 批量改名", "type": "stack", "gap": "tight", "children": [
+                  { "type": "panel", "id": "sw-property-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "改名" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
+                  { "type": "table", "id": "sw-property-parts", "dataSource": { "command": "minerva.ui.data", "args": { "view": "parts" } }, "columns": [{ "key": "drawing", "title": "图号", "width": "150" }, { "key": "name", "title": "名称", "width": "*", "cellAction": "minerva.cell.name" }, { "key": "category", "title": "件别", "width": "90", "cellAction": "minerva.cell.kind" }, { "key": "status", "title": "状态", "width": "80" }] },
+                  { "type": "panel", "id": "sw-property-options", "text": "图号前缀", "rows": [{ "mode": "flex", "widgets": [{ "kind": "textbox", "id": "batch-kind", "label": "", "mode": "select", "options": ["件别", "机加件", "外购件", "排除"], "commitAction": "minerva.property.kind", "minWidth": 96 }, { "kind": "textbox", "id": "prefix", "label": "图号前缀", "commitAction": "minerva.options.prefix", "flex": true, "minWidth": 160 }] }] }
                 ] },
                 { "case": "SolidWorks .SLDASM → 整体打包（零件采购：BOM + 图纸）", "type": "stack", "gap": "tight", "children": [
                   { "type": "panel", "id": "sw-package-actions", "rows": [{ "mode": "even", "widgets": [{ "kind": "button", "action": "minerva.conversion.probe", "text": "解析装配体" }, { "kind": "button", "action": "minerva.conversion.run", "text": "打包" }, { "kind": "button", "action": "minerva.conversion.cancel", "text": "取消" }] }] },
@@ -953,29 +713,21 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
             { "id": "minerva.source.set", "title": "设置来源", "command": "minerva.ui.source", "args": { "path": "{value}", "content": "{selection.minerva.content.value}" }, "summary": "按当前转换内容设置装配体文件或零件文件夹" },
             { "id": "minerva.content.set", "title": "设置转换内容", "command": "minerva.ui.content", "args": { "content": "{value}" }, "summary": "把页面当前转换内容写进模块" },
             { "id": "minerva.conversion.probe", "title": "解析装配体", "command": "minerva.conversion.probe", "args": { "content": "{selection.minerva.content.value}" }, "summary": "解析当前装配体来源" },
-            { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "args": { "content": "{selection.minerva.content.value}" }, "summary": "执行当前转换；属性整备下是改名并写入零件属性（前缀为空则保留原图号；改成外购件的同级件移入「外购件」文件夹）" },
+            { "id": "minerva.conversion.run", "title": "开始转换", "command": "minerva.conversion.run", "args": { "content": "{selection.minerva.content.value}" }, "summary": "执行当前转换；批量改名下只改文件名（前缀为空则保留原图号；改成外购件的同级件移入「外购件」文件夹）" },
             { "id": "minerva.conversion.cancel", "title": "取消", "command": "minerva.conversion.cancel", "summary": "取消当前操作" },
             { "id": "minerva.options.recognize", "title": "更新识别选项", "command": "minerva.ui.options", "args": { "option": "recognize", "value": "{value}" }, "summary": "开启或关闭特征与草图识别" },
             { "id": "minerva.options.continue", "title": "更新失败策略", "command": "minerva.ui.options", "args": { "option": "continue", "value": "{value}" }, "summary": "设置零件失败时是否继续" },
             { "id": "minerva.options.mates", "title": "更新装配关系", "command": "minerva.ui.options", "args": { "option": "mates", "value": "{value}" }, "summary": "设置是否重建装配关系" },
-            { "id": "minerva.options.prefix", "title": "更新图号前缀", "command": "minerva.ui.options", "args": { "option": "prefix", "value": "{value}" }, "summary": "设置属性整备图号前缀" },
+            { "id": "minerva.options.prefix", "title": "更新图号前缀", "command": "minerva.ui.options", "args": { "option": "prefix", "value": "{value}" }, "summary": "设置批量改名图号前缀" },
             { "id": "minerva.options.brandai", "title": "AI 查品牌", "command": "minerva.ui.options", "args": { "option": "brandai", "value": "{value}" }, "summary": "整体打包时是否联网查外购件品牌、并给文件名里没有名称的外购件补名称（DeepSeek 联网搜索，按次计费）；关着时品牌列与外购件清单 H 列留空" },
             { "id": "minerva.options.machinedbom", "title": "机加单", "command": "minerva.ui.options", "args": { "option": "machinedbom", "value": "{value}" }, "summary": "整体打包时是否生成机加件清单与截图；关着时不写也不删上一轮的" },
             { "id": "minerva.options.purchasedbom", "title": "外购单", "command": "minerva.ui.options", "args": { "option": "purchasedbom", "value": "{value}" }, "summary": "整体打包时是否生成外购件清单与截图；关着时不写也不删上一轮的" },
             { "id": "minerva.options.step", "title": "导出 STEP", "command": "minerva.ui.options", "args": { "option": "step", "value": "{value}" }, "summary": "整体打包时是否导出机加件 STEP" },
             { "id": "minerva.options.dwg", "title": "导出 DWG", "command": "minerva.ui.options", "args": { "option": "dwg", "value": "{value}" }, "summary": "整体打包时是否把工程图导成 DWG" },
             { "id": "minerva.options.pdf", "title": "导出 PDF", "command": "minerva.ui.options", "args": { "option": "pdf", "value": "{value}" }, "summary": "整体打包时是否把工程图导成 PDF" },
-            { "id": "minerva.property.designer", "title": "设置设计", "command": "minerva.ui.property", "args": { "field": "designer", "value": "{value}" }, "summary": "把「设计」属性一次刷满全部零件" },
-            { "id": "minerva.property.today", "title": "一键设置日期", "command": "minerva.ui.property", "args": { "field": "date" }, "summary": "把「日期」属性设为系统当日" },
             { "id": "minerva.property.kind", "title": "统一设置件别", "command": "minerva.ui.property", "args": { "field": "kind", "value": "{value}" }, "summary": "把表里每一行的件别统一为 机加件 / 外购件 / 排除；「参考部件」目录下的件与子文件夹里的装配体改不成的保持原样" },
-            { "id": "minerva.property.material", "title": "一键设置材料", "command": "minerva.ui.property", "args": { "field": "material", "value": "{value}" }, "summary": "把「材料」一次刷满全部零件" },
-            { "id": "minerva.property.surface", "title": "一键设置表面处理", "command": "minerva.ui.property", "args": { "field": "surface", "value": "{value}" }, "summary": "把「表面处理」一次刷满全部零件" },
-            { "id": "minerva.property.heat", "title": "一键设置热处理", "command": "minerva.ui.property", "args": { "field": "heat", "value": "{value}" }, "summary": "把「热处理」一次刷满全部零件" },
             { "id": "minerva.cell.kind", "title": "切换件别", "command": "minerva.ui.cell", "args": { "field": "kind", "id": "{id}" }, "summary": "点一下切换这一行的件别：机加件 → 外购件 → 排除" },
-            { "id": "minerva.cell.name", "title": "修改名称", "command": "minerva.ui.cell", "args": { "field": "name", "id": "{id}" }, "summary": "修改这一行的名称；文件名是图号加空格加名称" },
-            { "id": "minerva.cell.material", "title": "修改材料", "command": "minerva.ui.cell", "args": { "field": "material", "id": "{id}" }, "summary": "修改这一行零件的「材料」" },
-            { "id": "minerva.cell.surface", "title": "修改表面处理", "command": "minerva.ui.cell", "args": { "field": "surface", "id": "{id}" }, "summary": "修改这一行零件的「表面处理」" },
-            { "id": "minerva.cell.heat", "title": "修改热处理", "command": "minerva.ui.cell", "args": { "field": "heat", "id": "{id}" }, "summary": "修改这一行零件的「热处理」" }
+            { "id": "minerva.cell.name", "title": "修改名称", "command": "minerva.ui.cell", "args": { "field": "name", "id": "{id}" }, "summary": "修改这一行的名称；文件名是图号加空格加名称" }
           ]
         }
         """;

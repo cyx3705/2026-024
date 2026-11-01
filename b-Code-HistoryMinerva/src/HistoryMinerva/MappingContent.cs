@@ -8,7 +8,7 @@ public enum MappingContent
     SolidEdgeAssemblyToSolidWorksAssembly,
     // V4.3：SolidWorks 自整备。源与产物都是 SolidWorks，做的是"补上特征树"，不是格式转换。
     SolidWorksAssemblyToSolidWorksAssembly,
-    // V4.3.9：SolidWorks 属性整备。本版只做按图号改名，不改其它属性。
+    // 批量改名（枚举名沿用旧称）：只改文件名、挪外购件，属性归 HistoryStrenua。
     SolidWorksAssemblyPropertyPrep,
     // V4.10：整体打包。选总装配体，一次生成 STP / DWG / PDF / BOM 四个交付目录。
     SolidWorksAssemblyPackage,
@@ -48,7 +48,7 @@ public sealed record MappingContentOption(
             IsAssemblySource: true),
         new(
             MappingContent.SolidWorksAssemblyPropertyPrep,
-            "SolidWorks .SLDASM → 属性整备（改名）",
+            "SolidWorks .SLDASM → 批量改名",
             "选择单个 .SLDASM 装配体，并填写图号前缀",
             ConversionSourceFormat.SolidWorks,
             IsAssemblySource: true),

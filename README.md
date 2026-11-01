@@ -1,6 +1,6 @@
 # HistoryMinerva
 
-> CAD 转换模块：Solid Edge 转 SolidWorks、属性整备改名与零件采购打包
+> CAD 转换模块：Solid Edge 转 SolidWorks、批量改名与零件采购打包
 
 ## 定位
 
@@ -8,7 +8,7 @@ HistoryMinerva 是注册到 HistoryVulcan 的单一 CAD 转换模块，在 Auror
 
 - `.par → .SLDPRT`、`.asm → .SLDASM`；
 - `.SLDASM` 特征整备（导出 XT → 特征识别 → 按源层级重建）；
-- `.SLDASM` 属性整备（按装配层级改名、写属性）；
+- `.SLDASM` 批量改名（按装配层级改文件名，属性由 HistoryStrenua 写）；
 - `.SLDASM` 整体打包：在总装旁生成 `<前缀> 零件采购/`，含两张 BOM、同名 PNG 与机加件 DWG / PDF / STEP。
 
 转换由单一 `HistoryMinerva.Worker.exe`（x64 STA）执行。源 CAD 文件保持只读，产物写入来源目录下的 `XT/`、`SW/` 与 `<前缀> 零件采购/`。

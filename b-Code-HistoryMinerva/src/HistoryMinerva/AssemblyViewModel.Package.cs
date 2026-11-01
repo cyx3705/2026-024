@@ -85,7 +85,6 @@ public sealed partial class AssemblyViewModel
             row.CategoryText = PartKinds.Cell(entry.Category);
             row.BrandText = CachedBrandText(entry);
             row.RenamesFile = false;
-            row.WritesProperties = false;
             (row.QuantityText, row.DrawingStateText, row.Status, row.Detail) = DescribePackageRow(entry);
             rows.Add(row);
         }

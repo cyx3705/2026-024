@@ -179,8 +179,6 @@ public static class PackagePlanner
         var fileName = Path.GetFileName(sourcePath);
         DrawingNumber.SplitFileName(fileName, out var drawingNumber, out var partName);
         properties.TryGetValue(Path.GetFullPath(sourcePath), out var reading);
-        if (!string.IsNullOrWhiteSpace(reading?.Name))
-            partName = reading.Name.Trim();
         var specification = string.Empty;
         if (category != PackagePartCategory.Machined)
         {
@@ -189,10 +187,6 @@ public static class PackagePlanner
             if (!string.IsNullOrWhiteSpace(reading?.Name))
                 partName = reading.Name.Trim();
             drawingNumber = string.Empty;
-        }
-        else if (!string.IsNullOrWhiteSpace(reading?.DrawingNumber))
-        {
-            drawingNumber = reading.DrawingNumber.Trim();
         }
 
         var drawingPath = isAssembly ? null : ConversionPathLayout.ResolveDrawingPath(sourcePath);

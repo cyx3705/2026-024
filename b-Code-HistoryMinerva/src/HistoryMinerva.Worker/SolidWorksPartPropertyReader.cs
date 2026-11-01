@@ -33,52 +33,10 @@ internal static class SolidWorksPartPropertyReader
 
         try
         {
-            // 属性标签模板的控件全是 ApplyTo="Config"，读的必须与写的是同一批槽：
-            // 传空串读到的是文档级「自定义」标签，那一批在本项目里永远是空的。
-            var configuration = TryGet(() => interop.GetActiveConfigurationName(model), string.Empty);
-            var material = TryGet(
-                () =>
-                {
-                    var name = interop.GetMaterialPropertyName(model, configuration, out var database);
-                    return (Name: name, Database: database);
-                },
-                (Name: string.Empty, Database: string.Empty));
-            var extension = TryGet(() => interop.GetExtension(model), (object?)null);
-            var surface = string.Empty;
-            var heat = string.Empty;
-            var name = string.Empty;
-            var drawingNumber = string.Empty;
-            if (extension is not null)
-            {
-                var manager = TryGet(
-                    () => interop.GetCustomPropertyManager(extension, configuration), (object?)null);
-                if (manager is not null)
-                {
-                    surface = TryGet(
-                        () => interop.GetCustomProperty(manager, PartPropertyNames.SurfaceTreatment),
-                        string.Empty);
-                    heat = TryGet(
-                        () => interop.GetCustomProperty(manager, PartPropertyNames.HeatTreatment),
-                        string.Empty);
-                    name = TryGet(
-                        () => interop.GetCustomProperty(manager, PartPropertyNames.Name),
-                        string.Empty);
-                    drawingNumber = TryGet(
-                        () => interop.GetCustomProperty(manager, PartPropertyNames.DrawingNumber),
-                        string.Empty);
-                }
-            }
-
-            // 材质名脱离材料库应用不回零件，所以只有两者齐备才算读到了材料。
-            var hasMaterial = material.Name.Length != 0 && material.Database.Length != 0;
-            return new PartPropertyReading(
-                sourcePath,
-                hasMaterial ? material.Name : string.Empty,
-                hasMaterial ? material.Database : string.Empty,
-                surface.Trim(),
-                heat.Trim(),
-                name.Trim(),
-                drawingNumber.Trim());
+            // 属性标签模板的控件全是 ApplyTo="Config"：传空串读到的是文档级那一批，在本项目里永远是空的。
+            var configuration = interop.GetActiveConfigurationName(model);
+            var manager = interop.GetCustomPropertyManager(interop.GetExtension(model), configuration);
+            return new PartPropertyReading(sourcePath, interop.GetCustomProperty(manager, PartPropertyNames.Name).Trim());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
