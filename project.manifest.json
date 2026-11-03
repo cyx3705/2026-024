@@ -11,7 +11,7 @@
     "title": "HistoryMinerva CAD 转换模块",
     "kind": ["software", "cad-automation", "appshell-module"],
     "status": "active",
-    "version": "4.17.0",
+    "version": "4.17.1",
     "branch": "main"
   },
   "historyVulcanHost": {
@@ -52,7 +52,7 @@
     ".NET 8 SDK and Windows Desktop Runtime",
     "HistoryVulcan.Core 6.0.0 or newer host snapshot (minimum compatible host version)",
     "HistoryAurora 1.0.0 Release runtime (UI Smoke theme fixture only)",
-    "HistoryApollo 0.2.0 or newer, optional: purchased-part brand lookup over the command bus (apollo.chat.ask web=true)",
+    "Ratio 0.6.0 or newer, optional: purchased-part brand lookup over the command bus (ratio.chat.ask web=true)",
     "Solid Edge 2020 COM automation",
     "SolidWorks 2025 SP5 COM automation",
     "SolidWorks FeatureWorks"

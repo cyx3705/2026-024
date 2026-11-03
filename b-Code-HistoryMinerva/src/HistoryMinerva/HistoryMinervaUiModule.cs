@@ -164,7 +164,7 @@ public sealed class HistoryMinervaUiModule : IModuleContextAware, IDisposable
                 throw new InvalidOperationException("Minerva 模块尚未装配。");
             _viewModel = new AssemblyViewModel(_runtimePaths)
             {
-                // V4.10.4：打包时经总线借用 HistoryApollo 查外购件品牌。Apollo 装没装、配没配密钥，
+                // V4.10.4：打包时经总线借用 Ratio 查外购件品牌。Ratio 装没装、配没配密钥，
                 // 要到发出那一行指令时才知道——不在就是失败回执，那一格写 N/A，打包照常完成。
                 BrandLookup = _context.Bus is { } bus ? PurchasedBrandLookup.OverBus(bus) : null,
             };

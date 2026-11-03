@@ -10,7 +10,7 @@ namespace HistoryMinerva.Bom;
 /// <summary>一种外购件的品牌查询结果。</summary>
 /// <param name="Brand">品牌名；查不到、不能确定或查询失败时都是 <see cref="PurchasedBrandLookup.NotAvailable"/>。</param>
 /// <param name="Failure">
-/// 查询本身失败（HistoryApollo 没装、没配密钥、断网）时的原因。
+/// 查询本身失败（Ratio 没装、没配密钥、断网）时的原因。
 /// 模型搜过之后确认查不到，是一个**答案**而不是失败，此时为 null。
 /// </param>
 /// <param name="Name">
@@ -25,11 +25,11 @@ internal sealed record BrandAnswer(string Brand, string? Failure, string? Name =
 /// V4.10.4：整体打包时，按外购件规格联网查品牌，写进外购件清单的「备注[参考供应商]」。
 /// V4.16：文件名里没有名称的外购件，同一次调用顺带查出名称，写进表格与清单的「名称」。
 ///
-/// 固定 <c>provider=deepseek</c>（V4.16）：试过 Apollo 0.6 的 Gemini + Google 搜索，本机用不起来，
-/// 改回原来的 DeepSeek + 博查，并且写死，不跟 Apollo 的联网供应商设置走。
+/// 固定 <c>provider=deepseek</c>（V4.16）：试过 Apollo（Ratio 前身）0.6 的 Gemini + Google 搜索，本机用不起来，
+/// 改回原来的 DeepSeek + 博查，并且写死，不跟 Ratio 的联网供应商设置走。
 ///
-/// **软依赖 HistoryApollo**：本模块不引用 Apollo 的任何程序集，只经命令总线发一行
-/// <c>apollo.chat.ask web=true json=true</c>。Apollo 没装、没配密钥或断网时，总线回的是失败回执
+/// **软依赖 Ratio**：本模块不引用 Ratio 的任何程序集，只经命令总线发一行
+/// <c>ratio.chat.ask web=true json=true</c>。Ratio 没装、没配密钥或断网时，总线回的是失败回执
 /// 而不是异常——那一格写 N/A，打包照常完成。品牌只是给采购的参考，不值得为它让一整批
 /// STEP 和工程图陪着失败。
 /// </summary>
@@ -129,7 +129,7 @@ internal static class PurchasedBrandLookup
     /// 发给总线的那一行。参数值一律经 <see cref="CommandParser.QuoteArg"/> 编码，不含换行。
     /// </summary>
     public static string BuildCommand(PackagePartEntry entry)
-        => "apollo.chat.ask provider=deepseek web=true json=true maxtokens=300 timeout=120"
+        => "ratio.chat.ask provider=deepseek web=true json=true maxtokens=300 timeout=120"
            + " system=" + CommandParser.QuoteArg(SystemPrompt)
            + " prompt=" + CommandParser.QuoteArg(BuildPrompt(entry));
 
@@ -146,14 +146,14 @@ internal static class PurchasedBrandLookup
     public static bool NeedsName(PackagePartEntry entry)
         => entry.Category == PackagePartCategory.Purchased && entry.PartName.Trim().Length == 0;
 
-    /// <summary>把 Apollo 的回执读成一个答案。</summary>
+    /// <summary>把 Ratio 的回执读成一个答案。</summary>
     public static BrandAnswer Read(CommandResult result)
     {
         if (!result.Success)
             return new BrandAnswer(NotAvailable, FirstLine(result.Message));
 
-        // json=true 时回执正文就是模型答复本身，不带用量脚注（HistoryApollo 模块API）。
-        // 模型搜了什么、怎么答的，HistoryApollo 0.3.0 起在调用进行中逐轮写进控制台，这里不再复述（DEC-066）。
+        // json=true 时回执正文就是模型答复本身，不带用量脚注（Ratio 模块API）。
+        // 模型搜了什么、怎么答的，Apollo（Ratio 前身）0.3.0 起在调用进行中逐轮写进控制台，这里不再复述（DEC-066）。
         try
         {
             using var document = JsonDocument.Parse(result.Message);

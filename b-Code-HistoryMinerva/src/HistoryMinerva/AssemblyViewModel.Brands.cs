@@ -6,7 +6,7 @@ namespace HistoryMinerva;
 
 /// <summary>
 /// V4.10.4 整体打包：外购件品牌联网查询。在写 BOM 之前跑，结果进「品牌」列与外购件清单 H 列。
-/// V4.10.5：页面开关可以整个关掉它（DEC-066）。模型的思考、搜索与答复由 HistoryApollo 自己逐轮写进控制台，
+/// V4.10.5：页面开关可以整个关掉它（DEC-066）。模型的思考、搜索与答复由 Ratio 自己逐轮写进控制台，
 /// 这里只报每一种的结论和没发起调用的原因。
 /// V4.16：文件名里没有名称的外购件，同一次调用顺带查名称，进「名称」列与外购件清单 E 列。
 /// </summary>
@@ -19,7 +19,7 @@ public sealed partial class AssemblyViewModel
     private const int BrandLookupConcurrency = 3;
 
     /// <summary>
-    /// 连续失败到这个数就不再往下查。Apollo 没装、没配密钥或断网时每一种都会以同一个原因失败，
+    /// 连续失败到这个数就不再往下查。Ratio 没装、没配密钥或断网时每一种都会以同一个原因失败，
     /// 再发几十次只是让用户多等几十个超时，最后得到的还是同一句话。
     /// </summary>
     private const int BrandFailureCircuit = 3;
@@ -123,7 +123,7 @@ public sealed partial class AssemblyViewModel
         {
             var names = nameQueries > 0 ? $"（其中 {nameQueries} 种文件名里没有名称，顺带查名称）" : string.Empty;
             QueueUiUpdate(() => StatusText = $"正在联网查询 {toQuery} 种外购件的品牌{names}");
-            _operationProgress?.Report($"正在联网查询 {toQuery} 种外购件的品牌{names}（模型的思考、搜索与答复由 HistoryApollo 逐轮输出）");
+            _operationProgress?.Report($"正在联网查询 {toQuery} 种外购件的品牌{names}（模型的思考、搜索与答复由 Ratio 逐轮输出）");
         }
 
         var found = 0;
@@ -142,7 +142,7 @@ public sealed partial class AssemblyViewModel
             var label = query.Length > 0 ? query : Path.GetFileNameWithoutExtension(entry.SourcePath);
             var brand = PurchasedBrandLookup.NotAvailable;
             string? name = null;
-            // 没有发起调用的原因。发起了的，经过由 Apollo 在控制台上逐轮输出，这里只报结论。
+            // 没有发起调用的原因。发起了的，经过由 Ratio 在控制台上逐轮输出，这里只报结论。
             string? skipped;
             LookupResult? cached;
             lock (_brandGate)

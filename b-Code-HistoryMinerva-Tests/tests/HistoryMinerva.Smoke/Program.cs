@@ -4913,7 +4913,7 @@ static void TestPackageViewModelFlow(string root)
     Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, static () => { });
     Equal(1, brandQueries.Count, "已查到的品牌必须走缓存，重新打包不得再查");
     True(!viewModel.ResultText.Contains("GB70 M8x20 → 东明", StringComparison.Ordinal),
-        "打包结论不再逐种复述品牌明细：查询经过由 HistoryApollo 逐轮输出到控制台：" + viewModel.ResultText);
+        "打包结论不再逐种复述品牌明细：查询经过由 Ratio 逐轮输出到控制台：" + viewModel.ResultText);
 
     // V4.10.5：关掉「AI 查品牌」——不调用、不拿缓存填，品牌列与 H 列留空，结论说清楚这一轮没查。
     viewModel.SetBrandLookupEnabled(false);
@@ -5154,7 +5154,7 @@ static void TestPackageStepsAndNameFill(string root)
     True(PurchasedBrandLookup.BuildPrompt(named).Contains("名称：气缸", StringComparison.Ordinal), "名称已知时照旧带上名称");
     Equal(null, PurchasedBrandLookup.Read(CommandResult.Ok("""{"brand":"SMC","name":"N/A"}""")).Name, "名称查不到不写 N/A");
     True(PurchasedBrandLookup.BuildCommand(named).Contains("provider=deepseek", StringComparison.Ordinal),
-        "品牌查询固定走 DeepSeek，不跟 Apollo 的联网供应商");
+        "品牌查询固定走 DeepSeek，不跟 Ratio 的联网供应商");
 
     // 关掉 AI 查品牌：名称列回到文件名里的（空），不拿缓存填。
     viewModel.SetPackageSteps(viewModel.PackageSteps with { BrandLookup = false });
@@ -5181,7 +5181,7 @@ static void TestPackageBrandLookup(string root)
         4,
         PackagePartCategory.Purchased);
     var parsed = CommandParser.Parse(PurchasedBrandLookup.BuildCommand(screwEntry));
-    Equal("apollo.chat.ask", parsed.Name, "品牌查询必须走 apollo.chat.ask");
+    Equal("ratio.chat.ask", parsed.Name, "品牌查询必须走 ratio.chat.ask");
     Equal("true", parsed.Named["web"], "品牌查询必须允许模型联网");
     Equal("true", parsed.Named["json"], "品牌查询必须要求 JSON 答复");
     True(parsed.Named["prompt"].Contains("GB70 M8x20", StringComparison.Ordinal), "提示词必须带上规格：" + parsed.Named["prompt"]);
@@ -5227,18 +5227,18 @@ static void TestPackageBrandLookup(string root)
         PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\":\"未知\"}")).Brand,
         "「未知」必须折成 N/A");
     True(!PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\":\"n/a\"}")).Failed, "模型确认查不到是答案，不是失败");
-    var absent = PurchasedBrandLookup.Read(CommandResult.Fail("未知指令: apollo.chat.ask"));
-    True(absent.Failed && absent.Brand == PurchasedBrandLookup.NotAvailable, "Apollo 不在时必须是 N/A 加失败原因");
+    var absent = PurchasedBrandLookup.Read(CommandResult.Fail("未知指令: ratio.chat.ask"));
+    True(absent.Failed && absent.Brand == PurchasedBrandLookup.NotAvailable, "Ratio 不在时必须是 N/A 加失败原因");
     True(PurchasedBrandLookup.Read(CommandResult.Ok("大概是 SMC")).Failed, "非 JSON 答复必须记为失败");
 
-    // 回执带结构化载荷（Apollo 的 Data）时照样只读正文；载荷怎么变都不影响品牌。
+    // 回执带结构化载荷（Ratio 的 Data）时照样只读正文；载荷怎么变都不影响品牌。
     var withPayload = PurchasedBrandLookup.Read(CommandResult.Ok(
         "  {\"brand\": \"AirTAC\"}",
         """{"content":"{\"brand\": \"AirTAC\"}","usage":{"total":4517},"searches":[{"query":"F-M10X125F 气动浮头","results":6,"error":null}]}"""));
     True(withPayload.Brand == "AirTAC" && !withPayload.Failed, "带载荷的回执照样读出品牌");
     True(!PurchasedBrandLookup.Read(CommandResult.Ok("{\"brand\": \"SMC\"}", "not json")).Failed, "载荷读不出来不得让查询失败");
 
-    // 熔断：Apollo 不可用时每一种都以同一个原因失败，连续失败到阈值就不再往下查，打包照常成功。
+    // 熔断：Ratio 不可用时每一种都以同一个原因失败，连续失败到阈值就不再往下查，打包照常成功。
     var dir = Path.Combine(root, "package-brand-circuit");
     var standardDir = Path.Combine(dir, "标准件");
     Directory.CreateDirectory(standardDir);
@@ -5272,7 +5272,7 @@ static void TestPackageBrandLookup(string root)
         BrandLookup = (entry, _) =>
         {
             Interlocked.Increment(ref calls);
-            return Task.FromResult(new BrandAnswer(PurchasedBrandLookup.NotAvailable, "未知指令: apollo.chat.ask"));
+            return Task.FromResult(new BrandAnswer(PurchasedBrandLookup.NotAvailable, "未知指令: ratio.chat.ask"));
         },
     };
 

@@ -75,7 +75,7 @@ dotnet run --project .\b-Code-HistoryMinerva-Tests\tests\HistoryMinerva.UiSmoke\
 ## 要点
 
 - 真实 CAD 门禁需要专用样件和受控 Solid Edge / SolidWorks 会话，不能用离线 Smoke 代替。
-- 打包的 BOM 不经过 Worker，SolidWorks 起不来时清单照样能出；外购件品牌经 HistoryApollo 联网查询，查不到写 N/A。
+- 打包的 BOM 不经过 Worker，SolidWorks 起不来时清单照样能出；外购件品牌经 Ratio 联网查询，查不到写 N/A。
 - 内部程序集、命名空间与 JSON 协议均为 `HistoryMinerva.*`，不保留 `mapping.*` / `swuse.*` 兼容别名。
 
 ## 保留内容
